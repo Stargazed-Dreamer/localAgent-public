@@ -1,0 +1,58 @@
+# Release Notes — {{ profile_id }}
+
+**Audience**: {{ audience }}
+**Source commit**: `{{ source_commit }}`
+**Plan digest**: `{{ plan_digest }}`
+**Built at**: {{ created_at }}
+
+## 组件清单
+
+{% for c in components %}
+### {{ c.name }} v{{ c.version }}
+
+{{ c.description }}
+{% endfor %}
+
+## 文件统计
+
+- 文件总数：{{ file_count }}
+- 总大小：{{ total_size }} 字节
+
+## ZIP 校验
+
+ZIP 文件的 SHA-256 校验和见同目录下的 `localagent-{{ profile_id }}.zip.sha256` 文件。
+
+验证方法：
+
+```bash
+certutil -hashfile localagent-{{ profile_id }}.zip SHA256
+# 比对 .zip.sha256 文件中的值
+```
+
+## 已知豁免
+
+{% if exemptions %}
+本包含以下敏感内容豁免（已审计，认为可安全分发）：
+
+{% for e in exemptions %}
+- `{{ e.path }}` — {{ e.reason }}
+{% endfor %}
+{% else %}
+本包无敏感内容豁免。
+{% endif %}
+
+## 审计追溯
+
+本构建计划由 `prepare_release()` 产出不可变 `PreparedRelease`，经用户审批后由 `build_release()` 构建产物。plan_digest 绑定所有输入字段，任何输入变化都会让 plan_digest 变化，使旧审批失效。
+
+- **plan_digest**: `{{ plan_digest }}`
+- **profile_id**: `{{ profile_id }}`
+- **audience**: `{{ audience }}`
+- **source_commit**: `{{ source_commit }}`
+- **built_at**: {{ created_at }}
+
+## 许可证
+
+Apache License 2.0 — 版权所有 (c) 2026 <copyright_holder>
+
+详见 `LICENSE` 文件。

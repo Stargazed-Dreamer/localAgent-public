@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SPA Mutation Fixture</title>
+<style>body{font-family:sans-serif;padding:20px}</style>
+</head>
+<body>
+<h1>SPA Mutation Fixture</h1>
+<div data-testid="initial">Initial Content</div>
+<button id="targetBtn">Target Button</button>
+<script>
+// 页面加载后 300ms 用 JS 向 body 添加新元素（模拟 SPA mutation）
+// URL 不变，但 DOM 哈希改变 — 触发 verify_dom_freshness=True 的 STALE_NODE 检测
+window.addEventListener('DOMContentLoaded', function(){
+  setTimeout(function(){
+    var newNode = document.createElement('div');
+    newNode.setAttribute('data-testid', 'mutated');
+    newNode.textContent = 'mutation injected after 300ms';
+    document.body.appendChild(newNode);
+  }, 300);
+});
+</script>
+</body>
+</html>

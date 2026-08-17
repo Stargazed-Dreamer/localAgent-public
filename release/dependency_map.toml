@@ -1,0 +1,349 @@
+# 依赖映射表（机器可读）
+#
+# 由 tools/release/generate_dependency_map.py 自动生成，请勿手动编辑。
+# 如需补充 notes 字段，请运行 `--add-notes` 模式（待实现）或修改
+# generate_dependency_map.py 的 KNOWN_NOTES 常量。
+#
+# 字段说明：
+#   package             pyproject.toml 中的包名（含 [extras]，去版本约束）
+#   import_names        实际 import 时使用的模块名（一个包可能多个）
+#   category            依赖分类：
+#                        core           - server/client 用，必须始终保留
+#                        workspace_only - 仅 workspace 模块用，按 profile 裁剪
+#                        tools_only     - 仅 tools/ 用（构建工具）
+#                        tests_only     - 仅 tests/ 用（dev 依赖）
+#                        unused         - 项目源码完全未使用，可移除
+#   used_in_workspace_modules  workspace_only 类专属：列出使用该依赖的 workspace 模块
+#   usage_count         总 import 位置数（git-tracked 文件）
+#   notes               人工标注（KNOWN_NOTES 常量）：说明脚本无法识别的真实状态，
+#                       如未 git-tracked 的 workspace 依赖、框架间接依赖、辅助生态包等
+#
+# 最后生成时间: 2026-08-02T19:56:12.478895+00:00
+# 总包数: 44
+# 分类: core=26 workspace_only=6 tools_only=2 tests_only=0 unused=10
+
+# === core (26 个) ===
+[[dependency]]
+package = "fastapi"
+import_names = ["fastapi"]
+category = "core"
+used_in_workspace_modules = ["workspace/accounting"]
+usage_count = 33
+
+[[dependency]]
+package = "fastapi-mcp"
+import_names = ["fastapi_mcp"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "mss"
+import_names = ["mss"]
+category = "core"
+used_in_workspace_modules = ["workspace/recorder"]
+usage_count = 4
+
+[[dependency]]
+package = "onnxruntime-gpu"
+import_names = ["onnxruntime", "ort"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "openpyxl"
+import_names = ["openpyxl"]
+category = "core"
+used_in_workspace_modules = ["workspace/accounting"]
+usage_count = 2
+
+[[dependency]]
+package = "pymupdf"
+import_names = ["fitz", "pymupdf"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "python-docx"
+import_names = ["docx"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 5
+
+[[dependency]]
+package = "python-pptx"
+import_names = ["pptx"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "paddleocr[doc-parser]"
+import_names = ["paddleocr"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "paddlepaddle-gpu"
+import_names = ["paddle"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "pillow"
+import_names = ["PIL"]
+category = "core"
+used_in_workspace_modules = ["workspace/image_organize_remote_vl_sample", "workspace/official_gacha", "workspace/yihuan_gacha"]
+usage_count = 46
+
+[[dependency]]
+package = "pyautogui"
+import_names = ["pyautogui"]
+category = "core"
+used_in_workspace_modules = ["workspace/official_gacha"]
+usage_count = 3
+
+[[dependency]]
+package = "pynput"
+import_names = ["pynput"]
+category = "core"
+used_in_workspace_modules = ["workspace/recorder"]
+usage_count = 3
+
+[[dependency]]
+package = "pyside6"
+import_names = ["PySide6"]
+category = "core"
+used_in_workspace_modules = ["workspace/accounting", "workspace/gh_mirror", "workspace/recorder", "workspace/stock_advisor", "workspace/yihuan_gacha", "workspace/yihuan_simulator"]
+usage_count = 71
+
+[[dependency]]
+package = "pywin32"
+import_names = ["win32gui", "win32con", "win32ui", "win32api", "win32process", "pywintypes", "pythoncom"]
+category = "core"
+used_in_workspace_modules = ["workspace/official_gacha"]
+usage_count = 30
+
+[[dependency]]
+package = "toml"
+import_names = ["toml"]
+category = "core"
+used_in_workspace_modules = ["workspace/accounting", "workspace/recorder", "workspace/stock_advisor"]
+usage_count = 14
+
+[[dependency]]
+package = "torch"
+import_names = ["torch"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 6
+
+[[dependency]]
+package = "transformers"
+import_names = ["transformers"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 5
+
+[[dependency]]
+package = "uvicorn"
+import_names = ["uvicorn"]
+category = "core"
+used_in_workspace_modules = ["workspace/accounting"]
+usage_count = 3
+
+[[dependency]]
+package = "tokenizers"
+import_names = ["tokenizers"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "huggingface-hub"
+import_names = ["huggingface_hub"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "jieba"
+import_names = ["jieba"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 1
+notes = "三层记忆系统 v2 中文分词，server/memory/embedder.py 使用（lazy import）"
+
+[[dependency]]
+package = "numpy"
+import_names = ["numpy"]
+category = "core"
+used_in_workspace_modules = ["workspace/official_gacha", "workspace/stock_advisor", "workspace/yihuan_gacha"]
+usage_count = 30
+
+[[dependency]]
+package = "playwright"
+import_names = ["playwright"]
+category = "core"
+used_in_workspace_modules = ["workspace/arknights_gacha", "workspace/bilibili_gacha", "workspace/community_review", "workspace/endfield_gacha", "workspace/niuke_review", "workspace/official_gacha", "workspace/stock_advisor", "workspace/web_archive", "workspace/wuwa_gacha"]
+usage_count = 20
+
+[[dependency]]
+package = "playwright-stealth"
+import_names = ["playwright_stealth"]
+category = "core"
+used_in_workspace_modules = ["workspace/arknights_gacha", "workspace/bilibili_gacha", "workspace/endfield_gacha", "workspace/niuke_review", "workspace/official_gacha"]
+usage_count = 11
+
+[[dependency]]
+package = "uiautomation"
+import_names = ["uiautomation"]
+category = "core"
+used_in_workspace_modules = []
+usage_count = 3
+
+
+# === workspace_only (6 个) ===
+[[dependency]]
+package = "pandas"
+import_names = ["pandas"]
+category = "workspace_only"
+used_in_workspace_modules = ["workspace/stock_advisor"]
+usage_count = 11
+notes = "manifest extra_deps 声明 by: stock_advisor"
+
+[[dependency]]
+package = "baostock"
+import_names = ["baostock"]
+category = "workspace_only"
+used_in_workspace_modules = ["workspace/stock_advisor"]
+usage_count = 1
+notes = "manifest extra_deps 声明 by: stock_advisor"
+
+[[dependency]]
+package = "tushare"
+import_names = ["tushare"]
+category = "workspace_only"
+used_in_workspace_modules = ["workspace/stock_advisor"]
+usage_count = 1
+notes = "manifest extra_deps 声明 by: stock_advisor"
+
+[[dependency]]
+package = "duckdb"
+import_names = ["duckdb"]
+category = "workspace_only"
+used_in_workspace_modules = ["workspace/stock_advisor"]
+usage_count = 1
+notes = "manifest extra_deps 声明 by: stock_advisor"
+
+[[dependency]]
+package = "akquant"
+import_names = ["akquant"]
+category = "workspace_only"
+used_in_workspace_modules = ["workspace/stock_advisor"]
+usage_count = 1
+notes = "manifest extra_deps 声明 by: stock_advisor"
+
+[[dependency]]
+package = "sounddevice"
+import_names = ["sounddevice"]
+category = "workspace_only"
+used_in_workspace_modules = ["workspace/recorder"]
+usage_count = 2
+
+
+# === tools_only (2 个) ===
+[[dependency]]
+package = "spdx-tools"
+import_names = ["spdx_tools"]
+category = "tools_only"
+used_in_workspace_modules = []
+usage_count = 2
+
+[[dependency]]
+package = "jinja2"
+import_names = ["jinja2"]
+category = "tools_only"
+used_in_workspace_modules = []
+usage_count = 1
+
+
+# === unused (10 个) ===
+[[dependency]]
+package = "openai"
+import_names = ["openai"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+
+[[dependency]]
+package = "pyperclip"
+import_names = ["pyperclip"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+notes = "项目源码 0 使用，可移除"
+
+[[dependency]]
+package = "python-multipart"
+import_names = ["multipart"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+notes = "FastAPI 间接依赖：处理 multipart/form-data 请求体时自动加载（/upload 等端点必需）"
+
+[[dependency]]
+package = "setuptools"
+import_names = ["setuptools"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+notes = "Python 打包工具：runtime 不需要，仅构建时使用；可考虑移到 dev 依赖"
+
+[[dependency]]
+package = "orjson"
+import_names = ["orjson"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+notes = "FastAPI 可选 JSON 编码器：若安装则自动替换默认 json 库，加速响应序列化"
+
+[[dependency]]
+package = "onnx"
+import_names = ["onnx"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+
+[[dependency]]
+package = "faster-whisper"
+import_names = ["faster_whisper"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "ctranslate2"
+import_names = ["ctranslate2"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+
+[[dependency]]
+package = "pyloudnorm"
+import_names = ["pyloudnorm"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 1
+
+[[dependency]]
+package = "scipy"
+import_names = ["scipy"]
+category = "unused"
+used_in_workspace_modules = []
+usage_count = 0
+

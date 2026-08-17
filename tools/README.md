@@ -1,0 +1,153 @@
+# Tools 目录
+
+项目通用工具脚本的集合。任务专属脚本已迁移到 `workspace/<task_name>/`，本目录只保留不归属单一任务的通用工具。
+
+## 目录结构
+
+```
+tools/
+├── browser/              # 浏览器通用工具（调试 Chrome 启动、批量打开标签页）
+├── debug/                # 屏幕操控调试工具（OCR bbox 回归、坐标链路、DPI）
+├── disk/                 # 磁盘管理（备份、清理、扫描）
+├── file_classifier/      # 文件分类器（带 GUI）
+├── image_organizer/      # 图片整理（Florence-2/Qwen-VL + LLM 分类）
+├── llm/                  # LLM 工具（API 测试、批量注释、Token 统计、帖子总结）
+├── media_classifier/     # 媒体分类（<data_drive>:\<bilibili_videos>视频、文字篇章、歌词分析）
+├── mindforge/            # MindForge 文档转换守护进程
+├── recorder/             # 操作录制器（L0 采集层，键鼠+屏幕+音频+焦点）
+├── release/              # 源码分发 profile 只读审计
+├── wechat_export_organize.py  # 微信收藏导出整理
+├── user_message_gui.py   # 用户消息输入 GUI
+├── fake_llm_proxy.py     # Fake LLM Proxy（学习/调试用虚拟 API）
+└── migrate_data_layout.py # 一次性数据迁移脚本（temp/ 和 server/memory_v2/ → data/）
+```
+
+> 任务专属脚本（如各游戏抽卡采集、社群爬取、记账、异环模拟器等）已迁移到 `workspace/<task_name>/`，详见 `tools_manifest.json`。
+
+## 各目录详解
+
+### `browser/` — 浏览器通用工具
+- `start_debug_chrome.py` — 启动独立调试 Chrome 实例（端口 9222，不影响工作浏览器）
+- `open_tabs.py` — 批量打开标签页
+
+### `debug/` — 屏幕操控调试
+**状态：开发调试用，非常规工具**
+
+排查 OCR 识别、bbox 坐标链路和 DPI 偏移。PaddleOCR/PaddleX 更新后先运行三档 bbox 回归；详见 `debug/README.md`。
+
+### `disk/` — 磁盘管理
+- `backup_env.py` — 环境备份
+- `cleanup.py` — 磁盘清理
+- `scan_disk.py` — 磁盘扫描
+
+### `file_classifier/` — 文件分类器
+带 PySide6 GUI 的文件分类工具，使用 LLM 预测文件类别（支持文件+文件夹分类、类交互式协议、state.json 状态持久化）。
+- `classifier_gui.py` — GUI 主程序
+- `predictor.py` — 预测模型（含 classify_folder 类交互式文件夹分类协议）
+- `state_manager.py` — 状态持久化管理（分类即已处理、列宽记忆、源目录记忆）
+- `type_descriptor.py` — 文件类型描述生成（扩展名→友好中文类型）
+- `file_table_widget.py` — 文件表格组件（反选语义交互模型）
+- `details_dialog.py` — 详情弹窗（ctrl+enter）
+- `folder_info.py` — 文件夹信息聚合（文件数/扩展名分布/嵌套深度）
+- `categories.json` — 分类配置
+- `file_classifier_guide.md` — 操作指引文档
+- 操作指引详见 `tools/file_classifier/file_classifier_guide.md`
+
+### `image_organizer/` — 图片整理
+**状态：历史方案/暂停** | **环境：主 `.venv`**
+
+旧版大规模图片自动分类工具。使用 Florence-2 进行图片描述和 OCR，再通过 LLM 池多维度分类。当前不作为 Remote-VL 抽样工作的入口。
+
+- `organize.py` — 主程序（Florence-2 caption+OCR → LLM 分类 → move → SQLite）
+- `florence_bench.py` — Florence-2 测速基准
+- `test_models.py` — 模型对比测试（Florence-2 vs 其他视觉模型）
+- `test_pipeline.py` — 全流程集成测试
+- `view_db.py` — 查看分类数据库内容
+- `view_failed.py` — 查看失败文件
+
+**运行环境**：`uv run python tools/image_organizer/organize.py`（Florence-2 从 HF cache 加载；OmniParser 移除后仍可运行，主 `.venv` 含 `transformers` + `torch`）
+
+当前 Remote-VL 抽样工作区：`workspace/image_organize_remote_vl_sample/`。恢复前必须阅读该目录的 `RESUME.md`，不要直接对原始手机备份执行扫描或移动。
+
+### `llm/` — LLM 工具
+**状态：活跃使用**
+
+通过后端 LLM 池（多 key 并发）执行批量 LLM 任务的工具集。
+- `summarize_posts_direct.py` — 批量总结社群帖子（多维评分 + 加权排序）
+- `mimo_batch_comment.py` — 批量代码注释生成（Python/C# 源码添加中文注释）
+- `test_api_batch.py` — API 端点可用性批量测试
+- `test_llm.py` — 快速测试 LLM 池是否可用
+- `llm_token_stats.py` — Token 消耗统计报告
+
+### `media_classifier/` — 媒体分类
+**状态：活跃使用**
+
+多种媒体内容的 LLM 分类工具。以后可能有文段、视频、歌词等需要整理时复用。
+- `bilibili_classifier.py` — <data_drive>:\<bilibili_videos>视频分类 Phase 1（扫描+弹幕提取+LLM 10类分类）
+- `bilibili_mover.py` — <data_drive>:\<bilibili_videos>视频分类移动 Phase 2（按分类+置信度分层 move）
+- `print_anime.py` — 打印动漫分类结果
+- `wenzhang_classifier.py` — 文字篇章整理（txt/docx 解析+LLM 15类分类+特征提取）
+- `scan_wenzhang.py` — 扫描文字篇章文件夹统计
+- `scan_docx.py` — 读取 docx 段落结构
+- `count_segments.py` — 统计文段数量
+- `mimo_lrc_analyze.py` — LRC 歌词分析（情感/主题/风格，支持 MuseArc 数据库关联）
+
+### `mindforge/` — MindForge 文档转换
+- `converter_daemon.py` — 文档转换守护进程（MineRU + PaddleOCR），通过 stdin/stdout JSON 协议通信
+
+### `recorder/` — 操作录制器（L0 采集层 + L1 处理层 + L2 时间轴层 + L3 编辑层 + L4 消费层入口）
+录制键鼠操作 + 屏幕截图 + 麦克风音频 + 窗口焦点，生成可回放的录制包。独立进程运行（不走后端 API），通过 `python -m tools.recorder.main` 启动。
+- `main.py` — 启动入口（CLI 参数解析 + GUI 协调 + 无 GUI 冒烟模式）
+- `timeline_cli.py` — L2 时间轴层 CLI 入口（`python -m tools.recorder.timeline_cli <package_path>`，构建 timeline.json + 预览 6 项摘要）
+- `editor/` — L3 编辑层子目录（`python -m tools.recorder.editor <package_path>` 启动可视化编辑器：三区域 GUI + 12 项工具栏 + 音频调参面板 + STT 重跑；所有编辑写入 annotations.json，timeline.json 只读）
+- `config_loader.py` — config.toml `[recording]` 段加载器
+- `config.py` — RecordingConfig dataclass + detailed/coarse 工厂函数
+- `config_dialog.py` — ConfigDialog（范围/模式/参数选择对话框）
+- `hotkey_manager.py` — HotkeyManager（Ctrl+Alt+R 全局热键）
+- `floating_bar.py` — FloatingBar（小模式悬浮条，单屏场景）
+- `monitor_window.py` — MonitorWindow（大模式监控面板，双屏场景）
+- `recorder_app.py` — RecorderApp（协调类 + 30 分钟自动停止）
+- 底层传感器在 `lib/recorder/sensors/`（keyboard/mouse/screen/audio/window）
+- L1 处理层在 `lib/recorder/processor/`（process_recording_package 入口 + P1/P4/P5 + P2/P3 接口）
+- L2 时间轴层在 `lib/recorder/timeline/`（build_timeline 入口 + T1 时间轴引擎 + T2 章节切分 + T3 标注器 + preview 预览）
+- L3 编辑层在 `lib/recorder/editor/`（merge_timeline_annotations 入口 + 13 个 Action 枚举 + AnnotationStore undo/redo + apply_annotation + audio_preview 切片预览）
+- L4 消费层在 `lib/recorder/consumer/`（agent 公用库：list_recordings / get_merged_view / select_vl_candidates / build_vl_question / log_consumption / regenerate_manifest；不含 CLI 入口，agent 直接 import；**无后端 HTTP 端点**，D055 变更）
+- 用户文档详见 `docs/recorder-guide.md`（含第十九章 L4 消费层）
+
+### `release/` — 源码分发审计（v2 compiler 引擎）
+- `cli.py` — 单入口多 subcommand CLI（`prepare` / `compute-digest` / `build` / `list-components` / `scan`）。所有发布工作流经此入口；旧的 `audit_profile.py` + `export_release.py` 已删除（2026-07-31，T18）
+- `engine/` — 不可变 PreparedRelease 计划模型 + `prepare_release()` + `build_release()` 接口实现（spec-v2-compiler.md）
+- `templates/` — Jinja2 模板（`DEPLOYMENT.md.j2` / `RELEASE_NOTES.md.j2`），不含 `zip_size` 字段
+
+### `wechat_export_organize.py` — 微信收藏导出整理
+将 `temp/微信收藏导出/` 下的内容整理为可读的 Markdown 格式。
+
+### `user_message_gui.py` — 用户消息输入 GUI
+Tkinter GUI 窗口，用于向后端发送用户消息。
+
+### `fake_llm_proxy.py` — Fake LLM Proxy
+学习用虚拟 API 端点，接收 OpenAI 格式请求返回默认文本，内置实时网页监控。
+
+## 已迁移到 workspace/
+
+以下脚本已迁移到 `workspace/<task_name>/` 任务工作区（脚本+数据+配置统一存放）：
+
+| 任务工作区 | 包含脚本 |
+|----------|---------|
+| `workspace/accounting/` | bill_converter.py、记账.bat、name_mapping.json、review_config.json |
+| `workspace/arknights_gacha/` | arknights_gacha.py、arknights_import.py |
+| `workspace/bilibili_gacha/` | bilibili_gacha.py、bilibili_cleanup.py、bilibili_check_lottery.py |
+| `workspace/community_review/` | save_community.py、extract_community.py、sync_community.py、update_community.py、json_to_md.py、community_stats.py、community_stats_forShow.py、summarize_posts.py、migrate_timestamps.py、community_utils.py |
+| `workspace/endfield_gacha/` | endfield_gacha.py |
+| `workspace/niuke_review/` | nowcoder_embedded.py、nowcoder_review.py |
+| `workspace/official_gacha/` | official_gacha.py |
+| `workspace/wuwa_gacha/` | wuwa_gacha.py |
+| `workspace/yihuan_gacha/` | yihuan_gacha.py、yihuan_clean.py、yihuan_review.py |
+| `workspace/yihuan_simulator/` | simulator/editor.py、simulator/viewer.py |
+
+## 已清理
+
+- `tools/agent/` — 空目录，已删除（未知创建时间和用途）
+- `tools/accounting/` — 已迁移到 `workspace/accounting/`
+- `tools/yihuan/` — 已迁移到 `workspace/yihuan_simulator/`
+- `tools/gacha/` — 抽卡脚本曾短暂存放于此，已分散迁移到各 `workspace/<game>_gacha/`

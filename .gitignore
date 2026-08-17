@@ -1,0 +1,154 @@
+chrome_debug/
+__pycache__/
+*.pyc
+.venv/
+config.toml
+# config.toml.bak 是 tools/migrate_secrets.py 生成的迁移前备份，含明文密钥
+# 必须排除，否则 git add . 会把明文 token 提交进仓库
+config.toml.bak
+*.bak
+temp/
+weights/
+models/
+# 注意：不要加裸规则 "memory/" —— 会误伤 server/memory/ 代码目录（曾导致
+# evidence.py / search_tracer.py 未进仓库，release 包后端启动即崩）。
+# 运行时记忆 DB 在 data/memory/ 下，已被下方 data/* 规则覆盖。
+# 运行时数据（LLM池/记忆DB/活动追踪/inbox 等）不进仓库，仅保留项目结构基线
+# 显式声明：data/secret/（secrets.toml 密钥文件）和 data/llm/（keys.json LLM 密钥库）
+# 均已被 data/* 覆盖，切勿添加 !data/secret/ 或 !data/llm/ 例外规则
+data/*
+!data/project_structure.json
+output/
+
+# 独立 Python 环境（venv 目录，环境产物不进仓库）
+envs/*
+
+# 参考项目（clone 的第三方代码/大体积二进制，整个目录不纳入版本控制）
+# 锚定根目录，避免误伤 .agents/skills/*/references/ 下的 skill 参考文档
+/references/
+
+# _vendor 目录已清空（2026-07-21 融合改造完成），仅保留 README.md 作为来源档案
+# cangjie-skill 已融入 .agents/skills/daily/cangjie_extraction/；其他 vendor 暂未接入
+# 未来如需重新同步上游 vendor，按 .agents/skills/_vendor/README.md "未来更新流程" 操作
+.agents/skills/_vendor/*
+!.agents/skills/_vendor/README.md
+
+# 数据库与运行时文件（不应进仓库）
+*.db-wal
+*.db-shm
+
+# release engine v2 plan files (per prepare_release call)
+# 保留 .gitkeep 让目录进仓库，实际 plan JSON 不进
+release/plans/*.json
+!release/plans/.gitkeep
+
+# release engine v2 build artifacts (dist/ + staging/)
+# dist/ 存最终 zip + sha256 sidecar；staging/ 存构建中间产物（失败时改名 .failed.zip）
+# 两者都是本地构建产物，不进仓库；保留 .gitkeep 让目录结构进 git
+release/dist/*
+!release/dist/.gitkeep
+release/staging/*
+!release/staging/.gitkeep
+
+# temp 子目录例外：长期探索产出（非敏感），强制纳入备份
+# 排除项：chat_mgmt_probe(对话db)/disk_scan_cache(本机路径)/pdf_extract(版权)/pytest_tmp(测试产物)/探索-unfinish(个人信息档案)/杂文档产出-待消化(账单流水)
+!temp/architecture_analysis/
+!temp/sdd/
+!temp/planning_archive/
+!temp/html/
+
+# file_classifier 个人本机状态（含本机路径 E:\<data_drive>:\<system_data_root>\<data_drive>:/Downloads）
+tools/file_classifier/state.json
+
+# bilibili_gacha 个人数据（含 <data_drive>:\<bilibili_videos> UID，不上传）
+workspace/bilibili_gacha/*.json
+
+# temp 例外中的轻度本机路径文件（含用户名 admin / 本机磁盘目录名）
+temp/sdd/lib-secret/privacy-audit-report.md
+temp/planning_archive/sdd/single-pass-disk-scan/e_drive_current_scan.json
+
+# 临时健康检查 dump（不应进仓库）
+temp_health.json
+
+# uiautomation 库运行时错误日志（不应进仓库）
+@AutomationLog.txt
+
+# todos 大体积附件（面试官系列 PDF/zip，单文件 10-40MB，不进仓库）
+# todos/ 已重命名为 planning_notes/，规则同步迁移（旧规则保留兼容历史 staged 文件）
+todos/**/*.pdf
+todos/**/*.zip
+planning_notes/**/*.pdf
+planning_notes/**/*.zip
+
+# workspace 敏感数据子目录（任务产出，含个人信息或大文件，不进仓库）
+workspace/accounting/账单/
+workspace/community_review/社群/
+workspace/community_review/summaries/
+workspace/community_review/reports/
+workspace/community_review/自主发展/
+workspace/community_review/自主规划/
+workspace/niuke_review/面经/
+workspace/niuke_review/saved_pdfs/
+workspace/disk_manager/scan/
+workspace/bilibili_video/
+workspace/wenzhang_review/
+workspace/image_organize/
+
+# 任务工作区数据子目录（样本图片/数据库/运行时状态/存档图片等大文件）
+workspace/image_organize_remote_vl_sample/source/
+workspace/image_organize_remote_vl_sample/files.db
+workspace/image_organize_remote_vl_sample/run_state.json
+workspace/image_organize_remote_vl_sample/sample_manifest.json
+workspace/web_archive/*/images/
+workspace/yihuan_gacha/test_samples/
+workspace/wechat_collection/
+workspace/exam_prep/
+# workspace/dev_toolkit/ 自 2026-07-21 起纳入 git 追踪（用户决策：朋友包分发需要）
+# 仅排除历史打包产物 zip
+workspace/dev_toolkit/dev_toolkit_v2.zip
+workspace/dev_toolkit/dev_toolkit*.zip
+workspace/ocr_calibration/
+workspace/dev_toolkit.zip
+workspace/gkd_signin/
+
+# IDE 平台内部产物（不进仓库）
+# 注：.trae/<data_drive>:\Documents/ 下设计文档历史上一并纳入仓库，新文档由用户决定
+
+# workspace/stock_advisor 数据库（行情快照+报告元数据+wisdom 调用记录，不入仓库）
+# holdings_personal.json 和 reports/ 已挪到 private_vault/stock_advisor/（obsidian vault，不进 release）
+# 注：workspace/stock_advisor/reports/ 含持仓分析，泄露交易习惯，不入仓库（2026-08-06 隐私审查修复）
+workspace/stock_advisor/data/*.db
+workspace/stock_advisor/data/*.duckdb
+workspace/stock_advisor/reports/
+
+# file_sample.json 文件分类工具的个人样本配置（含本机路径，不入仓库）
+# 锚定根目录，避免误伤 tools/file_classifier/ 下同名文件
+/file_sample.json
+
+# workspace/web_archive 个人爬取内容+图片（不入仓库）
+workspace/web_archive/xiaoheihe/
+
+# workspace/recorder/recordings 录制包（大体积本地数据：截图PNG + WAV音频 + 事件流，不入仓库）
+workspace/recorder/recordings/
+
+# 个人数据备份（DMCA 邮件、微信工具备份等，不入仓库）
+backups/
+
+# 私有文档仓库（private_vault/）：obsidian vault，整个目录不进仓库/release
+# 子目录：
+#   life_design/    - 人生设计对话存档 + 蓝图产出（life_design skill 写入）
+#   accounting/     - 账单核对产出（bill_review.txt / bill_review_data.json，accounting skill 写入）
+#   stock_advisor/  - 持仓配置 + 收盘分析报告（holdings_personal.json + reports/*.md）
+#   disk_manager/   - 磁盘清理评估报告
+#   activity/daily/ - 每日工作总结（DailySummarizeAction 自动生成 + agent 手动生成，不自动清理）
+# agent 运行时从此目录读取/写入私有产出
+/private_vault/
+
+# MAA patch 工作区（用户自写维护文档 + 上游 MAA 仓库副本）
+# 结构：maa-patch/ 顶层放用户自写文件（跟踪），maa-upstream/ 放上游 MAA 仓库（ignore）
+# 这样 maa-patch/ 不再是嵌套 git 仓库（.git 在 maa-upstream/ 内），4 个自写文件可被外层仓库跟踪
+workspace/maa-patch/*
+!workspace/maa-patch/MAINTENANCE.md
+!workspace/maa-patch/LESSONS.md
+!workspace/maa-patch/mumu-keepalive.patch
+!workspace/maa-patch/sync-maa-patch.ps1

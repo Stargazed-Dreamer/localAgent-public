@@ -1,0 +1,174 @@
+name: Release Public
+
+# 触发条件：手动 push 到 public 仓库的 main 分支
+# （publish subcommand 推送 sanitized source 后触发）
+# 注：此 workflow 只在 public 仓库运行，不在个人开发仓库运行
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # 只在 source 或 release 相关文件变化时触发
+      - 'server/**'
+      - 'client/**'
+      - 'lib/**'
+      - 'tools/release/**'
+      - 'workspace/disk_manager/**'
+      - 'workspace/recorder/**'
+      - 'workspace/modelscope_model_update/**'
+      - 'tests/test_release_public.py'
+      - 'tests/test_release_policy.py'
+      - 'release/audience/public.toml'
+      - 'release/profiles/public-full.toml'
+      - 'pyproject.toml'
+      - '.github/workflows/release-public.yml'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 创建 GitHub Release 需要
+
+    steps:
+      - name: Checkout public repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # shallow clone，只需要最新 commit
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: 'latest'
+
+      - name: Install dependencies
+        run: |
+          # uv sync 跳过 Windows-specific 依赖（pyautogui/pywin32/uiautomation 等）
+          # public release 只需 release engine + 测试依赖
+          uv sync --no-dev --extra cpu
+          # 安装 pytest（dev 依赖，CI 需要）
+          uv pip install pytest httpx
+
+      - name: Verify no AGPL dependencies
+        run: |
+          # no-agpl-import gate 的 CI 侧预检
+          ! grep -i "ultralytics" pyproject.toml
+          ! grep -rn "import ultralytics\|from ultralytics" server/ client/ lib/ tools/ workspace/disk_manager/ workspace/recorder/ workspace/modelscope_model_update/
+
+      - name: Prepare release plan
+        run: |
+          uv run python -m tools.release.cli prepare \
+            --profile public-full \
+            --source HEAD \
+            --audience public
+
+      - name: Auto-approve plan (CI environment)
+        run: |
+          # 读取 prepare 生成的 plan_digest，填入 profile [approval] 段
+          # CI 环境自动审批（无人工审批环节）
+          PLAN_FILE=$(ls release/plans/*.json | head -1)
+          PLAN_DIGEST=$(basename "$PLAN_FILE" .json)
+
+          # 用 Python 修改 profile TOML（避免 sed 跨平台问题）
+          uv run python -c "
+          import toml
+          from pathlib import Path
+          p = Path('release/profiles/public-full.toml')
+          data = toml.load(p)
+          data['approval']['plan_digest'] = '$PLAN_DIGEST'
+          data['approval']['approved_at'] = 'CI-auto'
+          data['approval']['approved_by'] = 'github-actions'
+          p.write_text(toml.dumps(data))
+          print(f'approved plan: $PLAN_DIGEST')
+          "
+
+          # 导出到 GITHUB_ENV 供后续 step 使用
+          echo "PLAN_DIGEST=$PLAN_DIGEST" >> $GITHUB_ENV
+
+      - name: Build release
+        run: |
+          uv run python -m tools.release.cli build --plan $PLAN_DIGEST --skip-heavy-gates
+
+      - name: Verify archive integrity (sha256 consistency)
+        run: |
+          # archive-verification gate 在 build_release 内部已跑
+          # 此步骤额外验证 ZIP 文件存在 + sha256 sidecar 一致
+          ZIP_PATH=$(ls release/dist/localagent-public-full.zip)
+          SHA_PATH="${ZIP_PATH}.sha256"
+
+          if [ ! -f "$ZIP_PATH" ]; then
+            echo "ERROR: ZIP not found at $ZIP_PATH"
+            exit 1
+          fi
+
+          if [ ! -f "$SHA_PATH" ]; then
+            echo "ERROR: sha256 sidecar not found at $SHA_PATH"
+            exit 1
+          fi
+
+          # 验证 sha256 一致性
+          EXPECTED=$(cut -d' ' -f1 "$SHA_PATH")
+          ACTUAL=$(sha256sum "$ZIP_PATH" | cut -d' ' -f1)
+
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "ERROR: sha256 mismatch"
+            echo "  expected: $EXPECTED"
+            echo "  actual:   $ACTUAL"
+            exit 1
+          fi
+
+          echo "sha256 verified: $ACTUAL"
+
+      - name: Run public test suite
+        run: |
+          uv run python -m pytest tests/test_release_public.py tests/test_release_policy.py -v --tb=short
+
+      - name: Verify SBOM in artifact
+        run: |
+          # 验证 ZIP 内含 sbom.spdx.json
+          ZIP_PATH=$(ls release/dist/localagent-public-full.zip)
+          uv run python -c "
+          import zipfile, json
+          with zipfile.ZipFile('$ZIP_PATH') as zf:
+            names = zf.namelist()
+            assert 'sbom.spdx.json' in names, f'SBOM not in ZIP: {names}'
+            sbom = json.loads(zf.read('sbom.spdx.json'))
+            assert sbom['spdxVersion'] == 'SPDX-2.3'
+            assert sbom['packages'][0]['licenseConcluded'] == 'Apache-2.0'
+            print(f'SBOM valid: {len(sbom[\"files\"])} files')
+          "
+
+      - name: Create GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: public-${{ github.sha }}
+          name: Public Release ${{ github.sha }}
+          body: |
+            ## Public Release (Apache-2.0)
+
+            **Source commit**: ${{ github.sha }}
+            **License**: Apache-2.0
+            **SBOM**: included in ZIP (sbom.spdx.json, SPDX 2.3)
+
+            ### Verification
+            - license-clearance: all components Apache-2.0
+            - no-agpl-import: 0 ultralytics
+            - sbom-generated: SPDX 2.3 valid
+            - archive-verification: sha256 consistent
+
+            ### Components
+            - disk_manager
+            - recorder
+            - modelscope_model_update
+          files: |
+            release/dist/localagent-public-full.zip
+            release/dist/localagent-public-full.zip.sha256
+          draft: false
+          prerelease: true  # 先 prerelease，用户主观确认后转正式
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,26 @@
+[component]
+name = "modelscope_model_update"
+version = "0.1.0"
+description = "ModelScope 模型库更新 - 扫描前沿模型+榜单评估+写入 keys.json（覆盖 LLM/VL/aigc_image/aigc_video+TTS/ASR 仅记录）"
+project_tag = "modelscope_model_update"
+enabled = true
+
+[exports.runtime]
+files = ["workspace/modelscope_model_update/**"]
+
+[exports.source]
+files = ["workspace/modelscope_model_update/**", "tests/test_modelscope_model_update*.py"]
+
+[release_facts]
+contains_personal_data = false
+requires_external_credentials = true
+license_class = "apache-2.0"
+
+[agent_guide]
+file = "loop_actions.py"
+entries_var = "GUIDE_REGISTRY_ENTRIES"
+
+[skill]
+file = "SKILL.md"
+task_type = "adhoc.modelscope_model_update"
+index_section = "components"

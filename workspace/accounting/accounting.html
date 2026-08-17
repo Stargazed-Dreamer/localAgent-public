@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>记账审核</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
+
+.header { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header-info { font-size: 13px; color: #666; }
+
+.tabs { display: flex; background: #fff; border-bottom: 2px solid #e0e0e0; padding: 0 24px; }
+.tab { padding: 10px 20px; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -2px; color: #666; transition: all 0.2s; }
+.tab:hover { color: #333; }
+.tab.active { color: #1976d2; border-bottom-color: #1976d2; font-weight: 500; }
+.tab .badge { background: #e0e0e0; border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-left: 4px; }
+.tab.active .badge { background: #bbdefb; }
+
+.toolbar { padding: 8px 24px; background: #fff; border-bottom: 1px solid #eee; display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.toolbar .stat { color: #666; }
+.toolbar .stat b { color: #333; }
+
+.table-wrap { padding: 12px 24px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+th { background: #fafafa; padding: 8px 10px; text-align: left; font-size: 12px; font-weight: 600; color: #666; border-bottom: 1px solid #e0e0e0; white-space: nowrap; }
+td { padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+tr:hover td { background: #f8f9ff; }
+tr.skip td { opacity: 0.5; }
+tr.refund td { background: #fff8e1; }
+
+.mark { font-weight: bold; width: 20px; text-align: center; }
+.mark-ok { color: #4caf50; }
+.mark-warn { color: #ff9800; }
+.mark-err { color: #f44336; }
+.mark-skip { color: #9e9e9e; }
+
+.amount { font-family: "SF Mono", Consolas, monospace; text-align: right; white-space: nowrap; }
+.amount-income { color: #4caf50; }
+.amount-expense { color: #333; }
+
+.time-col { white-space: nowrap; font-size: 12px; color: #666; }
+.original-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #888; }
+.product { font-size: 11px; color: #aaa; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Combobox */
+.combobox { position: relative; width: 100%; }
+.combobox input { width: 100%; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; outline: none; transition: border-color 0.2s; }
+.combobox input:focus { border-color: #1976d2; }
+.combobox input.changed { border-color: #ff9800; background: #fff8e1; }
+.combobox-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 4px; max-height: 240px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: none; }
+.combobox-dropdown.show { display: block; }
+.combobox-option { padding: 6px 10px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; }
+.combobox-option:hover { background: #e3f2fd; }
+.combobox-option.highlight { background: #bbdefb; }
+.combobox-option .match { color: #1976d2; font-weight: 600; }
+.combobox-option .hint { color: #999; font-size: 11px; margin-left: 8px; }
+.combobox-option.smart { background: #e8f5e9; }
+.combobox-option.smart:hover { background: #c8e6c9; }
+
+/* Sector select */
+.sector-select { padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; outline: none; background: #fff; cursor: pointer; }
+.sector-select:focus { border-color: #1976d2; }
+.sector-select.changed { border-color: #ff9800; background: #fff8e1; }
+
+/* Confirm area */
+.confirm-bar { position: sticky; bottom: 0; background: #fff; border-top: 1px solid #e0e0e0; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+.btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+.btn-primary { background: #1976d2; color: #fff; }
+.btn-primary:hover { background: #1565c0; }
+.btn-primary:disabled { background: #bdbdbd; cursor: not-allowed; }
+.btn-secondary { background: #f5f5f5; color: #333; border: 1px solid #ddd; }
+.btn-secondary:hover { background: #eee; }
+.btn-danger { background: #f44336; color: #fff; }
+.btn-danger:hover { background: #d32f2f; }
+
+/* Empty state */
+.empty { text-align: center; padding: 60px 20px; color: #999; }
+.empty h2 { font-size: 18px; margin-bottom: 8px; color: #666; }
+.empty p { font-size: 14px; margin-bottom: 16px; }
+
+/* Loading */
+.loading { text-align: center; padding: 40px; color: #666; }
+
+/* Toast */
+.toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 6px; color: #fff; font-size: 14px; z-index: 1000; opacity: 0; transition: opacity 0.3s; }
+.toast.show { opacity: 1; }
+.toast-success { background: #4caf50; }
+.toast-error { background: #f44336; }
+.toast-info { background: #1976d2; }
+
+/* Confirm reason tooltip */
+.reason { font-size: 11px; color: #ff9800; cursor: help; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>记账审核</h1>
+  <div class="header-info" id="headerInfo">加载中...</div>
+</div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-source="微信" onclick="switchTab('微信')">
+    微信 <span class="badge" id="wechatCount">0</span>
+  </div>
+  <div class="tab" data-source="支付宝" onclick="switchTab('支付宝')">
+    支付宝 <span class="badge" id="alipayCount">0</span>
+  </div>
+</div>
+
+<div class="toolbar" id="toolbar">
+  <span class="stat">共 <b id="totalCount">0</b> 条</span>
+  <span class="stat">| 自动 <b id="autoCount" style="color:#4caf50">0</b></span>
+  <span class="stat">需确认 <b id="warnCount" style="color:#ff9800">0</b></span>
+  <span class="stat">未映射 <b id="errCount" style="color:#f44336">0</b></span>
+  <span class="stat">| 已修改 <b id="changedCount" style="color:#1976d2">0</b></span>
+  <span style="flex:1"></span>
+  <button class="btn btn-secondary" onclick="resetChanges()">重置修改</button>
+</div>
+
+<div class="table-wrap">
+  <div id="emptyState" class="empty" style="display:none">
+    <h2>暂无审核数据</h2>
+    <p>请先将账单文件放入 workspace/accounting/账单/ 目录，然后点击下方按钮生成审核数据</p>
+    <button class="btn btn-primary" onclick="generateData()">生成审核数据</button>
+  </div>
+  <div id="loadingState" class="loading" style="display:none">加载中...</div>
+  <table id="reviewTable" style="display:none">
+    <thead>
+      <tr>
+        <th style="width:20px"></th>
+        <th class="time-col">日期</th>
+        <th>原始名称</th>
+        <th style="width:80px">金额</th>
+        <th style="width:70px">板块</th>
+        <th style="width:100px">大类</th>
+        <th>说明文本</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<div class="confirm-bar" id="confirmBar" style="display:none">
+  <div>
+    <button class="btn btn-primary" id="confirmBtn" onclick="confirmAll()">确认并应用</button>
+    <button class="btn btn-secondary" onclick="generateData()" style="margin-left:8px">重新生成</button>
+  </div>
+  <div style="font-size:13px;color:#666" id="confirmHint">确认后将写入 Obsidian 记账文件并 git commit</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// === 全局状态 ===
+let reviewData = null;
+let config = null;
+let items = [];
+let currentTab = '微信';
+let changedItems = new Set();
+let sessionValues = { categories: {}, descriptions: {} }; // 本次会话用户输入的新值
+
+// === 智能推荐：基于原始名称推断说明文本 ===
+// 从映射表和已有数据构建原始名称→说明文本的关联
+let smartHints = {}; // { originalName_lower: [{desc, category, count}] }
+
+function buildSmartHints() {
+  smartHints = {};
+  if (!reviewData) return;
+
+  // 从审核数据中统计原始名称→说明文本的映射
+  items.forEach(item => {
+    if (item.is_skip || !item.original_name) return;
+    const key = item.original_name.toLowerCase().trim();
+    if (!smartHints[key]) smartHints[key] = {};
+    const hintKey = `${item.category}::${item.description}`;
+    smartHints[key][hintKey] = (smartHints[key][hintKey] || 0) + 1;
+  });
+
+  // 从映射表补充
+  if (reviewData.mapping) {
+    const fixed = reviewData.mapping.fixed || {};
+    Object.entries(fixed).forEach(([name, info]) => {
+      const key = name.toLowerCase().trim();
+      if (!smartHints[key]) smartHints[key] = {};
+      const hintKey = `${info.category}::${info.name}`;
+      smartHints[key][hintKey] = (smartHints[key][hintKey] || 0) + 2; // 映射表权重更高
+    });
+  }
+}
+
+function getSmartHints(originalName, category) {
+  if (!originalName) return [];
+  const key = originalName.toLowerCase().trim();
+
+  // 精确匹配
+  let hints = smartHints[key] || {};
+
+  // 模糊匹配：原始名称包含或被包含
+  Object.entries(smartHints).forEach(([k, v]) => {
+    if (k !== key && (k.includes(key) || key.includes(k))) {
+      Object.entries(v).forEach(([hintKey, count]) => {
+        hints[hintKey] = (hints[hintKey] || 0) + Math.floor(count * 0.5);
+      });
+    }
+  });
+
+  // 转换为排序后的推荐列表
+  return Object.entries(hints)
+    .map(([hintKey, count]) => {
+      const [cat, desc] = hintKey.split('::');
+      return { category: cat, description: desc, score: count };
+    })
+    .filter(h => !category || h.category === category)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+}
+
+// === 模糊匹配 ===
+function fuzzyMatch(text, query) {
+  if (!query) return { match: true, score: 1 };
+  const t = text.toLowerCase();
+  const q = query.toLowerCase();
+
+  // 完全包含 → 最高分
+  if (t.includes(q)) return { match: true, score: 10 + q.length };
+
+  // 拼音首字母匹配（简单版：取每字首字母）
+  // 跳过，太复杂
+
+  // 字符序列匹配：query的字符按顺序出现在text中
+  let ti = 0, qi = 0, consecutive = 0, maxConsecutive = 0;
+  while (ti < t.length && qi < q.length) {
+    if (t[ti] === q[qi]) {
+      qi++;
+      consecutive++;
+      maxConsecutive = Math.max(maxConsecutive, consecutive);
+    } else {
+      consecutive = 0;
+    }
+    ti++;
+  }
+  if (qi === q.length) return { match: true, score: 3 + maxConsecutive };
+
+  return { match: false, score: 0 };
+}
+
+// === 初始化 ===
+async function init() {
+  await loadConfig();
+  await loadReviewData();
+}
+
+async function loadConfig() {
+  try {
+    const resp = await fetch('/accounting/config');
+    config = await resp.json();
+  } catch (e) {
+    console.error('加载配置失败:', e);
+    config = { sectors: {}, descriptions: {} };
+  }
+}
+
+async function loadReviewData() {
+  document.getElementById('loadingState').style.display = 'block';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('reviewTable').style.display = 'none';
+  document.getElementById('confirmBar').style.display = 'none';
+
+  try {
+    const resp = await fetch('/accounting/review-data');
+    if (!resp.ok) {
+      showEmpty();
+      return;
+    }
+    reviewData = await resp.json();
+    items = reviewData.items.map(item => ({
+      ...item,
+      origSector: item.sector,
+      origCategory: item.category,
+      origDescription: item.description
+    }));
+    changedItems.clear();
+    sessionValues = { categories: {}, descriptions: {} };
+    buildSmartHints();
+    renderTable();
+  } catch (e) {
+    console.error('加载审核数据失败:', e);
+    showEmpty();
+  } finally {
+    document.getElementById('loadingState').style.display = 'none';
+  }
+}
+
+function showEmpty() {
+  document.getElementById('emptyState').style.display = 'block';
+  document.getElementById('headerInfo').textContent = '无数据';
+}
+
+// === 渲染表格 ===
+function renderTable() {
+  const filtered = items.filter(i => i.source === currentTab && !i.is_skip);
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+
+  let auto = 0, warn = 0, err = 0;
+  items.filter(i => !i.is_skip).forEach(i => {
+    if (i.mark === '✓') auto++;
+    else if (i.mark === '!') warn++;
+    else if (i.mark === '?') err++;
+  });
+
+  document.getElementById('wechatCount').textContent = items.filter(i => i.source === '微信' && !i.is_skip).length;
+  document.getElementById('alipayCount').textContent = items.filter(i => i.source === '支付宝' && !i.is_skip).length;
+  document.getElementById('totalCount').textContent = filtered.length;
+  document.getElementById('autoCount').textContent = auto;
+  document.getElementById('warnCount').textContent = warn;
+  document.getElementById('errCount').textContent = err;
+  document.getElementById('changedCount').textContent = changedItems.size;
+
+  const genAt = reviewData.generated_at ? new Date(reviewData.generated_at).toLocaleString('zh-CN') : '';
+  document.getElementById('headerInfo').textContent = `生成于 ${genAt} | 共 ${items.length} 条`;
+
+  if (filtered.length === 0) {
+    document.getElementById('reviewTable').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'block';
+    document.getElementById('emptyState').querySelector('h2').textContent = '当前来源无数据';
+    return;
+  }
+
+  document.getElementById('reviewTable').style.display = 'table';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('confirmBar').style.display = 'flex';
+
+  filtered.forEach(item => {
+    const tr = document.createElement('tr');
+    if (item.is_skip) tr.className = 'skip';
+    if (item.is_refund) tr.className = 'refund';
+
+    const markTd = document.createElement('td');
+    markTd.className = 'mark';
+    if (item.mark === '✓') markTd.innerHTML = '<span class="mark-ok">✓</span>';
+    else if (item.mark === '!') markTd.innerHTML = '<span class="mark-warn">!</span>';
+    else if (item.mark === '?') markTd.innerHTML = '<span class="mark-err">?</span>';
+    else markTd.innerHTML = '<span class="mark-skip">⊘</span>';
+
+    const timeTd = document.createElement('td');
+    timeTd.className = 'time-col';
+    timeTd.textContent = item.time.substring(5, 16);
+
+    const nameTd = document.createElement('td');
+    nameTd.innerHTML = `<div class="original-name" title="${esc(item.original_name)}">${esc(item.original_name)}</div>`;
+    if (item.product) {
+      nameTd.innerHTML += `<div class="product" title="${esc(item.product)}">${esc(item.product)}</div>`;
+    }
+    if (item.confirm_reason) {
+      nameTd.innerHTML += `<div class="reason" title="${esc(item.confirm_reason)}">${esc(item.confirm_reason)}</div>`;
+    }
+
+    const amtTd = document.createElement('td');
+    amtTd.className = 'amount ' + (item.direction === '收入' ? 'amount-income' : 'amount-expense');
+    const prefix = item.direction === '收入' ? '+' : '';
+    amtTd.textContent = prefix + formatAmount(item.amount);
+
+    // 板块
+    const sectorTd = document.createElement('td');
+    const sectorSel = document.createElement('select');
+    sectorSel.className = 'sector-select';
+    if (changedItems.has(item.id)) sectorSel.classList.add('changed');
+    ['出', '进', '理财'].forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      if (s === item.sector) opt.selected = true;
+      sectorSel.appendChild(opt);
+    });
+    sectorTd.appendChild(sectorSel);
+
+    // 大类 (combobox)
+    const catTd = document.createElement('td');
+    const catOptions = getCategoriesForSector(item.sector);
+    const catCombo = createCombobox(item.category, catOptions, val => {
+      item.category = val;
+      markChanged(item);
+      // 新值立即加入会话推荐池
+      addSessionCategory(item.sector, val);
+      // 更新说明文本下拉
+      updateDescriptionCombo(item, descInput);
+    }, { type: 'category', sector: item.sector });
+    const catInput = catCombo.querySelector('input');
+
+    // 说明文本 (combobox)
+    const descTd = document.createElement('td');
+    const descOptions = getDescriptionsForCategory(item.category);
+    const smartHintsForItem = getSmartHints(item.original_name, item.category);
+    const descCombo = createCombobox(item.description, descOptions, val => {
+      item.description = val;
+      markChanged(item);
+      // 新值立即加入会话推荐池
+      addSessionDescription(item.category, val);
+    }, { type: 'description', category: item.category, originalName: item.original_name, smartHints: smartHintsForItem });
+    const descInput = descCombo.querySelector('input');
+
+    // 板块change联动
+    sectorSel.addEventListener('change', () => {
+      item.sector = sectorSel.value;
+      markChanged(item);
+      updateCategoryCombo(item, catInput);
+      updateDescriptionCombo(item, descInput);
+    });
+
+    sectorTd.appendChild(sectorSel);
+    catTd.appendChild(catCombo);
+    descTd.appendChild(descCombo);
+    tr.append(markTd, timeTd, nameTd, amtTd, sectorTd, catTd, descTd);
+    tbody.appendChild(tr);
+  });
+}
+
+function updateCategoryCombo(item, catInput) {
+  const categories = getCategoriesForSector(item.sector);
+  const currentVal = catInput.value;
+  if (!categories.includes(currentVal) && !getSessionCategories(item.sector).includes(currentVal)) {
+    catInput.value = '';
+    item.category = '';
+  }
+  // 通知combobox刷新选项
+  const combo = catInput.parentElement;
+  if (combo._refreshOptions) combo._refreshOptions(categories);
+}
+
+function updateDescriptionCombo(item, descInput) {
+  const descriptions = getDescriptionsForCategory(item.category);
+  const combo = descInput.parentElement;
+  if (combo._refreshOptions) {
+    const hints = getSmartHints(item.original_name, item.category);
+    combo._refreshOptions(descriptions, { category: item.category, originalName: item.original_name, smartHints: hints });
+  }
+}
+
+// === 会话值管理 ===
+function addSessionCategory(sector, cat) {
+  if (!sessionValues.categories[sector]) sessionValues.categories[sector] = new Set();
+  sessionValues.categories[sector].add(cat);
+}
+
+function addSessionDescription(category, desc) {
+  if (!category) return;
+  if (!sessionValues.descriptions[category]) sessionValues.descriptions[category] = new Set();
+  sessionValues.descriptions[category].add(desc);
+}
+
+function getSessionCategories(sector) {
+  return [...(sessionValues.categories[sector] || [])];
+}
+
+function getSessionDescriptions(category) {
+  return [...(sessionValues.descriptions[category] || [])];
+}
+
+// === Combobox 组件 ===
+function createCombobox(value, options, onChange, context = {}) {
+  const wrap = document.createElement('div');
+  wrap.className = 'combobox';
+
+  const input = document.createElement('input');
+  input.value = value || '';
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'combobox-dropdown';
+
+  let currentOptions = [...options];
+  let currentContext = context;
+
+  function getAllOptions() {
+    // 合并配置选项 + 会话新输入的值
+    let all = [...currentOptions];
+    if (currentContext.type === 'category' && currentContext.sector) {
+      getSessionCategories(currentContext.sector).forEach(c => {
+        if (!all.includes(c)) all.push(c);
+      });
+    }
+    if (currentContext.type === 'description' && currentContext.category) {
+      getSessionDescriptions(currentContext.category).forEach(d => {
+        if (!all.includes(d)) all.push(d);
+      });
+    }
+    return all;
+  }
+
+  function renderOptions(filter = '') {
+    dropdown.innerHTML = '';
+    const allOpts = getAllOptions();
+
+    // 智能推荐（仅说明文本列）
+    let smartItems = [];
+    if (currentContext.type === 'description' && currentContext.smartHints && currentContext.smartHints.length > 0) {
+      smartItems = currentContext.smartHints.filter(h => h.description && !filter || fuzzyMatch(h.description, filter).match);
+    }
+
+    // 模糊匹配已有选项
+    let matched = [];
+    if (filter) {
+      const scored = allOpts.map(o => ({ text: o, ...fuzzyMatch(o, filter) }))
+        .filter(o => o.match)
+        .sort((a, b) => b.score - a.score);
+      matched = scored.map(s => s.text);
+    } else {
+      matched = allOpts;
+    }
+
+    // 先显示智能推荐
+    if (smartItems.length > 0) {
+      smartItems.slice(0, 3).forEach(hint => {
+        if (matched.includes(hint.description)) return; // 避免重复
+        const div = document.createElement('div');
+        div.className = 'combobox-option smart';
+        div.innerHTML = `<span>${esc(hint.description)}</span><span class="hint">推荐</span>`;
+        div.addEventListener('mousedown', e => {
+          e.preventDefault();
+          input.value = hint.description;
+          dropdown.classList.remove('show');
+          onChange(hint.description);
+          input.classList.add('changed');
+        });
+        dropdown.appendChild(div);
+      });
+    }
+
+    // 再显示匹配的已有选项
+    matched.slice(0, 20).forEach(opt => {
+      const div = document.createElement('div');
+      div.className = 'combobox-option';
+      if (filter) {
+        const fm = fuzzyMatch(opt, filter);
+        if (fm.match && opt.toLowerCase().includes(filter.toLowerCase())) {
+          const idx = opt.toLowerCase().indexOf(filter.toLowerCase());
+          div.innerHTML = esc(opt.substring(0, idx)) +
+            '<span class="match">' + esc(opt.substring(idx, idx + filter.length)) + '</span>' +
+            esc(opt.substring(idx + filter.length));
+        } else {
+          div.textContent = opt;
+        }
+      } else {
+        div.textContent = opt;
+      }
+      div.addEventListener('mousedown', e => {
+        e.preventDefault();
+        input.value = opt;
+        dropdown.classList.remove('show');
+        onChange(opt);
+        input.classList.add('changed');
+      });
+      dropdown.appendChild(div);
+    });
+
+    // 无匹配提示
+    if (matched.length === 0 && smartItems.length === 0 && filter) {
+      const div = document.createElement('div');
+      div.className = 'combobox-option';
+      div.style.color = '#999';
+      div.textContent = `无匹配，回车确认 "${filter}"`;
+      dropdown.appendChild(div);
+    }
+  }
+
+  // 暴露刷新方法
+  wrap._refreshOptions = function(newOptions, newContext) {
+    currentOptions = [...newOptions];
+    if (newContext) currentContext = { ...currentContext, ...newContext };
+  };
+
+  input.addEventListener('focus', () => {
+    renderOptions(input.value);
+    dropdown.classList.add('show');
+  });
+
+  input.addEventListener('input', () => {
+    renderOptions(input.value);
+    dropdown.classList.add('show');
+  });
+
+  input.addEventListener('blur', () => {
+    dropdown.classList.remove('show');
+    onChange(input.value);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      dropdown.classList.remove('show');
+      onChange(input.value);
+      input.blur();
+    } else if (e.key === 'Escape') {
+      dropdown.classList.remove('show');
+      input.blur();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const opts = dropdown.querySelectorAll('.combobox-option');
+      if (opts.length === 0) return;
+      const current = dropdown.querySelector('.combobox-option.highlight');
+      let idx = -1;
+      opts.forEach((o, i) => { if (o === current) idx = i; });
+      if (current) current.classList.remove('highlight');
+      if (e.key === 'ArrowDown') idx = Math.min(idx + 1, opts.length - 1);
+      else idx = Math.max(idx - 1, 0);
+      opts[idx].classList.add('highlight');
+      opts[idx].scrollIntoView({ block: 'nearest' });
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!wrap.contains(e.target)) {
+      dropdown.classList.remove('show');
+    }
+  });
+
+  wrap.append(input, dropdown);
+  return wrap;
+}
+
+// === 辅助函数 ===
+function getCategoriesForSector(sector) {
+  return [...(config?.sectors?.[sector] || [])];
+}
+
+function getDescriptionsForCategory(category) {
+  return [...(config?.descriptions?.[category] || [])];
+}
+
+function markChanged(item) {
+  if (item.sector !== item.origSector ||
+      item.category !== item.origCategory ||
+      item.description !== item.origDescription) {
+    changedItems.add(item.id);
+  } else {
+    changedItems.delete(item.id);
+  }
+  document.getElementById('changedCount').textContent = changedItems.size;
+}
+
+function formatAmount(n) {
+  if (n === Math.floor(n)) return String(Math.floor(n));
+  return String(n);
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// === Tab 切换 ===
+function switchTab(source) {
+  currentTab = source;
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.source === source);
+  });
+  renderTable();
+}
+
+// === 生成审核数据 ===
+async function generateData() {
+  showToast('正在生成审核数据...', 'info');
+  try {
+    const resp = await fetch('/accounting/generate', { method: 'POST' });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      showToast(`生成成功，共 ${data.item_count} 条记录`, 'success');
+      await loadReviewData();
+    } else {
+      showToast('生成失败: ' + (data.detail || data.message), 'error');
+    }
+  } catch (e) {
+    showToast('生成失败: ' + e.message, 'error');
+  }
+}
+
+// === 重置修改 ===
+function resetChanges() {
+  items.forEach(item => {
+    item.sector = item.origSector;
+    item.category = item.origCategory;
+    item.description = item.origDescription;
+  });
+  changedItems.clear();
+  sessionValues = { categories: {}, descriptions: {} };
+  renderTable();
+  showToast('已重置所有修改', 'info');
+}
+
+// === 确认并应用 ===
+async function confirmAll() {
+  const incomplete = items.filter(i => !i.is_skip && (!i.category || !i.description));
+  if (incomplete.length > 0) {
+    if (!confirm(`有 ${incomplete.length} 条记录的大类或说明文本为空，确定要继续吗？`)) {
+      return;
+    }
+  }
+
+  const btn = document.getElementById('confirmBtn');
+  btn.disabled = true;
+  btn.textContent = '应用中...';
+
+  try {
+    const payload = {
+      items: items.filter(i => !i.is_skip).map(i => ({
+        id: i.id,
+        sector: i.sector,
+        category: i.category,
+        description: i.description,
+      }))
+    };
+
+    const resp = await fetch('/accounting/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      showToast(`应用成功！${data.message}`, 'success');
+      setTimeout(() => {
+        reviewData = null;
+        items = [];
+        changedItems.clear();
+        showEmpty();
+      }, 2000);
+    } else {
+      showToast('应用失败: ' + (data.detail || data.message), 'error');
+    }
+  } catch (e) {
+    showToast('应用失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '确认并应用';
+  }
+}
+
+// === Toast ===
+function showToast(msg, type = 'info') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = `toast toast-${type} show`;
+  setTimeout(() => { toast.classList.remove('show'); }, 3000);
+}
+
+// === 启动 ===
+init();
+</script>
+</body>
+</html>

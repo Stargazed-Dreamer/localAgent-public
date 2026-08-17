@@ -1,0 +1,31 @@
+[component]
+name = "recorder"
+version = "0.1.0"
+description = "操作录制与 agent 辅助消费系统 - L0-L4 五层架构，L4 消费层 + L3 编辑器 GUI 在本组件，L0-L3 核心库在 lib/recorder/"
+project_tag = "recorder"
+enabled = true
+
+[exports.runtime]
+files = ["workspace/recorder/**"]
+
+[exports.source]
+files = ["workspace/recorder/**", "tests/test_recorder*.py"]
+
+[release_facts]
+contains_personal_data = false
+requires_external_credentials = false
+# 2026-07-31 T05b: 升级为 apache-2.0（stt_runner.py 移除硬编码个人路径，改为从 config.toml 读取后审查通过）
+# 审查记录：temp/sdd/release-engine/license-review/recorder.md
+license_class = "apache-2.0"
+
+[agent_guide]
+file = "loop_actions.py"
+entries_var = "GUIDE_REGISTRY_ENTRIES"
+
+[skill]
+file = "SKILL.md"
+task_type = "recording.consume"
+index_section = "components"
+
+[watch]
+paths = ["recordings/"]

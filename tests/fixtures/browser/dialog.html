@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Dialog Test Fixture</title>
+<style>body{font-family:sans-serif;padding:20px}button{margin:8px;padding:6px 12px}</style>
+</head>
+<body>
+<h1>Dialog Fixture</h1>
+<button id="alertBtn" onclick="window.alert('alert message')">Trigger Alert</button>
+<button id="confirmBtn" onclick="window.confirm('confirm message')">Trigger Confirm</button>
+<button id="promptBtn" onclick="window.prompt('prompt message')">Trigger Prompt</button>
+<button id="delayedAlertBtn">Trigger Delayed Alert (500ms)</button>
+<script>
+document.getElementById('delayedAlertBtn').addEventListener('click', function(){
+  setTimeout(function(){ window.alert('delayed alert message'); }, 500);
+});
+</script>
+</body>
+</html>

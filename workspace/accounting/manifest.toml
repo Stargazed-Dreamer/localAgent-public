@@ -1,0 +1,51 @@
+[component]
+name = "accounting"
+version = "0.4.0"
+description = "记账模块 - 账单识别+GUI审核+导出Obsidian，本地SQLite不走后端HTTP"
+project_tag = "accounting"
+enabled = true
+
+[exports.runtime]
+files = []
+
+[exports.source]
+# G3 决策（2026-08-10）：白名单只含非数据文件，排除 name_mapping.json/review_config.json/记账.bat/账单/
+files = [
+    "workspace/accounting/*.py",
+    "workspace/accounting/SKILL.md",
+    "workspace/accounting/manifest.toml",
+    "workspace/accounting/config_schema.toml",
+    "workspace/accounting/accounting.html",
+]
+
+[release_facts]
+contains_personal_data = false
+requires_external_credentials = true
+# 2026-08-10 T-v4: 升级为 apache-2.0（PySide6=LGPL-3.0 动态链接兼容 Apache-2.0，需保留 LGPL 声明）
+# 审查记录：temp/sdd/release-engine/license-review-v4/accounting.md
+license_class = "apache-2.0"
+
+[agent_guide]
+file = "loop_actions.py"
+entries_var = "GUIDE_REGISTRY_ENTRIES"
+
+[client_panel]
+file = "panel.py"
+class = "AccountingPanel"
+category = "main"
+order = 30
+
+[skill]
+file = "SKILL.md"
+task_type = "recurring.accounting"
+index_section = "components"
+
+[watch]
+paths = ["账单/", "data/accounting.db", "name_mapping.json", "review_config.json"]
+
+[config_schema]
+file = "config_schema.toml"
+
+[health_check]
+file = "health.py"
+function = "get_status"

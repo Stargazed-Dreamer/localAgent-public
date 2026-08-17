@@ -1,0 +1,31 @@
+[component]
+name = "disk_manager"
+version = "0.2.0"
+description = "磁盘空间分析与清理建议、系统环境全面备份（浏览器/游戏存档/桌面/系统设置）"
+project_tag = "disk_manager"
+enabled = true
+
+[exports.runtime]
+files = ["workspace/disk_manager/**"]
+
+[exports.source]
+files = ["workspace/disk_manager/**", "tests/test_disk_manager*.py"]
+
+[release_facts]
+contains_personal_data = false
+requires_external_credentials = false
+# 2026-07-31 T05a: 升级为 apache-2.0（移除 system_rebuild/ 中的 JetBrains 破解内容后审查通过）
+# 审查记录：temp/sdd/release-engine/license-review/disk_manager.md
+license_class = "apache-2.0"
+
+[agent_guide]
+file = "loop_actions.py"
+entries_var = "GUIDE_REGISTRY_ENTRIES"
+
+[skill]
+file = "SKILL.md"
+task_type = "adhoc.disk_cleanup"
+index_section = "components"
+
+[watch]
+paths = ["scripts/scan_disk.py", "scripts/cleanup.py", "scripts/backup_env.py", "scan/", "system_rebuild/manifest.json"]

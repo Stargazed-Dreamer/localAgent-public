@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Form Fixture</title>
+<style>body{font-family:sans-serif;padding:20px}button,input,select{margin:8px}</style>
+</head>
+<body>
+<h1>Form Fixture</h1>
+<!-- label 关联 input（测 label 定位） -->
+<label for="nameInput">Name</label>
+<input id="nameInput" type="text" placeholder="enter your name">
+
+<!-- placeholder 定位 -->
+<input id="emailInput" type="email" placeholder="enter your email">
+
+<!-- select by value / by label -->
+<label for="sel">Choice</label>
+<select id="sel">
+  <option value="opt1">选项一</option>
+  <option value="opt2">选项二</option>
+  <option value="opt3">选项三</option>
+</select>
+
+<!-- checkbox check/uncheck -->
+<label for="chk">Agree</label>
+<input id="chk" type="checkbox">
+
+<!-- 多个 button（测 nth + 严格模式） -->
+<button class="multi-btn">Button 1</button>
+<button class="multi-btn">Button 2</button>
+<button class="multi-btn">Button 3</button>
+
+<!-- 跳转链接（测 url_before/url_after） -->
+<a id="navLink" href="dialog.html">Go to Dialog</a>
+
+<p>Status: <span id="status">idle</span></p>
+<script>
+document.querySelectorAll('.multi-btn').forEach(function(btn, idx){
+  btn.addEventListener('click', function(){
+    document.getElementById('status').textContent = 'clicked ' + (idx+1);
+  });
+});
+document.getElementById('navLink').addEventListener('click', function(e){
+  document.getElementById('status').textContent = 'navigating';
+});
+</script>
+</body>
+</html>

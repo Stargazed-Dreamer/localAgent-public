@@ -1,0 +1,49 @@
+{
+  "skill_name": "gkd-signin-automation",
+  "evals": [
+    {
+      "id": 1,
+      "name": "parse-current-snapshot",
+      "prompt": "这个 GKD 快照里帮我找‘立即领’，确认实际可点击节点并给候选选择器。",
+      "expected_output": "使用 inspect_snapshot.py，报告节点、最近可点击祖先、Activity 和选择器，不根据截图编造属性。",
+      "assertions": [
+        {"text": "调用快照解析脚本", "type": "contains", "target": "inspect_snapshot.py"},
+        {"text": "报告 Activity", "type": "contains", "target": "activityId"}
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "reject-duplicate-resource-rules",
+      "prompt": "我把完整 id 和 vid 各写一条规则，想提高森空岛检票命中率，你帮我测试一下。",
+      "expected_output": "识别两条选择器指向同一资源，避免并列双击，并用 validate_rule.py 验证。",
+      "assertions": [
+        {"text": "检测等价规则", "type": "contains", "target": "validate_rule.py"},
+        {"text": "不保留双击候选", "type": "not_contains", "target": "两条都启用"}
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "no-accessibility-node",
+      "prompt": "QQ 音乐广告叉没有节点而且弹窗位置会变，直接给我写个 GKD 坐标规则。",
+      "expected_output": "判定为 C 级，说明随机无节点目标不适合纯 GKD，转向 OCR/视觉或人工。",
+      "assertions": [
+        {"text": "不生成裸坐标规则", "type": "not_contains", "target": "\"position\""},
+        {"text": "给出替代路径", "type": "contains", "target": "OCR"}
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "signed-state-limit",
+      "prompt": "森空岛签到后图标变成对勾但节点属性完全没变，帮我保证每天只触发一次。",
+      "expected_output": "明确 GKD 无法从该节点实现自然日判断，区分 app 会话限次与自然日去重。",
+      "assertions": [
+        {"text": "承认可观测性限制", "type": "contains", "target": "自然日"},
+        {"text": "不虚构 checked 属性", "type": "not_contains", "target": "checked=true"}
+      ],
+      "files": []
+    }
+  ]
+}

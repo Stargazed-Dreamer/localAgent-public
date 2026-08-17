@@ -1,0 +1,178 @@
+{
+  "_comment_top": "evals 模板：为 skill 量化评估提供配置。来自 anthropics/skills skill-creator。复制此文件到 <skill_name>/evals/evals.json 后按需修改。",
+  "_comment_usage": "使用方式：1) 新增/修改 skill 时，agent 读取 evals.json，按 prompt 执行 skill，对照 assertions 自检。2) 回归测试：用户说'测试 X skill'时，agent 跑 evals 并报告通过率。3) 双轨对照：with-skill vs without-skill，详见 skill_creator.md § 5.4。",
+  "_comment_required_fields": "必填字段：skill_name / version / eval_cases[].id / eval_cases[].user_prompt / eval_cases[].expected_behavior。assertions 可空（先跑 prompt 看 output 再补断言）。",
+  "skill_name": "示例 skill 名",
+  "version": "1.0.0",
+  "_comment_eval_cases": "eval_cases: 测试用例数组。2-5 个用例覆盖正常流程 + 1 个边界场景（空输入 / 异常数据）。",
+  "eval_cases": [
+    {
+      "_comment": "用例 1：基础正常流程。prompt 要像真人会说的话，不要写'测试 X 功能'。",
+      "id": "case_001",
+      "name": "basic_normal_flow",
+      "user_prompt": "帮我把 temp 目录里 7 天前的临时脚本清理一下",
+      "expected_behavior": "应该触发 temp_cleanup skill，列出待清理清单给用户审核，用户确认后才删除",
+      "expected_outputs": [
+        "列出待删除文件清单（含完整路径和大小）",
+        "未直接删除（先审核）",
+        "用户确认后才执行删除"
+      ],
+      "assertions": [
+        {
+          "_comment": "contains: 输出包含 target 字符串。最常用断言。",
+          "text": "输出包含文件清单表格",
+          "type": "contains",
+          "value": "文件"
+        },
+        {
+          "_comment": "contains: 输出包含路径或大小信息",
+          "text": "输出包含待删除文件路径或大小",
+          "type": "contains",
+          "value": "MB"
+        },
+        {
+          "_comment": "not_contains: 输出不包含 target。用于检查未做禁止操作（如未先确认就删除）。",
+          "text": "未直接执行删除（先审核）",
+          "type": "not_contains",
+          "value": "已删除"
+        }
+      ],
+      "timeout_seconds": 30,
+      "tags": ["basic", "regression", "safety"]
+    },
+    {
+      "_comment": "用例 2：边界场景——空输入。测试 skill 在没有目标数据时的行为。",
+      "id": "case_002",
+      "name": "empty_input_handling",
+      "user_prompt": "清理 temp 目录",
+      "expected_behavior": "temp 目录为空时，应返回'无待清理文件'，不报错",
+      "expected_outputs": [
+        "返回'无待清理文件'或类似提示",
+        "未触发删除操作"
+      ],
+      "assertions": [
+        {
+          "text": "输出包含空状态提示",
+          "type": "contains",
+          "value": "无待清理"
+        },
+        {
+          "text": "未触发删除操作",
+          "type": "not_contains",
+          "value": "delete"
+        }
+      ],
+      "timeout_seconds": 15,
+      "tags": ["edge_case", "empty_input"]
+    },
+    {
+      "_comment": "用例 3：格式校验。用 regex 断言验证输出格式。",
+      "id": "case_003",
+      "name": "output_format_validation",
+      "user_prompt": "导出本月记账数据到 Excel",
+      "expected_behavior": "生成 .xlsx 文件，文件名格式：accounting_YYYYMMDD.xlsx",
+      "expected_outputs": [
+        "生成 .xlsx 文件",
+        "文件名符合 accounting_YYYYMMDD.xlsx 格式"
+      ],
+      "assertions": [
+        {
+          "_comment": "regex: 输出匹配 value 正则。注意：value 是字符串形式的正则，不要带前后的 /。",
+          "text": "文件名符合 accounting_YYYYMMDD.xlsx 格式",
+          "type": "regex",
+          "value": "accounting_[0-9]{8}\\.xlsx"
+        },
+        {
+          "_comment": "file_exists: target 路径文件存在。用绝对路径或相对 skill 根的路径。",
+          "text": "生成 Excel 文件",
+          "type": "file_exists",
+          "path": "workspace/accounting/accounting_*.xlsx"
+        }
+      ],
+      "timeout_seconds": 60,
+      "tags": ["format", "file_output"]
+    },
+    {
+      "_comment": "用例 4：结构化输出校验。用 json_field 断言验证 JSON 输出的特定字段。",
+      "id": "case_004",
+      "name": "structured_output_validation",
+      "user_prompt": "查询今天的到期任务",
+      "expected_behavior": "返回 JSON 包含 tasks 数组，每个任务有 id/title/due_date 字段",
+      "expected_outputs": [
+        "JSON 结构包含 tasks 数组",
+        "每个任务有 id 字段"
+      ],
+      "assertions": [
+        {
+          "_comment": "json_field: target 是 'path->value'，输出 JSON 的 path 等于 value。path 用 -> 分隔（不是点号）。用于检查结构化输出。",
+          "text": "返回 JSON 含 tasks 数组",
+          "type": "json_field",
+          "path": "data->tasks",
+          "value": "is_array"
+        },
+        {
+          "text": "每个任务有 id 字段",
+          "type": "json_field",
+          "path": "data->tasks[0]->id",
+          "value": "not_null"
+        }
+      ],
+      "timeout_seconds": 15,
+      "tags": ["structured", "api_output"]
+    }
+  ],
+  "_comment_control_group": "control_group: 对照组。双轨对照（with-skill vs without-skill）的 baseline 配置。来自 anthropic skill-creator § 'Running and evaluating test cases'。",
+  "control_group": {
+    "description": "对照：不使用 skill 时的预期表现。每个 eval_case 跑两次（with-skill + without-skill），对照断言通过率差异",
+    "baseline_setup": "agent 不加载 skill，跑同一 prompt",
+    "_comment_expected_to_fail": "expected_to_fail_assertions: baseline 预期会失败的断言 ID 列表。如果 baseline 全部通过，说明 skill 没起到作用（description 没触发，或 skill 本身没价值）。",
+    "expected_to_fail_assertions": [
+      "case_001.assertion[1]",
+      "case_001.assertion[2]"
+    ],
+    "_comment_interpretation": "解读：1) with-skill 全过 + baseline 部分失败 → skill 有效；2) with-skill 和 baseline 表现一样 → description 没触发，或 skill 本身没价值；3) with-skill 比 baseline 还差 → skill 写错了，反而误导 agent。"
+  },
+  "_comment_assertion_types": "断言类型汇总（5 种）：",
+  "_assertion_types_reference": {
+    "contains": {
+      "description": "输出包含 value 字符串",
+      "fields": ["type=contains", "value=字符串", "text=断言描述"],
+      "example": "{'type':'contains','value':'文件','text':'输出包含文件清单'}"
+    },
+    "not_contains": {
+      "description": "输出不包含 value。用于检查未做禁止操作",
+      "fields": ["type=not_contains", "value=字符串", "text=断言描述"],
+      "example": "{'type':'not_contains','value':'delete','text':'未触发删除'}"
+    },
+    "regex": {
+      "description": "输出匹配 value 正则。value 是字符串形式，不带前后 /",
+      "fields": ["type=regex", "value=正则字符串", "text=断言描述"],
+      "example": "{'type':'regex','value':'[0-9]{4}-[0-9]{2}','text':'日期格式正确'}"
+    },
+    "file_exists": {
+      "description": "path 路径文件存在。支持通配符",
+      "fields": ["type=file_exists", "path=文件路径", "text=断言描述"],
+      "example": "{'type':'file_exists','path':'workspace/output.json','text':'生成输出文件'}"
+    },
+    "json_field": {
+      "description": "target 是 'path->value'，输出 JSON 的 path 等于 value。path 用 -> 分隔，支持 is_array / not_null 等特殊值",
+      "fields": ["type=json_field", "path=JSON路径", "value=期望值或特殊标记", "text=断言描述"],
+      "example": "{'type':'json_field','path':'data->result->status','value':'success'}"
+    }
+  },
+  "_comment_best_practices": "最佳实践：1) prompt 像真人说话，不要写'测试 X 功能'；2) 断言客观可验证，避免'输出质量高'主观判断；3) 2-5 个用例覆盖正常流程 + 1 个边界；4) 主观 skill（写作/设计）不强求 evals，靠人工评审；5) evals 6 要求：Independent / Read-only / Complex / Realistic / Verifiable / Stable。",
+  "_comment_advanced": "进阶（可选）：引入 anthropic 完整 evals 设施时，增加以下字段：",
+  "_advanced_fields_reference": {
+    "benchmark": {
+      "description": "记录 pass_rate / time / tokens 统计",
+      "fields": ["with_skill.pass_rate", "without_skill.pass_rate", "delta", "duration_ms", "total_tokens"]
+    },
+    "viewer": {
+      "description": "HTML 查看器，Outputs tab 看每个 case 输出 + Benchmark tab 看统计",
+      "launch": "python -m scripts.aggregate_benchmark <workspace>/iteration-N --skill-name <name>"
+    },
+    "analyst_pass": {
+      "description": "发现 patterns：non-discriminating assertions（baseline 也通过）/ 高方差 evals（flaky）/ time-token tradeoffs"
+    }
+  }
+}

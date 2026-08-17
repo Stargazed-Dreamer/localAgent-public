@@ -1,0 +1,60 @@
+# smoke_test.template — 通用冒烟测试模板
+#
+# 用法：复制本文件到项目测试目录，按项目实际改写。
+# 目标：用最少的代码，验证核心流程能端到端跑通。
+# 不要框架、不要 fixture，一个能跑的脚本即可。
+#
+# 下面以 Python 为例。其他语言同理：入口 → 核心路径 → 断言。
+#
+# ====================================================================
+
+"""
+冒烟测试：{功能名}
+
+验证 spec.md 里的核心 DoD：
+- DoD 1：{描述}
+- DoD 2：{描述}
+
+运行：python smoke_test.py
+退出码 0 = 全通过，非 0 = 有失败。
+"""
+import sys
+
+# === 1. 准备：导入被测模块 / 启动服务 ===
+# from my_app import create_app, db
+# app = create_app(testing=True)
+# client = app.test_client()
+
+failures = []
+
+def check(name, condition, detail=""):
+    if condition:
+        print(f"[PASS] {name}")
+    else:
+        print(f"[FAIL] {name}  {detail}")
+        failures.append(name)
+
+# === 2. 核心流程：按用户真实使用路径走 ===
+
+# 例：登录功能
+# resp = client.post('/login', json={'user':'a','pwd':'wrong'})
+# check('错误密码返回401', resp.status_code == 401, f'got {resp.status_code}')
+#
+# resp = client.post('/login', json={'user':'a','pwd':'right'})
+# check('正确密码返回200', resp.status_code == 200)
+# check('返回带token', 'token' in resp.get_json())
+
+# === 3. 边界 / 异常 ===
+# resp = client.post('/login', json={})
+# check('空入参返回422', resp.status_code == 422)
+
+# === 4. 清理 ===
+# db.session.remove()
+
+# === 5. 结论 ===
+if failures:
+    print(f"\n{len(failures)} 项失败：{failures}")
+    sys.exit(1)
+else:
+    print("\n全部通过")
+    sys.exit(0)

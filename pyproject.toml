@@ -1,0 +1,195 @@
+[project]
+name = "localagent"
+version = "0.39.0"
+description = "LocalAgent API backend with PaddleOCR-VL"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.136.3",
+    "fastapi-mcp>=0.4.0",
+    # T07：后端 async 端点同步 requests/urllib 全改 httpx.AsyncClient
+    # 原 dev 依赖（httpx>=0.28.1），现提为主依赖（server/llm_pool/ + apikey + browser 等运行时用）
+    "httpx>=0.28.1",
+    "mss>=10.2.0",
+    "onnxruntime-gpu>=1.26.0",
+    "openai>=2.41.0",
+    "openpyxl>=3.1.5",
+    "pymupdf>=1.25.0",
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "paddleocr[doc-parser]>=3.7.0",
+    "paddlepaddle-gpu==3.2.2",
+    "pillow>=12.2.0",
+    "pyautogui>=0.9.54",
+    "pynput>=1.8.2",
+    "pyperclip>=1.11.0",
+    "pyside6>=6.11.1",
+    # stock_advisor 面板 K 线图绘制依赖（FigureCanvasQTAgg 嵌入 PySide6）
+    # 修复教训（2026-08-03）：原 pyproject.toml 漏声明，导致干净环境 PanelRegistry.discover() 加载失败
+    "matplotlib>=3.9.0",
+    "python-multipart>=0.0.32",
+    "pywin32>=312",
+    "setuptools>=82.0.1",
+    "toml>=0.10.2",
+    # torch 必须列为直接依赖，否则 [tool.uv.sources] 对传递依赖不强制生效，
+    # uv 会从 PyPI 装 CPU 版 torch（曾导致朋友包 torch==2.10.0+cpu，CUDA 不可用）。
+    # 保留：embeddings (server/memory/embeddings.py) + STT (lib/recorder/processor/stt_engine.py) 使用
+    # （2026-07-31 OmniParser 移除，torchvision/supervision/timm/accelerate/ultralytics 已删）
+    "torch>=2.13.0",
+    "transformers>=4.45,<4.47",
+    "uvicorn>=0.49.0",
+    # 三层记忆系统 v2 依赖
+    "tokenizers>=0.20.0,<0.21",
+    "huggingface-hub>=0.32.0",
+    "jieba>=0.42.1",
+    "numpy>=1.26.0",
+    "orjson>=3.10.0",
+    "playwright>=1.60.0",
+    # phase 3 public audience: SPDX 2.3 SBOM 生成 + schema 校验（2026-07-31 用户批准）
+    "spdx-tools>=0.8.0",
+    "playwright-stealth>=2.0.3",
+    "uiautomation>=2.0.29",
+    "pandas>=3.0.3",
+    "baostock>=0.9.3",
+    "tushare>=1.4.15",
+    "duckdb>=1.5.4",
+    "akquant>=0.3.15",
+    "onnx>=1.22.0",
+    # 录制功能依赖（planning_notes/recording-feature/）
+    # faster-whisper 官方依赖 onnxruntime(CPU 版)，但项目用 onnxruntime-gpu（API 兼容，提供相同 import onnxruntime）
+    # 安装方式：`uv pip install faster-whisper --no-deps`，避免 CPU 版 onnxruntime 覆盖 GPU 版
+    "faster-whisper>=1.0.0",
+    "ctranslate2>=4.0.0",
+    "sounddevice>=0.5.0",
+    "pyloudnorm>=0.2.0",
+    "scipy>=1.17.1",
+    # release engine v2 (phase 2): Jinja2 模板渲染（DEPLOYMENT.md / RELEASE_NOTES.md）
+    # user 在 grill-me Q6 明确批准加此依赖
+    "jinja2>=3.1.0",
+    "truststore>=0.10.4",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.3",
+    "pytest-xdist>=3.5.0",
+    "pytest-timeout>=2.3.0",
+    "ruff>=0.12.0",
+]
+
+[tool.uv]
+# PyTorch CUDA 12.6 索引（GPU 推理，驱动 610.47 兼容）
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+# PaddlePaddle GPU CUDA 12.6 索引（官方源，PyPI 仅发布 CPU 版）
+[[tool.uv.index]]
+name = "paddle-cu126"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
+explicit = true
+
+[tool.uv.sources]
+# marker 限定 win32 用 cu126 索引：torch+cu126 在 Linux 依赖 nvidia-cudnn-cu12，
+# 与 paddlepaddle-gpu==3.2.2 冲突（uv 全平台解析失败）。marker 限定 win32 用 cu126，
+# Linux 回退 PyPI CPU 版避免冲突。本机（win32）走 cu126 拿 GPU 版 torch。
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32'" }]
+paddlepaddle-gpu = { index = "paddle-cu126" }
+
+# ============================
+# Ruff 静态检查配置
+# ============================
+# 仅对 server/ 和 client/ 启用（tests/test_lint.py 会调用 ruff check）
+# 行长 120：兼顾可读性与项目里大量中文注释 / URL / 文件路径
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [
+    "temp",
+    "workspace",
+    "data",
+    "weights",
+    "references",
+    "chrome_debug",
+    "memory",
+    "todos",
+    ".venv",
+    "tools",
+    "docs",
+    ".agents",
+]
+
+[tool.ruff.lint]
+# 规则集说明：
+#   E/W   pycodestyle 错误/警告（含 E7xx 命名等）
+#   F     pyflakes 核心（未使用 import / 变量、未定义名等）—— 必开
+#   I     isort，import 排序
+#   UP    pyupgrade，把 Optional[X] 等老语法升级到 X | None 等 PEP 604
+#   B     bugbear，常见 bug 模式（B904 raise...from、B008 默认参数调用等）
+#   SIM   simplify，简化冗余写法
+#   C4    comprehension，把 set([...]) 改成 {...} 等
+#   C901  mccabe 复杂度检查（max-complexity 见 [tool.ruff.lint.mccabe]）
+#         2026-08-07 引入：全量 code review 发现 server/screen/ + activity_tracker/
+#         llm_pool/ 多个核心函数 200-560 行、复杂度 30-74，需 lint 防护避免继续恶化。
+#         起步阈值 15（宽松），未来逐步收紧到 10（ruff 默认）。
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "C901"]
+# 全局忽略以下规则（均为风格类/争议类，不影响代码正确性）：
+#   E501   行太长 —— 项目含大量中文注释/URL/文件路径，ruff 按 codepoint 计宽（中文 1 字符 = 1），
+#          但实际显示宽度为 2，强制 120 会产生大量噪音；改用编辑器/格式化工具管行长
+#   SIM102 collapsible-if —— `if a: if b:` 改 `if a and b:` 有时降低可读性
+#          （两个条件语义不同或第一个 if 有 early return 时嵌套更清晰）
+#   SIM105 suppressible-exception —— `try: x(); except: pass` vs `contextlib.suppress()`
+#          是风格偏好，前者更直观
+#   SIM110 collapsible-for —— `for x in xs: if cond: return True; return False` vs `return any(...)`
+#          原写法 early-return 更清晰（ssrf_guard 多分支校验），与 SIM102/SIM105 同属风格偏好
+ignore = ["E501", "SIM102", "SIM105", "SIM110"]
+
+[tool.ruff.lint.per-file-ignores]
+# server/main.py 启动脚本：在 import 之前设置环境变量/os.environ 属于有意为之
+"server/main.py" = ["E402"]
+# client/main.py GUI 入口：类似的启动顺序约束
+"client/main.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["server", "client", "lib"]
+
+# mccabe 复杂度阈值（C901 规则）
+# 起步阈值 80（暂态基线）：当前最高复杂度 74（execute_action），设 80 仅拦极端新代码，
+# 现有 60 个 >15 的函数暂不阻塞 lint 测试。收紧路线（每轮拆分 Top 5 后下调）：
+#   80 → 60 → 40 → 25 → 15 → 10（ruff 默认）
+# 基线报告：temp/sdd/ruff-mccabe/baseline.md（Top 20 清单 + 拆分优先级）
+[tool.ruff.lint.mccabe]
+max-complexity = 80
+
+# ============================
+# Pytest 配置
+# ============================
+# testpaths: 隔离测试扫描范围，避免误扫 references/ 下外部 pytest.ini
+# addopts: 对齐 docs/dev-workflow.md 推荐参数（--tb=short -q --maxfail=500 -p no:warnings）
+# markers: 原有 5 个（gpu/browser/real_backend/network/chaos，conftest.py:50-68 也注册过）
+#         + 新增 5 个对齐文件名后缀（_e2e/_smoke/_gui/_migration/_manifest），使 -m 筛选可用
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# -q: 安静模式（dots 进度，不刷屏）
+# -ra: 显示除 passed 外的摘要（FAILED/SKIPPED/XFAIL/XPASSED/ERROR），
+#      与 -q 兼容——-q 隐藏进度噪音，-ra 在末尾补失败/跳过摘要（修复"查不到错误"根因）
+# --tb=short: 中等详细 traceback（单文件调试时有用；全量收集时脚本层覆盖为 --tb=line）
+# --maxfail=500: 容忍较多失败再停（便于一次性看全失败清单）
+# timeout=30 + thread method: 默认 30s 超时防卡死（Windows 兼容 thread method）
+# -n auto: pytest-xdist 自动按 CPU 核数并行（进程隔离，绕开 Qt access violation）
+# 注：--junit-xml 不放 addopts（避免单文件调试时污染），由 tools/run_tests_collect.py
+#     和 tests/run_all.py 脚本层按需加。详见 docs/dev-workflow.md "测试运行入口" 段。
+addopts = "--tb=short -q -ra --maxfail=500 -p no:warnings --timeout=30 --timeout-method=thread -n auto"
+markers = [
+    "gpu: 标记需要 torch/PaddlePaddle/GPU 的测试",
+    "browser: requires real debug browser on CDP :9222 + backend on :8766",
+    "real_backend: 需要真实后端运行在 127.0.0.1:8766",
+    "network: 需要真实公网访问",
+    "chaos: 混沌/失败注入测试",
+    "e2e: 端到端测试（含真实组件，对应文件名 _e2e 后缀）",
+    "smoke: 冒烟测试（基础可用性，对应文件名 _smoke 后缀）",
+    "gui: 需要真实 PySide6 GUI 渲染（对应文件名 _gui 后缀）",
+    "migration: 数据/schema 迁移测试（对应文件名 _migration 后缀）",
+    "manifest: 模块清单/注册完整性测试（对应文件名 _manifest 后缀）",
+]

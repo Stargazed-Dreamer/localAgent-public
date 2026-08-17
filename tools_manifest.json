@@ -1,0 +1,872 @@
+{
+  "version": "1.1",
+  "updated_at": "2026-07-12",
+  "description": "LocalAgent 项目工具清单 - GUI 桌面程序读取此文件展示可用工具",
+  "categories": [
+    {
+      "id": "system",
+      "name": "系统启动",
+      "icon": "⚙️"
+    },
+    {
+      "id": "gacha",
+      "name": "抽卡采集",
+      "icon": "🎲"
+    },
+    {
+      "id": "bilibili",
+      "name": "<data_drive>:\<bilibili_videos>工具",
+      "icon": "📺"
+    },
+    {
+      "id": "nowcoder",
+      "name": "牛客面经",
+      "icon": "📝"
+    },
+    {
+      "id": "disk",
+      "name": "磁盘管理",
+      "icon": "💾"
+    },
+    {
+      "id": "yihuan_sim",
+      "name": "异环模拟器",
+      "icon": "🎯"
+    },
+    {
+      "id": "debug",
+      "name": "调试工具",
+      "icon": "🔧"
+    },
+    {
+      "id": "docs",
+      "name": "文档转换",
+      "icon": "📄"
+    },
+    {
+      "id": "file_tools",
+      "name": "文件整理",
+      "icon": "📁"
+    },
+    {
+      "id": "llm_tools",
+      "name": "LLM 工具",
+      "icon": "🧠"
+    },
+    {
+      "id": "image_organize",
+      "name": "图片整理",
+      "icon": "🖼️"
+    },
+    {
+      "id": "recorder",
+      "name": "操作录制",
+      "icon": "🎥"
+    }
+  ],
+  "tools": [
+    {
+      "id": "start_debug_browser",
+      "name": "启动调试浏览器",
+      "category": "system",
+      "description": "启动独立调试浏览器实例（支持 Chromium 内核：Chrome / Edge / Brave / Vivaldi 等，端口 9222，不影响工作浏览器）",
+      "script": "tools/browser/start_debug_browser.py",
+      "command": ".venv\\Scripts\\python.exe tools/browser/start_debug_browser.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        "--copy-user-data   从源浏览器复制用户数据（登录态/扩展）",
+        "--no-copy          不复制用户数据，使用空白配置（默认行为）",
+        "--browser-path PATH  显式指定浏览器可执行文件路径（默认自动探测）",
+        "--port N           自定义调试端口（默认 9222）",
+        "--user-data-dir PATH  自定义用户数据目录（默认 <项目根>/chrome_debug）"
+      ],
+      "notes": "通用版本：未指定 --browser-path 时按优先级自动探测 Chrome/Edge/Brave/Vivaldi。首次使用可加 --copy-user-data 从源浏览器复制登录态到 user_data_dir。",
+      "user_facing": true
+    },
+    {
+      "id": "yihuan_gacha",
+      "name": "异环抽卡采集",
+      "category": "gacha",
+      "description": "异环抽卡记录收集器v5 - 骰子点数识别+集点赠礼检测（截图+OCR）",
+      "script": "workspace/yihuan_gacha/yihuan_gacha.py",
+      "command": ".venv\\Scripts\\python.exe workspace/yihuan_gacha/yihuan_gacha.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "通过后端API截图+OCR，需要游戏窗口在前台",
+      "user_facing": false
+    },
+    {
+      "id": "yihuan_clean",
+      "name": "异环抽卡清洗",
+      "category": "gacha",
+      "description": "异环抽卡记录数据清洗v5（清洗原始数据，生成审核清单，确认后写入最终数据库）",
+      "script": "workspace/yihuan_gacha/yihuan_clean.py",
+      "command": ".venv\\Scripts\\python.exe workspace/yihuan_gacha/yihuan_clean.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--fix-time",
+          "optional": true,
+          "description": "列出/修复缺时间记录"
+        }
+      ],
+      "user_facing": false
+    },
+    {
+      "id": "yihuan_review",
+      "name": "异环抽卡审核",
+      "category": "gacha",
+      "description": "异环抽卡数据审核探查（统计摘要+异常检测+时间倒序明细）",
+      "script": "workspace/yihuan_gacha/yihuan_review.py",
+      "command": ".venv\\Scripts\\python.exe workspace/yihuan_gacha/yihuan_review.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--brief",
+          "default": false,
+          "description": "仅统计摘要"
+        }
+      ],
+      "user_facing": false
+    },
+    {
+      "id": "wuwa_gacha",
+      "name": "鸣潮抽卡采集",
+      "category": "gacha",
+      "description": "鸣潮抽卡记录采集v3（内存扫描+日志解密两种URL提取方式，支持增量更新）",
+      "script": "workspace/wuwa_gacha/wuwa_gacha.py",
+      "command": ".venv\\Scripts\\python.exe workspace/wuwa_gacha/wuwa_gacha.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": true,
+      "options": [],
+      "notes": "内存扫描方式需要管理员权限扫描游戏进程",
+      "user_facing": false
+    },
+    {
+      "id": "arknights_gacha",
+      "name": "明日方舟寻访采集",
+      "category": "gacha",
+      "description": "明日方舟寻访记录采集v4（Playwright+CDP，page.route改size=50加速翻页）",
+      "script": "workspace/arknights_gacha/arknights_gacha.py",
+      "command": ".venv\\Scripts\\python.exe workspace/arknights_gacha/arknights_gacha.py",
+      "usage": "agent",
+      "requires_browser": true,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--force",
+          "default": false,
+          "description": "强制重新采集"
+        },
+        {
+          "name": "--token",
+          "optional": true,
+          "description": "指定token"
+        }
+      ],
+      "user_facing": false
+    },
+    {
+      "id": "arknights_import",
+      "name": "明日方舟小黑盒导入",
+      "category": "gacha",
+      "description": "将小黑盒导出的寻访记录增量合并到方舟数据库",
+      "script": "workspace/arknights_gacha/arknights_import.py",
+      "command": ".venv\\Scripts\\python.exe workspace/arknights_gacha/arknights_import.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--file",
+          "description": "导入文件路径"
+        },
+        {
+          "name": "--dry-run",
+          "default": false,
+          "description": "只分析不写入"
+        }
+      ],
+      "user_facing": false
+    },
+    {
+      "id": "endfield_gacha",
+      "name": "终末地寻访采集",
+      "category": "gacha",
+      "description": "终末地寻访记录采集v2（游戏日志/浏览器登录获取token，支持国服和国际服）",
+      "script": "workspace/endfield_gacha/endfield_gacha.py",
+      "command": ".venv\\Scripts\\python.exe workspace/endfield_gacha/endfield_gacha.py",
+      "usage": "agent",
+      "requires_browser": true,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--force",
+          "default": false,
+          "description": "强制重新采集"
+        },
+        {
+          "name": "--global",
+          "default": false,
+          "description": "国际服"
+        },
+        {
+          "name": "--token",
+          "optional": true,
+          "description": "指定token"
+        },
+        {
+          "name": "--log",
+          "default": false,
+          "description": "从日志提取token"
+        }
+      ],
+      "user_facing": false
+    },
+    {
+      "id": "bilibili_gacha",
+      "name": "<data_drive>:\<bilibili_videos>互动抽奖扫描",
+      "category": "bilibili",
+      "description": "<data_drive>:\<bilibili_videos>互动抽奖整理工具v2（扫描转发动态，识别抽奖，检查开奖状态，支持删动态+取关）",
+      "script": "workspace/bilibili_gacha/bilibili_gacha.py",
+      "command": ".venv\\Scripts\\python.exe workspace/bilibili_gacha/bilibili_gacha.py",
+      "usage": "agent",
+      "requires_browser": true,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "subcommand",
+          "choices": [
+            "scan",
+            "check",
+            "follow-list",
+            "cleanup"
+          ],
+          "description": "子命令"
+        }
+      ],
+      "user_facing": false
+    },
+    {
+      "id": "bilibili_cleanup",
+      "name": "<data_drive>:\<bilibili_videos>动态批量清理",
+      "category": "bilibili",
+      "description": "批量清理已开奖未中奖的<data_drive>:\<bilibili_videos>抽奖动态v3（坐标操作法模拟真人点击）",
+      "script": "workspace/bilibili_gacha/bilibili_cleanup.py",
+      "command": ".venv\\Scripts\\python.exe workspace/bilibili_gacha/bilibili_cleanup.py",
+      "usage": "agent",
+      "requires_browser": true,
+      "requires_admin": false,
+      "options": [],
+      "notes": "从 up.json 读取关注列表",
+      "user_facing": false
+    },
+    {
+      "id": "official_gacha",
+      "name": "官方账号互动抽奖",
+      "category": "bilibili",
+      "description": "扫描异环/明日方舟/鸣潮官方<data_drive>:\<bilibili_videos>账号互动抽奖动态，键鼠+OCR参与抽奖。explore=实时探查+参与一步到位",
+      "script": "workspace/official_gacha/official_gacha.py",
+      "command": ".venv\\Scripts\\python.exe workspace/official_gacha/official_gacha.py",
+      "usage": "agent",
+      "requires_browser": true,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "subcommand",
+          "choices": [
+            "scan",
+            "join",
+            "explore",
+            "list"
+          ],
+          "description": "子命令：scan扫描/join参与/explore实时探查+参与/list列出"
+        },
+        {
+          "name": "--days",
+          "default": "7",
+          "description": "扫描天数（仅scan子命令）"
+        }
+      ],
+      "notes": "需要后端运行（截图+OCR+键鼠）。explore=scan+join合一，遇已开奖自动停止。join/explore会弹窗告知用户，每条间隔10-30秒反风控。官方UID：异环3546636978489848、明日方舟161775300、鸣潮1955897084",
+      "user_facing": false
+    },
+    {
+      "id": "nowcoder_embedded",
+      "name": "牛客面经抓取",
+      "category": "nowcoder",
+      "description": "牛客网嵌入式面经批量抓取（搜索+滚动加载+逐篇打开详情提取全文）",
+      "script": "workspace/niuke_review/nowcoder_embedded.py",
+      "command": ".venv\\Scripts\\python.exe workspace/niuke_review/nowcoder_embedded.py",
+      "usage": "agent",
+      "requires_browser": true,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--max",
+          "default": "20",
+          "description": "最多抓取N篇"
+        },
+        {
+          "name": "--keywords",
+          "description": "搜索关键词，逗号分隔"
+        },
+        {
+          "name": "--no-detail",
+          "default": false,
+          "description": "不抓详情"
+        },
+        {
+          "name": "--score",
+          "default": false,
+          "description": "抓取后评分"
+        },
+        {
+          "name": "--list-only",
+          "default": false,
+          "description": "只抓列表"
+        }
+      ],
+      "user_facing": false
+    },
+    {
+      "id": "nowcoder_review",
+      "name": "牛客面经审核",
+      "category": "nowcoder",
+      "description": "牛客网面经交互式审核工具（分批展示，勾选保留，自动保存PDF，断点续审）",
+      "script": "workspace/niuke_review/nowcoder_review.py",
+      "command": ".venv\\Scripts\\python.exe workspace/niuke_review/nowcoder_review.py",
+      "usage": "user",
+      "requires_browser": true,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--batch-size",
+          "default": "20",
+          "description": "每批数量"
+        },
+        {
+          "name": "--port",
+          "default": "8770",
+          "description": "审核面板端口"
+        },
+        {
+          "name": "--resume",
+          "default": false,
+          "description": "从断点继续"
+        }
+      ],
+      "notes": "用户手动使用，浏览器打开审核面板",
+      "user_facing": true
+    },
+    {
+      "id": "scan_disk",
+      "name": "磁盘空间扫描",
+      "category": "disk",
+      "description": "紧凑空间分析（scan tree/drill 下钻/find 按目录名定位/files 最大文件），--json 直返上下文",
+      "script": "workspace/disk_manager/scripts/scan_disk.py",
+      "command": ".venv\\Scripts\\python.exe workspace/disk_manager/scripts/scan_disk.py scan <path> --json",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {"name": "scan <path>", "description": "紧凑 tree JSON（默认深度4、每层top10）"},
+        {"name": "drill <path>", "description": "下钻指定子目录（默认深度5）"},
+        {"name": "find <path> <names...>", "description": "按目录名定位+大小（如 node_modules .venv）"},
+        {"name": "files <path>", "description": "最大单个文件 top N"},
+        {"name": "-d <N>", "default": "4", "description": "深度上限"},
+        {"name": "-n <N>", "default": "10", "description": "每层 top N"},
+        {"name": "--json", "description": "JSON 直返 stdout（agent 用）"}
+      ],
+      "notes": "symlink/junction 不跟随；硬上限保护（depth/files/dirs）；旧 --overview/--deep/--large 已移除",
+      "user_facing": false
+    },
+    {
+      "id": "cleanup_disk",
+      "name": "磁盘清理",
+      "category": "disk",
+      "description": "磁盘清理（dry-run 出逐项可回收字节回执 → 用户勾选 → --delete 走 ctypes 回收站删除）",
+      "script": "workspace/disk_manager/scripts/cleanup.py",
+      "command": ".venv\\Scripts\\python.exe workspace/disk_manager/scripts/cleanup.py --dry-run --json",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": true,
+      "options": [
+        {"name": "--dry-run", "description": "出逐项回执（id/path/size），不删任何文件"},
+        {"name": "--delete --items <ids>", "description": "只删确认项，走 ctypes 回收站（可恢复）"},
+        {"name": "--json", "description": "JSON 直返 stdout（agent 用）"}
+      ],
+      "notes": "两步闭环：先 --dry-run 拿 id → 用户勾选 → --delete --items <ids>；删除走回收站可恢复；路径白名单保护",
+      "user_facing": false
+    },
+    {
+      "id": "backup_env",
+      "name": "环境备份",
+      "category": "disk",
+      "description": "系统环境备份工具（浏览器数据/游戏存档/桌面布局/系统设置/软件列表）",
+      "script": "workspace/disk_manager/scripts/backup_env.py",
+      "command": ".venv\\Scripts\\python.exe workspace/disk_manager/scripts/backup_env.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--browser",
+          "default": false,
+          "description": "只备份浏览器"
+        },
+        {
+          "name": "--games",
+          "default": false,
+          "description": "只备份游戏存档"
+        },
+        {
+          "name": "--system",
+          "default": false,
+          "description": "只备份系统设置"
+        },
+        {
+          "name": "--software",
+          "default": false,
+          "description": "只备份软件列表"
+        }
+      ],
+      "notes": "默认全量备份，生成一键恢复脚本",
+      "user_facing": true
+    },
+    {
+      "id": "yihuan_editor",
+      "name": "异环棋盘编辑器",
+      "category": "yihuan_sim",
+      "description": "异环卡池棋盘编辑器（PySide6 GUI）",
+      "script": "workspace/yihuan_simulator/simulator/editor.py",
+      "command": ".venv\\Scripts\\python.exe workspace/yihuan_simulator/simulator/editor.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "GUI应用，也可双击 editor.bat 启动",
+      "user_facing": true
+    },
+    {
+      "id": "yihuan_viewer",
+      "name": "异环数据查看器",
+      "category": "yihuan_sim",
+      "description": "异环卡池数据汇总展示工具（PySide6 GUI）",
+      "script": "workspace/yihuan_simulator/simulator/viewer.py",
+      "command": ".venv\\Scripts\\python.exe workspace/yihuan_simulator/simulator/viewer.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "GUI应用，也可双击 viewer.bat 启动",
+      "user_facing": true
+    },
+    {
+      "id": "scale_test",
+      "name": "缩放标注生成",
+      "category": "debug",
+      "description": "生成不同缩放倍率的标注图片供选择（异环窗口OCR坐标缩放调试）",
+      "script": "tools/debug/scale_test.py",
+      "command": ".venv\\Scripts\\python.exe tools/debug/scale_test.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "user_facing": false
+    },
+    {
+      "id": "ocr_scale_debugger",
+      "name": "OCR缩放调试器",
+      "category": "debug",
+      "description": "交互式OCR坐标缩放调试工具（拖动滑块实时预览，tkinter GUI）",
+      "script": "tools/debug/ocr_scale_debugger.py",
+      "command": ".venv\\Scripts\\python.exe tools/debug/ocr_scale_debugger.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "user_facing": false
+    },
+    {
+      "id": "draw_all_ocr_boxes",
+      "name": "OCR文本框标注",
+      "category": "debug",
+      "description": "生成标注所有OCR文本框的图片（异环窗口，画红色bbox）",
+      "script": "tools/debug/draw_all_ocr_boxes.py",
+      "command": ".venv\\Scripts\\python.exe tools/debug/draw_all_ocr_boxes.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "user_facing": false
+    },
+    {
+      "id": "debug_resolution",
+      "name": "分辨率检查",
+      "category": "debug",
+      "description": "检查截图分辨率vs窗口实际分辨率（异环窗口，计算缩放比）",
+      "script": "tools/debug/debug_resolution.py",
+      "command": ".venv\\Scripts\\python.exe tools/debug/debug_resolution.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "user_facing": false
+    },
+    {
+      "id": "debug_ocr_data",
+      "name": "OCR数据查看",
+      "category": "debug",
+      "description": "调试：查看OCR返回的完整数据，输出到temp/ocr_debug.txt",
+      "script": "tools/debug/debug_ocr_data.py",
+      "command": ".venv\\Scripts\\python.exe tools/debug/debug_ocr_data.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "user_facing": false
+    },
+    {
+      "id": "debug_coords",
+      "name": "坐标转换检查",
+      "category": "debug",
+      "description": "检查窗口坐标转换（验证OCR坐标到屏幕绝对坐标的转换逻辑）",
+      "script": "tools/debug/debug_coords.py",
+      "command": ".venv\\Scripts\\python.exe tools/debug/debug_coords.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "user_facing": false
+    },
+    {
+      "id": "start_backend",
+      "name": "启动后端服务",
+      "category": "system",
+      "description": "启动LocalAgent后端服务（自动UAC提权→杀8766端口旧进程→启动server.main）",
+      "script": "start.bat",
+      "command": "start.bat",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": true,
+      "options": [],
+      "notes": "双击运行，键鼠操控需要管理员权限",
+      "user_facing": true
+    },
+    {
+      "id": "user_message_gui",
+      "name": "用户补充指令",
+      "category": "system",
+      "description": "向正在工作的agent发送补充指令（不中断对话，agent下次调用端点时自动收到）",
+      "script": "tools/user_message_gui.py",
+      "command": ".venv\\Scripts\\python.exe tools/user_message_gui.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "需要后端运行。发送的指令会在agent下次调用非工作端点时自动注入响应中",
+      "user_facing": true
+    },
+    {
+      "id": "converter_daemon",
+      "name": "MindForge转换守护进程",
+      "category": "docs",
+      "description": "MindForge文档转换守护进程（常驻子进程，stdin/stdout JSON协议）",
+      "script": "tools/mindforge/converter_daemon.py",
+      "command": ".venv\\Scripts\\python.exe tools/mindforge/converter_daemon.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "由后端 server/mindforge.py 子进程启动，不手动运行",
+      "user_facing": false
+    },
+    {
+      "id": "file_classifier",
+      "name": "文件自动分类",
+      "category": "file_tools",
+      "description": "文件自动分类工具（PySide6 GUI）：扫描目录→手动分类样例→LLM预测全部→审核→移动到真实目录",
+      "script": "tools/file_classifier/classifier_gui.py",
+      "command": ".venv\\Scripts\\python.exe tools/file_classifier/classifier_gui.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "需要后端运行以使用 LLM 预测（后端不可用时降级为扩展名规则匹配）。分类配置在 tools/file_classifier/categories.json",
+      "user_facing": true
+    },
+    {
+      "id": "image_organizer",
+      "name": "图片自动分类",
+      "category": "image_organize",
+      "description": "大规模图片自动分类：Florence-2/Qwen-VL 描述+OCR → LLM 多维度分类 → 移动文件 → SQLite 标签库",
+      "script": "tools/image_organizer/organize.py",
+      "command": "envs\\vl\\Scripts\\python.exe tools/image_organizer/organize.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--limit",
+          "default": "0",
+          "description": "只处理N个文件（0=全部）"
+        },
+        {
+          "name": "--dry-run",
+          "default": false,
+          "description": "不移动文件，只跑模型+LLM+SQL"
+        },
+        {
+          "name": "--force-florence",
+          "default": false,
+          "description": "强制重跑视觉模型"
+        },
+        {
+          "name": "--target",
+          "description": "目标目录"
+        },
+        {
+          "name": "--random",
+          "default": false,
+          "description": "随机采样（配合--limit）"
+        },
+        {
+          "name": "--model",
+          "default": "microsoft/Florence-2-large",
+          "description": "视觉模型"
+        }
+      ],
+      "notes": "需要后端运行（LLM 池）。视觉模型 Florence-2-large 由 transformers 提供（主 .venv 已装），从 HF cache 加载，无需独立环境。",
+      "user_facing": true
+    },
+    {
+      "id": "summarize_posts_direct",
+      "name": "帖子批量评分",
+      "category": "llm_tools",
+      "description": "直连 API 批量总结社群帖子（多维评分+加权排序，30线程并发，断点续跑）",
+      "script": "tools/llm/summarize_posts_direct.py",
+      "command": ".venv\\Scripts\\python.exe tools/llm/summarize_posts_direct.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--board",
+          "default": "all",
+          "description": "板块名称"
+        },
+        {
+          "name": "--limit",
+          "description": "每板块只处理前N篇"
+        },
+        {
+          "name": "--concurrency",
+          "default": "30",
+          "description": "并发数"
+        }
+      ],
+      "notes": "需要后端运行（LLM 池）",
+      "user_facing": true
+    },
+    {
+      "id": "test_llm",
+      "name": "LLM池快速测试",
+      "category": "llm_tools",
+      "description": "快速测试后端 LLM 池是否可用（发送一条消息检查响应）",
+      "script": "tools/llm/test_llm.py",
+      "command": ".venv\\Scripts\\python.exe tools/llm/test_llm.py",
+      "usage": "both",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "需要后端运行",
+      "user_facing": true
+    },
+    {
+      "id": "llm_token_stats",
+      "name": "Token消耗统计",
+      "category": "llm_tools",
+      "description": "LLM Token 消耗统计报告（按项目分组，支持持续刷新）",
+      "script": "tools/llm/llm_token_stats.py",
+      "command": ".venv\\Scripts\\python.exe tools/llm/llm_token_stats.py",
+      "usage": "both",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--import",
+          "default": false,
+          "description": "将历史 checkpoint token 导入池统计"
+        },
+        {
+          "name": "--watch",
+          "default": false,
+          "description": "持续刷新（每10秒）"
+        }
+      ],
+      "notes": "需要后端运行",
+      "user_facing": true
+    },
+    {
+      "id": "fake_llm_proxy",
+      "name": "Fake LLM Proxy",
+      "category": "system",
+      "description": "启动 Fake LLM Proxy（端口 9999），用于 LLM 调用录制与回放，带监控面板",
+      "script": "tools/fake_llm_proxy.py",
+      "command": ".venv\\Scripts\\python.exe tools/fake_llm_proxy.py",
+      "usage": "both",
+      "user_facing": true,
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "启动后访问 http://127.0.0.1:9999/ 查看监控面板"
+    },
+    {
+      "id": "recorder_small",
+      "name": "录制器（小模式）",
+      "category": "recorder",
+      "description": "操作录制器 - 小模式（44px 悬浮条）：录制键鼠/屏幕/音频/窗口焦点，生成可回放录制包",
+      "script": "workspace/recorder/tools/main.py",
+      "command": ".venv\\Scripts\\python.exe -m workspace.recorder.tools.main",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": true,
+      "options": [
+        {
+          "name": "--range",
+          "choices": ["fullscreen", "monitor", "window"],
+          "default": "fullscreen",
+          "description": "录制范围：全屏/某屏/某窗口"
+        },
+        {
+          "name": "--detail-level",
+          "choices": ["detailed", "coarse"],
+          "default": "detailed",
+          "description": "录制模式：detailed=500ms截图 / coarse=2s截图"
+        },
+        {
+          "name": "--autostart",
+          "default": false,
+          "description": "跳过配置对话框，直接开始录制"
+        },
+        {
+          "name": "--no-audio",
+          "default": false,
+          "description": "禁用麦克风录制"
+        },
+        {
+          "name": "--max-duration",
+          "default": "1800",
+          "description": "最大录制时长（秒），默认 1800"
+        },
+        {
+          "name": "--monitor-index",
+          "default": "0",
+          "description": "显示器索引（--range=monitor 时用）"
+        }
+      ],
+      "notes": "全局热键 Ctrl+Alt+R 开始/停止录制。小模式为顶部悬浮条，录制中可暂停/继续/保存/丢弃。需管理员权限捕获键鼠输入。",
+      "user_facing": true
+    },
+    {
+      "id": "recorder_large",
+      "name": "录制器（大模式）",
+      "category": "recorder",
+      "description": "操作录制器 - 大模式（监控面板）：实时查看截图预览/事件流/音频波形/统计面板",
+      "script": "workspace/recorder/tools/main.py",
+      "command": ".venv\\Scripts\\python.exe -m workspace.recorder.tools.main --mode large",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": true,
+      "options": [
+        {
+          "name": "--range",
+          "choices": ["fullscreen", "monitor", "window"],
+          "default": "fullscreen",
+          "description": "录制范围：全屏/某屏/某窗口"
+        },
+        {
+          "name": "--detail-level",
+          "choices": ["detailed", "coarse"],
+          "default": "detailed",
+          "description": "录制模式：detailed=500ms截图 / coarse=2s截图"
+        },
+        {
+          "name": "--autostart",
+          "default": false,
+          "description": "跳过配置对话框，直接开始录制"
+        },
+        {
+          "name": "--no-audio",
+          "default": false,
+          "description": "禁用麦克风录制"
+        },
+        {
+          "name": "--max-duration",
+          "default": "1800",
+          "description": "最大录制时长（秒），默认 1800"
+        }
+      ],
+      "notes": "大模式为独立窗口（不置顶），含 5 面板 Splitter 布局：截图预览/事件流/窗口信息/音频波形/统计。适合双屏监控录制过程。",
+      "user_facing": true
+    },
+    {
+      "id": "recorder_editor",
+      "name": "录制包编辑器",
+      "category": "recorder",
+      "description": "L3 编辑器：查看时间轴 + 标注关键/异常/可自动化 + 裁剪/合并/拆分 + 音频调参 + STT 重跑 + 标记就绪",
+      "script": "workspace/recorder/tools/editor/__main__.py",
+      "command": ".venv\\Scripts\\python.exe -m workspace.recorder.tools.editor",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--package-path",
+          "description": "录制包目录路径（如 workspace/recorder/recordings/rec_20260723_143000）"
+        }
+      ],
+      "notes": "录制器保存后自动启动编辑器（D052），也可手动指定录制包路径。快捷键：Delete=裁剪 / Ctrl+Y=恢复 / Ctrl+H=标关键 / Ctrl+E=标异常 / Ctrl+A=标可自动化 / Ctrl+Return=标记就绪。",
+      "user_facing": true
+    },
+    {
+      "id": "recorder_timeline",
+      "name": "时间轴构建",
+      "category": "recorder",
+      "description": "L2 时间轴 CLI：合并 L1 产出（blocks/keyframes/transcript）为 timeline.json + 章节切分 + 预览",
+      "script": "workspace/recorder/tools/timeline_cli.py",
+      "command": ".venv\\Scripts\\python.exe -m workspace.recorder.tools.timeline_cli",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--package-path",
+          "description": "录制包目录路径"
+        },
+        {
+          "name": "--preview-only",
+          "default": false,
+          "description": "只预览不重新构建 timeline.json"
+        },
+        {
+          "name": "--idle-threshold",
+          "default": "2.0",
+          "description": "章节切分空闲阈值（秒），默认 2.0"
+        }
+      ],
+      "notes": "通常 L3 编辑器启动时自动构建 timeline.json。此 CLI 供手动重建或预览用，预览输出到 stdout 便于管道处理。",
+      "user_facing": true
+    }
+  ]
+}

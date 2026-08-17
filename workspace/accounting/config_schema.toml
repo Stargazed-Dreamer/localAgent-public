@@ -1,0 +1,12 @@
+# accounting 组件配置 schema
+# 由 component_config.load_component_configs() 运行时合并到主 config 对象
+# 主 config.example.toml 不再含 [accounting] section
+
+[accounting]
+# 记账模块（账单识别+GUI审核+导出Obsidian，本地SQLite不走后端HTTP）
+# 详见 workspace/accounting/SKILL.md
+enabled = true
+# Obsidian 仓库路径（账单导出目标）
+accounting_dir = ""
+# SQLite 数据库路径（账单数据）
+db_path = "data/accounting.db"

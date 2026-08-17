@@ -1,0 +1,9 @@
+# endfield_gacha 组件配置 schema
+# 由 component_config.load_component_configs() 运行时合并到主 config 对象
+# 主 config.example.toml 不再含 [endfield] section
+# 注意：section 名为 endfield_gacha（组件名），不再是 endfield
+
+[endfield_gacha]
+# 终末地寻访游戏日志/API采集
+# 详见 workspace/endfield_gacha/SKILL.md
+provider = "hypergryph"

@@ -1,0 +1,1687 @@
+{
+  "source_dir": "E:\\<data_drive>:\<system_data_root>\\<data_drive>:/Downloads",
+  "categories": [
+    {
+      "name": "<data_drive>:\<bilibili_videos>视频",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "蓝p图片",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "网页杂图片",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "#小心",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "漫画",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "番",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "游戏",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "开源项目",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "小说",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "安装包",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "资源备份",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "技术学习",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "弹钢琴",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "开源成品工具",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "高级学习资料",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "私人图片",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "学校",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "agent资源",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "音乐",
+      "path": "",
+      "extensions": []
+    },
+    {
+      "name": "画画",
+      "path": "",
+      "extensions": []
+    }
+  ],
+  "sample_files": [
+    {
+      "filename": "《明日方舟》限定干员「予愿安洁莉娜」前瞻PV_明日方舟",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "有妈妈在小猫不需要长大！_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "6.20.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "6.16.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "5，27.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "6.15.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "6.13.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "5.5.凯尔希.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "5.7凯猫猫.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "4.29.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "4.29视频.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "5.5.阿能.zip",
+      "category": "#小心"
+    },
+    {
+      "filename": "被攻陷的兔子-被攻陷的兔子_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "宴的30秒耐力挑战。-宴的30秒耐力挑战。_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "每日看海40秒，修身养性，提升自制力。（高清重置）-每日看海40秒，修身养性，提升自制力。（高清重置）_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "兔兔埃及摇-兔兔埃及摇_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "狮蝎的热身运动-狮蝎的热身运动_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "猫猫诱惑人类影像（凯尔希）-猫猫诱惑人类影像（凯尔希）_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "博士，不要看！-博士，不要看！_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "萨尔贡苏苏洛-萨尔贡苏苏洛_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "萨尔贡能天使（慢摇❤️）-萨尔贡能天使（慢摇❤️）_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "萨尔贡能天使（节奏）-萨尔贡能天使（节奏）_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "萨尔贡能天使-萨尔贡能天使_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "じゃあ 先輩 ...てください-じゃあ 先輩 ...てください_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "能天使一脸嫌弃的你看-能天使一脸嫌弃的你看_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "博士，我有一点痒，你用手帮我挠挠？-博士，我有一点痒，你用手帮我挠挠？_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "（补）巫恋小姐的热身运动-（补）巫恋小姐的热身运动_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "输给八千代怎么不找找自己问题【超时空辉夜姬】_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "令时焥夏KiriAINa的动态_-_哔哩哔哩",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "盛宴_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "0_(1242×1656)",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "年中总结之，我到底画了些啥_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "【终末地】新版相机耗时7891秒拍出的神人照片",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "分享图片",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "达妮娅",
+      "category": "#小心"
+    },
+    {
+      "filename": "qbittorrent_4_1_8_x64_setup_exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "看得出来姐姐们已经很愤怒了_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "唉_大狗！_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "__-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "黑咖啡不苦K个人动态-黑咖啡不苦K动态记录-哔哩哔哩视频",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "断更了一周其实是cos猫猫昏迷过去了_-_明日方舟_终末地_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "看到有盒友发的，逗对象玩了一下，真好玩_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "缪缪_什么...在想我的事__哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "起开，这个魔法少女我来当",
+      "category": "漫画"
+    },
+    {
+      "filename": "纯黑和纯白都太难画了！！！_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "【个人翻译】画侧脸头发时的要点__-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "【个人翻译】头发上色的步骤总结__-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "【天童爱丽丝】邦邦卡邦__-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "洛茜提醒您保持干燥…_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "画师推荐_@_rucaco__-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "画师推荐_@zyakusan_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "拍张泳装苇草_-_明日方舟_-_森空岛",
+      "category": "#小心"
+    },
+    {
+      "filename": "两只小蛋糕？-两只小蛋糕？_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "小苹果摇-小苹果摇_1.mp4",
+      "category": "#小心"
+    },
+    {
+      "filename": "神秘车祸",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "【凯伊】这副身体应该没有你想要的功能...（22）_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "【Tarokiki_无修音】远航星的告别_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "欢迎回来，凯尔希_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "这里是约稿贴_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "旅行中的母女_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "别辜负眼前绩姐♪__们_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "《绝区零・时尚档案》Vol.20_夏日泳装系列_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "《终末地・时尚档案》Vol.20_夏日泳装系列_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "《碧蓝航线・时尚档案》Vol.20_夏日泳装系列_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "明日方舟网页小游戏的发刀小巧思_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "别TM挠了，那不是包！_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "什么叫你音律做无料的图现在才画完了一张__-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "夕儿出街！_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "高中生凯厨冷静一个晚上的结果_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "我们在探索二维和写实的交界点_——_重力井工作室创作幕后杂谈_-_哔哩哔哩",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "越喜欢的干员叫的越大声_游戏热门视频",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "凯尔希·思衡托_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "这片大地已经……彻底没有人类了…",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "浏览器扩展备份",
+      "category": "资源备份"
+    },
+    {
+      "filename": "游戏设计+这些交叉方向=绝杀_-_小红书",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "不吹不黑，Ulike真实使用70天_-_小红书",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "阿米娅，帮我…补兑！！_-_小红书",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "这个评论区怎么这么搞笑啊😂_-_小红书",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "“涩涩的，但是很好听。”__《エンドルフィン》_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "德克萨斯。_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "信不信，你炒不过我_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "【鸣潮终末地星穹铁道】二游鸡扒兄弟的酒后小娱乐（1_3）_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "-_小红书",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "rj-asmr",
+      "category": "资源备份"
+    },
+    {
+      "filename": "【个人翻译】因为重力形成的褶皱，用柔和的线条描绘是关键_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "画师推荐_@jiuyesang_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "画师推荐_@jiuyesang(2)_-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "点火「明日方舟_终末地高考应援动画」_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "异环算我求你了千万别修这个BUG_哔哩哔哩bilibili_原神",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "假如把凯尔希EP最后片段的音乐换成《One_Last_Kiss》_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "年度巨献《致爱弥斯》父亲离世后，我完成了这部作品……【不乐得·鸣潮细节盘点】_哔哩哔哩bilibili_最终幻想",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "被第一次要联系方式的女孩子有点慌",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "以防你不知道真的有这种人",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "在你面前的是42星干员！_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "二四拍交换的higher_《没力气の小曲》_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "清唱《love_2000》_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "我们是怎么制作PV的_——_鹰角PV组创作幕后杂谈_-_哔哩哔哩",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "是好小鹿吗__-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "明日方舟个人动态-明日方舟动态记录-哔哩哔哩视频",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "年导最新烂片（）_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "失去萌袖的m3决定将披风cos成萌袖_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "居家型黍姐（_）_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "Day_28_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "几千岁的精灵还挺会玩..._",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "穿泳装的凯尔希你们见过吗__哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "前端解散，哈哈哈哈哈，别看，看下一个就是你！！！！！#程序员_#裁员_#大厂_#ai提效_#龙虾_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "终末地，但是雷霆标题插入_游戏热门视频",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "看来是要大减价了_哔哩哔哩_bilibili",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "偶遇神仙构图，犹如看到明日方舟大结局，拼尽全力无法战胜_哔哩哔哩bilibili_明日方舟",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "Day_24_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "明日方舟七周年_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "干员壁纸_-_明日方舟_终末地_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "庄方宜_-_明日方舟_终末地_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "KU100",
+      "category": "#小心"
+    },
+    {
+      "filename": "小心",
+      "category": "#小心"
+    },
+    {
+      "filename": "假如凯尔希的情敌是凯尔希__游戏热门视频",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "有没有什么好笑的__-_小黑盒",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "末日时在做什么？ 10-bit 1080p HEVC BDRip [Fin]",
+      "category": "番"
+    },
+    {
+      "filename": "minecraft-1.6",
+      "category": "开源项目"
+    },
+    {
+      "filename": "撑伞侠知识库2025",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "小猫咪_1_犬式爱_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "小猫咪_2_犬式爱_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "画了_1_三目枭_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "拍到了小猫卖萌全程！_1_平川_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "从现在开始，罗德岛会保护她_3_琮沄_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "从现在开始，罗德岛会保护她_2_琮沄_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "拍到了小猫卖萌全程！_1_平川_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "我是狼群的爪牙！_2_某灰_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_1_睦月こはく_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_2_睦月こはく_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_3_睦月こはく_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_4_睦月こはく_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_5_睦月こはく_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_1_睦月こはく_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_2_睦月こはく_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_3_睦月こはく_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_4_睦月こはく_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "费了九丰蹄二阿斯兰之力终于穿上了！_5_睦月こはく_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_1_Ja'aku_Frost_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_2_Ja'aku_Frost_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_3_Ja'aku_Frost_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_5_Ja'aku_Frost_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_6_Ja'aku_Frost_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_3_Ja'aku_Frost_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_5_Ja'aku_Frost_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_7_Ja'aku_Frost_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_4_Ja'aku_Frost_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_7_Ja'aku_Frost_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "「我是利刃的化身！」_4_Ja'aku_Frost_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "感受！针织衫长外套配短裤好文明😋_2_Aki辞秋_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "绘製了诀的干员留影_2_栗樺茶_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "geph-windows-setup.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "CC-Switch-v3.17.0-Windows.msi",
+      "category": "安装包"
+    },
+    {
+      "filename": "qbittorrent_5.2.3_x64_setup.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "Wireshark-4.6.6-x64.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "CodeBuddy-win32-x64-user-4.9.14.31414011-6230de8a-cn.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "QoderWorkCN-Setup-User-x64.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "完蛋！我被女同学包围了！_-_明日方舟_-_森空岛",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "75999729_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "81163008_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "75778049_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "86445645_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "68838299_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "64186422_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "68825375_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "63916278_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "66345577_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "69000196_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "69940678_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "78412967_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "66526829_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "93615403_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "144904241_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "94117580_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "94392721_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "94418447_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "58971826_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "59615212_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "73437860_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "145357243_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "143426483_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "122771480_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "141992739_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "141992739_p1_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "122018832_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "141582710_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "128020697_p1_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "128020697_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "113089377_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "112566019_p1_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "112566019_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "109320567_p1_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "109320567_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "103402120_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "78615350_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "80692991_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "86993976_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "76764796_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "86486480_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "78449736_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "90743598_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "62596674_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "84495161_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "75194798_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "75229882_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "75393392_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "77242401_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "83141811_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "75134874_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "96954756_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "75195457_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "82822736_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "83980327_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "95052899_p3_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "95052899_p2_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "95052899_p0_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "94615199_p7_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "94615199_p6_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "94615199_p5_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "94615199_p1_master1200.jpg",
+      "category": "蓝p图片"
+    },
+    {
+      "filename": "【ASMR】想要腰部有感觉？进来就对了-【ASMR】想要腰部有感觉？进来就对了_1.aac",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ④ .mp4-最终版单端循环30分_3.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ④ .mp4-最终版忙死特无开头可循环版_2.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ④ .mp4-最终版忙死特单人_1.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A  S  M  R  ②  .mp4-【明日方舟】A  S  M  R  ②  .mp4_1.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ④ .mp4-最终版单端循环30分_3.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "游戏Demo都能玩了，为什么成品还要做好多年？-游戏Demo都能玩了，为什么成品还要做好多年？_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "“对不起，不小心死掉啦”-“对不起，不小心死掉啦”_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【鸣潮终末地星穹铁道】二游鸡扒兄弟的酒后小娱乐（13）-【鸣潮终末地星穹铁道】二游鸡扒兄弟的酒后小娱乐（13）_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "捏捏傻龙-捏捏傻龙_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ④ .mp4-最终版忙死特无开头可循环版_2.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ④ .mp4-最终版忙死特单人_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A  S  M  R .mp4-【明日方舟】A  S  M  R .mp4_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A  S  M  R  ②  .mp4-【明日方舟】A  S  M  R  ②  .mp4_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ③ .mp4-单循环音长_2.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ③ .mp4-修改bgm和字幕_1.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ③ .mp4-修改字幕无bgm版本_3.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "礼物？猎物！-礼物？猎物！_1.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ③ .mp4-单循环音长_2.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ③ .mp4-修改bgm和字幕_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "【明日方舟】A S M R ③ .mp4-修改字幕无bgm版本_3.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "礼物？猎物！-礼物？猎物！_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？-极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？_1.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？-极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？_0.ass",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？-极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？_1.Cover.jpg",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？-极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？_1.jpg",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？-极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？_0.srt",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？-极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？_0_中文.srt",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？-极客湾手机续航大横评：电池锁容？电量缩水？谁在浑水摸鱼？_1.mp4",
+      "category": "<data_drive>:\<bilibili_videos>视频"
+    },
+    {
+      "filename": "wetype_installer_official_p_48.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "69df7bf4f4305cb6038c5dc4.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "69df7bf2b3b9294c0db9c68c.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "69e7967c05e6b92ab9840121.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "69ed6d75e422de172766ddec.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "69f4581da519b5374d0975f2.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "69f4cc43e3004c345d69fa41.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "69f6dc061c140d73c9b0efa4.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "69fd35239ab16252cef3be92.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "6a02899da464d5dfc28132d1.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "6a05db1197bfaba8393d0cc8.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "6a06cd7d479847281efdbe37.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "6a0828c646e0f2d134996d23.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "6a0c4d4ba9c768179bf2ae01.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "640 (1).gif",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "NevernessToEverness_setup_bilibili.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "geph-android.apk",
+      "category": "安装包"
+    },
+    {
+      "filename": "geph-macos.dmg",
+      "category": "安装包"
+    },
+    {
+      "filename": "Geph-x86_64.flatpak",
+      "category": "安装包"
+    },
+    {
+      "filename": "JMComic3v2.0.24.apk",
+      "category": "安装包"
+    },
+    {
+      "filename": "手机局域网连接电脑 - PlainApp-3.1.16-64bit-Universal-Recommended.apk",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "Obsidian-1.12.4.apk",
+      "category": "安装包"
+    },
+    {
+      "filename": "游鲨游戏数据共享资料.zip",
+      "category": "技术学习"
+    },
+    {
+      "filename": "C++线性代数库 - eigen-5.0.0.tar.bz2",
+      "category": "技术学习"
+    },
+    {
+      "filename": "GAMES101-现代计算机图形学入门-闫令琪 - 笔记.pdf",
+      "category": "技术学习"
+    },
+    {
+      "filename": "感觉肚脐如果在腰线最细的地方比例会很好看_🐶樱落🌈_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "感觉肚脐如果在腰线最细的地方比例会很好看_1_🐶樱落🌈_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "感觉肚脐如果在腰线最细的地方比例会很好看_燊燊_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "练习A叔的三条内在原理《自学钢琴中高阶练琴经验》-练习A叔的三条内在原理《自学钢琴中高阶练琴经验》_1.mp4",
+      "category": "弹钢琴"
+    },
+    {
+      "filename": "浏览器数据一键导出 - hack-browser-data-windows-64bit.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "一张图可以清晰的表达“斩杀线”_饭洛洛_🐳_来自小红书网页版.jpg",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "问问大象的核心逻辑.png",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "WeChat_20260604121449.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "ikuuu_vpn-0.16.12-35a8a622-windows-amd64.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "ESJZone-novel-mirror-main.zip",
+      "category": "小说"
+    },
+    {
+      "filename": "ESJZone-novel-mirror-main",
+      "category": "小说"
+    },
+    {
+      "filename": "0cfc3e785fb41b8f19fa0f4749cadce1.mp4",
+      "category": "私人图片"
+    },
+    {
+      "filename": "bed413033a6bb5ea0972e286ef982de5.mp4",
+      "category": "私人图片"
+    },
+    {
+      "filename": "即兴表达.png",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "潜水员联机测试-meta-main.zip",
+      "category": "游戏"
+    },
+    {
+      "filename": "如何善用boss直聘辅助职业规划 v1.0.pdf",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "营养与饮食.pdf",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "小组作业组长实战指南.pdf",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "笔刷转换器 - Brush-Converter-main.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "VLC-Android-3.6.5-arm64-v8a.apk",
+      "category": "安装包"
+    },
+    {
+      "filename": "legado_app_3.25_1.apk",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "legado_app_3.25.apk",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "go-music-dl--main.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "go-music-dl-desktop-windows-386.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "stardewVelly解包资源.zip",
+      "category": "游戏"
+    },
+    {
+      "filename": "NapCat-QCE-Windows-x64-v5.5.7.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "NapCat-Framework-QCE-v5.5.7.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "clash-party-windows-1.8.9-x64-setup.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "微软软件离线安装包",
+      "category": "资源备份"
+    },
+    {
+      "filename": "awesome-design-md-main.zip",
+      "category": "资源备份"
+    },
+    {
+      "filename": "感兴趣的steam个人空间背景",
+      "category": "资源备份"
+    },
+    {
+      "filename": "诡辩术-60种诡辩方法.带目录.pdf",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "旋风加速器.apk",
+      "category": "安装包"
+    },
+    {
+      "filename": "文件隐藏器 - Amarok-v0.10.0.apk",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "2026寒假私房课宣讲.mp4",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "米哈游工具开发岗介绍.png",
+      "category": "技术学习"
+    },
+    {
+      "filename": "大象文化月连麦问答原文整理.md",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "chrome插件-aixdownloader-9.0.58.zip",
+      "category": "资源备份"
+    },
+    {
+      "filename": "星露谷登陆界面谱.png",
+      "category": "弹钢琴"
+    },
+    {
+      "filename": "源码-Claude-Code-main.zip",
+      "category": "技术学习"
+    },
+    {
+      "filename": "绘画教程.mp4",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "理财入门扫盲.pdf",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "多地应届生身份标准放宽，究竟是好事还是坏... - 问问大象-自主发展.pdf",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "篡改猴 - dhdgffkkebhmkfjojejmpbldmpobfkfo.crx",
+      "category": "资源备份"
+    },
+    {
+      "filename": "沉浸式翻译 - bpoadfkcbjbfhfodiogcnhhhpibjhbnh.crx",
+      "category": "资源备份"
+    },
+    {
+      "filename": "学校关于2023—2024学年度第1学期往返佛山校区交通车安排的通知.pdf",
+      "category": "学校"
+    },
+    {
+      "filename": "2025华南师范大学推荐免试攻读硕士学位研究生综合得分汇总表.xlsx",
+      "category": "学校"
+    },
+    {
+      "filename": "(6 封私信 _ 80 条消息) 《漕河泾的年轻人》一文刷屏，马上就有反对的声音出现，认为这些高学历高工资的游戏人不配委屈，你怎么看？ - 知乎.pdf",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "4月24日华南理工大学2026届.xlsx",
+      "category": "学校"
+    },
+    {
+      "filename": "本地管理stars和跟踪的release - GitHub.Stars.Manager.Setup.0.5.3.exe",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "10月9日_2_.mp4_-_外链分享_-_kodbox_-_Powered_by_kodbox.mp4",
+      "category": "游戏"
+    },
+    {
+      "filename": "640.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "skill - aigc-reduce-main.zip",
+      "category": "agent资源"
+    },
+    {
+      "filename": "伪娘养成手册·好想做个女孩子【目标：全员14亿人伪娘化】新年贺礼 前方高能反应 围观请慎重.docx",
+      "category": "资源备份"
+    },
+    {
+      "filename": "aixdownloader-9.0.58.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "世界第一公主殿下.pdf",
+      "category": "弹钢琴"
+    },
+    {
+      "filename": "mymusic5_381029_[HalcyonMusic] Kaguya (cv. Yuko Natsuyoshi) & Yachiyo Runami (cv. Saori Hayami) - ray (Cosmic Princess Kaguya! Version).pdf",
+      "category": "弹钢琴"
+    },
+    {
+      "filename": "NapCat-QCE-Windows-x64-v5.5.62.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "NapCat-Framework-QCE-v5.5.62.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "【CHUNITHM】大国奏音 - YOUNITHM-【CHUNITHM】大国奏音 - YOUNITHM_1.aac",
+      "category": "音乐"
+    },
+    {
+      "filename": "仿雷霆战机音色预设和midi.rar",
+      "category": "资源备份"
+    },
+    {
+      "filename": "拼贴诗，但是明日方舟_1_Augenblick_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "taken. — Since You Arrived Vol. IV.html",
+      "category": "技术学习"
+    },
+    {
+      "filename": "640.gif",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "a0ef9511bedb4539879e6dbcb10c73df20260521.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "Avid86开谱ABCDEFG段-Avid86开谱ABCDEFG段_1.mp4",
+      "category": "弹钢琴"
+    },
+    {
+      "filename": "系统清理工具（主要用于浏览器数据清理） - BleachBit-6.0.0-portable.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "音游按键指示（特别是冰与火之歌） - LineKeyViewer.exe",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "开源阅读加上AI结合功能 - ReadAny_1.3.1_x64-setup.exe",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "冰与火之舞mod前置 - JALib.zip",
+      "category": "游戏"
+    },
+    {
+      "filename": "CC-Switch-v3.16.1-Windows.msi",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "CC-Switch-v3.16.1-Windows-Portable.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "精灵_2_泉谷_来自小红书网页版.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "9b386a2a9287a19be0d25a8f2d14d467347225271.gif",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "640 (1).webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "问问大象毛老师推荐的无中译书 - Uncommon_Sense_Rethinking_Ordinary_Problems_in_Extraordinary_Ways_(William_R._Brody)_(z-library.sk,_1lib.sk,_z-lib.sk).epub",
+      "category": "资源备份"
+    },
+    {
+      "filename": "小肚小肚_1_金平糖_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "superpowers-main.zip",
+      "category": "agent资源"
+    },
+    {
+      "filename": "听说长发+遮眼会变得软糯_1_可暮kure_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "微信图片_20260607205551.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "export_uids.json",
+      "category": "资源备份"
+    },
+    {
+      "filename": "小心.mp3",
+      "category": "#小心"
+    },
+    {
+      "filename": "我的后宫全是反派魔女.zip",
+      "category": "漫画"
+    },
+    {
+      "filename": "win系统管理 - optimizerDuck-Windows-x64-2.25.5.exe",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "mymusic5_487538_[HalcyonMusic (ハルシオン)] ReoNa - Amore.pdf",
+      "category": "弹钢琴"
+    },
+    {
+      "filename": "steam破解密钥 - ManifestHub2-main.zip",
+      "category": "开源项目"
+    },
+    {
+      "filename": "legado--master.zip",
+      "category": "开源项目"
+    },
+    {
+      "filename": "微信图片_20260712215647.png",
+      "category": "资源备份"
+    },
+    {
+      "filename": "1783590837.jfif",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "GPT-5.4.json",
+      "category": "agent资源"
+    },
+    {
+      "filename": "GPT-5.4mini.json",
+      "category": "agent资源"
+    },
+    {
+      "filename": "GPT-5.5.json",
+      "category": "agent资源"
+    },
+    {
+      "filename": "Trae.json",
+      "category": "agent资源"
+    },
+    {
+      "filename": "CodeBuddy.json",
+      "category": "agent资源"
+    },
+    {
+      "filename": "MaaNTE-win-x86_64-v1.2.1-MXU.zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "妈妈们来咯.mp4",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "Solar-Wanderer-main.zip",
+      "category": "开源项目"
+    },
+    {
+      "filename": "ark-pixel-font-12px-monospaced-otf-v2026.05.07.zip",
+      "category": "资源备份"
+    },
+    {
+      "filename": "ark-pixel-font-12px-monospaced-ttf-v2026.05.07.zip",
+      "category": "资源备份"
+    },
+    {
+      "filename": "math-curve-loaders-main.zip",
+      "category": "开源项目"
+    },
+    {
+      "filename": "精调多显示器的相对位置 - LittleBigMouse-5.2.3.0.exe",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "CodeBuddy-win32-x64-user-4.9.13.30241433-0acccacc-cn.exe",
+      "category": "安装包"
+    },
+    {
+      "filename": "他想干嘛_1_momo_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "1040g3k0321ed7aur7o1g5njlus6g91vnk0pbet0!nd_dft_wgth_webp_3.webp",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "官方素材包.zip",
+      "category": "资源备份"
+    },
+    {
+      "filename": "字节入职七周年_猫猫不想说🐱_来自小红书网页版.jpg",
+      "category": "网页杂图片"
+    },
+    {
+      "filename": "字节跳动工作七年的老哥.png",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "通行证下单文件1.0",
+      "category": "资源备份"
+    },
+    {
+      "filename": "无电路通行证文件1.0",
+      "category": "资源备份"
+    },
+    {
+      "filename": "为什么你的弦乐总是没有内味_【音频设计基础分享会】_-_编曲混音第一期_-_弦乐质感塑造",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "函数棋1.0.0",
+      "category": "游戏"
+    },
+    {
+      "filename": "理想工作_工作前面是「理想」！_-_问问大象-自主发展",
+      "category": "高级学习资料"
+    },
+    {
+      "filename": "暮光kotlin重构版-4.0.2.apk",
+      "category": "安装包"
+    },
+    {
+      "filename": "mymusic5_497439_[HalcyonMusic (ハルシオン)] ZUTOMAYO - Fig smoke.pdf",
+      "category": "弹钢琴"
+    },
+    {
+      "filename": "本地日语词典，需要添加dict到PATH，dict [日语、中文、罗马音] [-（可选的反转输出）].zip",
+      "category": "开源成品工具"
+    },
+    {
+      "filename": "熄灭 - TC.lrc.待对齐时间戳.据说内嵌歌词",
+      "category": "音乐"
+    },
+    {
+      "filename": "熄灭 - TC.flac",
+      "category": "音乐"
+    },
+    {
+      "filename": "For-The-King-Ii.zip",
+      "category": "游戏"
+    },
+    {
+      "filename": "wechat_db_tool--main.zip",
+      "category": "开源项目"
+    },
+    {
+      "filename": "Sainaobrush.abr.zip",
+      "category": "画画"
+    },
+    {
+      "filename": "tourboxillust.psd",
+      "category": "画画"
+    }
+  ]
+}

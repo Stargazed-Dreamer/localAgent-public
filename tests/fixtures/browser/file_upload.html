@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>File Upload Fixture</title>
+<style>body{font-family:sans-serif;padding:20px}button{margin:8px;padding:6px 12px}</style>
+</head>
+<body>
+<h1>File Upload Fixture</h1>
+<input type="file" id="fileInput" style="display:none">
+<button id="triggerBtn">Trigger File Chooser</button>
+<p>Status: <span id="status">not triggered</span></p>
+<script>
+document.getElementById('triggerBtn').addEventListener('click', function(){
+  document.getElementById('fileInput').click();
+  document.getElementById('status').textContent = 'file chooser triggered';
+});
+</script>
+</body>
+</html>

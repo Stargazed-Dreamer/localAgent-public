@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>BeforeUnload Test Fixture</title>
+<style>body{font-family:sans-serif;padding:20px}button{margin:8px;padding:6px 12px}</style>
+</head>
+<body>
+<h1>BeforeUnload Fixture</h1>
+<p>本页面注册了 beforeunload 事件处理器，关闭/刷新时会弹出原生对话框。</p>
+<p id="status">页面初始状态</p>
+<button id="markDirtyBtn">标记脏数据（启用 beforeunload）</button>
+<button id="clearDirtyBtn">清除脏数据（禁用 beforeunload）</button>
+<script>
+// 全局脏数据标记，初始为 true（页面一加载就启用 beforeunload）
+var isDirty = true;
+
+window.addEventListener('beforeunload', function(e) {
+  if (isDirty) {
+    // 标准写法：设置 returnValue 触发原生对话框
+    e.preventDefault();
+    e.returnValue = '有未保存的修改，确定要离开吗？';
+    return '有未保存的修改，确定要离开吗？';
+  }
+});
+
+document.getElementById('markDirtyBtn').addEventListener('click', function() {
+  isDirty = true;
+  document.getElementById('status').textContent = '已标记脏数据';
+});
+
+document.getElementById('clearDirtyBtn').addEventListener('click', function() {
+  isDirty = false;
+  document.getElementById('status').textContent = '已清除脏数据';
+});
+</script>
+</body>
+</html>

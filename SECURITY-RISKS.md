@@ -1,0 +1,413 @@
+# SECURITY-RISKS.md
+
+> LocalAgent 项目已知安全风险与查证结论。
+> 本文件由 `temp/sdd/chat-engine-safety-fixes/` SDD 流程产出，对应 spec D18/D19/D25 决策。
+>
+> 风险等级：
+> - **高危**：攻击者接触本机即可利用，建议尽快修复
+> - **中危**：需特定条件利用，建议排期修复
+> - **低危**：理论风险或仅影响可用性，可暂缓
+> - **非漏洞**：查证后确认安全，仅记录测试/文档缺口
+
+---
+
+## 1. 后端无认证即可连接（高危，D18）
+
+### 描述
+
+LocalAgent 后端 FastAPI 监听 `127.0.0.1:8766`，**无任何认证**。任何能访问本机的进程都可调用全部 API（含 exec_python / exec_cmd / 文件读写 / 屏幕操控 / 关机等高危操作）。
+
+### 利用条件
+
+- 攻击者能在本机执行任意代码（如恶意软件、被入侵的浏览器扩展利用 SSRF）
+- 或本机多用户环境中其他用户能访问 127.0.0.1:8766
+
+### 影响
+
+- 完全系统沦陷：执行任意命令、读取任意文件、操控屏幕、关机
+- 凭据泄露：可读取 `config.toml` 中的 API keys、`keys.json` 中的 LLM tier keys
+
+### 缓解措施
+
+- 个人单用户使用场景下风险可控
+- 不在多用户环境运行后端
+- 防止恶意软件运行（标准安全卫生）
+- 未来可选：加 token 认证 / Uvicorn socket 权限控制
+
+### 当前处置
+
+**个人用暂不修。** 用户明确决定（D18）。
+
+---
+
+## 2. 凭据明文存储在 EventStore（中危，D18）
+
+### 描述
+
+v6-lite chat 引擎的 EventStore（SQLite）持久化所有对话消息，包括用户消息中可能包含的 API keys、tokens、密码等敏感凭据。这些数据**明文存储**，无加密、无过滤。
+
+### 存储位置
+
+- `data/client/agent.db` 的 `messages` 表
+- `data/client/agent.db` 的 `events` 表（streaming events）
+- `data/client/agent.db` 的 `tool_calls` 表（tool 调用参数与结果）
+
+### 利用条件
+
+- 攻击者能读取 `data/client/agent.db` 文件
+- 或攻击者能调用 `/sessions/{id}/messages` 等 REST 端点
+
+### 影响
+
+- 历史对话中出现的所有凭据泄露
+- 工具调用参数中的敏感数据（如 exec_python 代码中的密码变量）泄露
+
+### 缓解措施
+
+- 依靠文件系统权限保护 `data/` 目录（E9 已对 artifact 文件设 0o600，但 agent.db 本身未设）
+- 不在对话中粘贴敏感凭据
+- 定期清理 `data/client/agent.db`
+
+### 当前处置
+
+**个人用暂不修。** 用户明确决定（D18）。
+
+---
+
+## 3. 路径白名单缺失（中危，D19）
+
+### 描述
+
+`file_edit` / `file_write` 等工具可写任意路径，无工作区白名单约束。Agent 可被诱导修改用户主目录下任意文件（如 `~/.ssh/authorized_keys`、`~/.bashrc`）。
+
+### 利用条件
+
+- Agent 被提示注入攻击（用户让 agent 处理恶意内容，agent 误改关键文件）
+- 或 agent 决策错误（误删重要文件）
+
+### 影响
+
+- 关键配置文件被改写
+- SSH 公钥被注入（无密码登录后门）
+- 用户 shell 启动脚本被改写（持久化恶意代码）
+
+### 缓解措施
+
+- 危险路径写入仍走 command_guard 审批（exec_python 路径）
+- 用户监督 agent 行为
+
+### 当前处置
+
+**记入 wip。** 用户决定（D19）后续在 GUI 改进中加"工作区"概念：新建会话时选定工作区，agent 提示词中告知工作区路径。其他路径不强制限制（个人辅助场景需要 agent 到处干活）。
+
+---
+
+## 4. 内部 MCP 调用审批机制（非漏洞，E10 查证）
+
+### 描述
+
+调查问题：MCP 工具调用是否绕过 PermissionPolicy？
+
+### 查证结论
+
+**MCP 内部调用不绕过 PermissionPolicy**，但审批由独立机制强制，而非 HTTP 中间件。
+
+### 机制说明
+
+- `fastapi-mcp` 用 `httpx.ASGITransport` 把 MCP 工具调用转为对 FastAPI app 的内部 HTTP 请求
+- `server/core/mcp_gateway.py:51-321` 的 `_patched_execute_api_tool` 包装层在调原始 fastapi-mcp 之前先查 `_operation_safety_map[effective_op]`
+- `approval_required` 工具走三层递进审批（静态规则 → LLM → 人审）+ token 验证
+- `localagent_advanced_tool` 网关：patch 检查 `arguments.tool`（目标 op）的 safety，避免"一次网关审批解锁所有端点"提权
+- handler 内 `command_guard.check_command()` 在 MCP 路径上也生效（与调用来源无关）
+- 不存在 MCP-only 工具：所有 44 个 DIRECT_TOOLS 都有 REST 后端
+
+### 发现的非安全缺陷
+
+1. **未知 op 默认放行**（理论缺口，已补回归测试）：`safety_map.get(unknown_op)` 返回 None → 不进 approval 分支。受 DIRECT_TOOLS 硬编码 + advanced_tool registry 守门限制，运行时无法实际利用。2026-08-06 补 `TestUnknownOpDefaultPass` 回归测试（4 测试，`tests/test_mcp.py`），锁定"默认放行 + 多层守门"行为，防止未来重构时误改 `build_operation_safety_map` 漏掉路由导致该路由绕过审批。
+
+> 已修复并移出（2026-08-06）：C1（http_guard.py:6 注释过时）、C3（mcp_gateway.py:145-156 人审 token 丢弃，已被 _approved_cache 治本缓解）—— 详见 CHANGELOG.md [Unreleased]。
+
+### 当前处置
+
+**安全模型有效，无需修复。** C1/C3 已修复（2026-08-06），子项 1 仍为理论缺口，已补回归测试锁定行为契约。
+
+---
+
+## 5. memory 路径校验（非漏洞，E11 查证）
+
+### 描述
+
+调查问题：memory_key 参数是否存在路径遍历漏洞？
+
+### 查证结论
+
+**memory 路径校验对路径遍历攻击是充分的**（三层独立防护层叠加）。
+
+### 三层防护
+
+1. **白名单正则** `_KEY_PATTERN = r'^[a-zA-Z0-9_-]+$'` 在 FastAPI 路由层拒绝所有可疑字符（`server/memory/router.py:19, 392, 408, 444`）
+2. **SQLite 参数化查询** 阻断 SQL 注入（`server/memory/store.py:297-311` upsert_fact 等）
+3. **架构上 key 从不参与文件路径构造** — 即使前两层都被绕过，也无法触发文件系统遍历
+
+### 攻击向量核查
+
+所有以下向量均被白名单阻断：空字符串 / 路径分隔符 `/` / 反斜杠 `\` / 点段 `.` `..` / Unicode 全角 `．．／` / URL 编码 `%2e%2e%2f` / Null 字节 / 空格 / 特殊字符 / Shell 元字符。
+
+### 存储类型
+
+**SQLite（DB-based，低风险）**，非文件系统。key 仅作 SQLite 列值。
+
+### 发现的非安全缺陷
+
+1. **缺口 C（测试覆盖，已补）**：测试套件原无针对 `_KEY_PATTERN` 的回归测试。2026-08-06 补 `TestKeyPatternValidation` 回归测试（74 测试，`tests/test_memory.py`），覆盖 4 个验证点（GET/POST/DELETE Path 参数 + POST /memory/record body 字段），按 URL 解析行为分类（path 端点能进 pattern 的字符 vs URL/路由提前阻断的字符），防止未来误删 `pattern=` 参数无测试会失败。
+
+> 已修复并移出（2026-08-06）：C4（MemoryRecordRequest.key 加 `pattern=_KEY_PATTERN`）、C5（_KEY_PATTERN 加 `{1,128}` 长度上限）—— 详见 CHANGELOG.md [Unreleased]。
+
+### 当前处置
+
+**无路径遍历漏洞。** 缺口 A/B 已修复（2026-08-06），缺口 C 已补回归测试（74 测试全过）。
+
+---
+
+## 6. 审批 token 重放攻击（非漏洞，E12 查证）
+
+### 描述
+
+调查问题：approval_token 是否可被重放？两套审批系统（http_guard + command_guard）。
+
+### 查证结论
+
+**审批令牌系统不受重放攻击威胁**（三层防御 + 无竞态条件）。
+
+### 三层防御
+
+1. **一次性使用**：`consume_token` 用 `dict.pop(token, None)` 原子取出并删除令牌
+   - `http_guard.py:100`：`record = _tokens_http.pop(token, None)`
+   - `command_guard.py:111`：`record = _tokens.pop(token, None)`
+   - 第二次调用必返回 None → False
+
+2. **指纹绑定**：
+   - http_guard: `hash(method.upper() + path + sha256(body)[:16])`（`http_guard.py:33-37`）
+   - command_guard: `hash(command + shell + resolved(cwd))`（`command_guard.py:70-72`）
+   - 指纹校验在 pop **之后**：窃取令牌用于不同命令时，令牌被销毁而非复用（安全正向设计）
+
+3. **时间过期**：`token_ttl_seconds` 默认 120s（`http_guard.py:128`、`command_guard.py:201`），`_cleanup` 在每次 consume/record 前清理过期条目
+
+### 无竞态条件
+
+- `consume_token` 是同步函数（无 `await`），不会在执行中途让出事件循环
+- `dict.pop()` 在 GIL 下原子
+- 单进程部署（`uvicorn.run(app, ...)` 单进程），无多进程令牌 store 副本
+
+### 存储方式
+
+纯内存 dict，无 DB 持久化。服务重启即吊销所有未消费令牌（正向）。
+
+### 发现的非安全缺陷
+
+> 已修复并移出（2026-08-06）：C7（test_http_guard.py 核心逻辑 40 测试）、C8（并发/跨端点/过期令牌重放 11 测试）—— 详见 CHANGELOG.md [Unreleased]。
+> 已迁出（2026-08-06）：原"非漏洞但记录"子项 3（`_approved_cache` 设计）和子项 4（令牌不绑定 user/session + HTTP 明文）属设计选择，非安全缺陷，已迁到 `docs/dev-workflow.md`「审批系统设计选择记录」小节归档。
+
+### 当前处置
+
+**无重放攻击漏洞。** 缺口 A/B 已修复（2026-08-06，51 测试全过），原"非漏洞但记录"子项 3/4 已迁到 `docs/dev-workflow.md` 归档（非 SECURITY-RISKS.md 范畴）。
+
+---
+
+## 7. lib/secret 密钥明文存储 at rest（中危，lib/secret 改造）
+
+### 描述
+
+`data/secret/secrets.toml` 和 `data/llm/keys.json` 均为明文存储，依赖 `.gitignore` 兜底。lib/secret 作为统一读取入口，但本轮不实现加密层。
+
+### 影响
+
+本地文件系统被访问时（恶意软件、误共享目录、备份泄露），密钥直接暴露。
+
+### 缓解措施
+
+- `.gitignore` 排除 `data/`、`data/secret/`、`data/llm/`
+- lib/secret 作为统一读取入口，便于未来扩展加密层
+- 文件系统权限依赖 Windows 用户隔离
+
+### 当前处置
+
+**个人用暂不修。** 本轮 lib/secret 改造决策（不加密 at rest）。未来可扩展 lib/secret v2 增加 encrypt/decrypt 层，用 Windows Credential Manager 或 keyring 库。
+
+---
+
+## 8. config.toml 明文 token（中危，lib/secret 改造，迁移后消除）
+
+### 描述
+
+`tushare_token` / `github_token` 原在 config.toml 明文存储。
+
+### 影响
+
+config.toml 被访问时 token 暴露。
+
+### 缓解措施
+
+本轮迁移到 `data/secret/secrets.toml`（仍明文，但集中管理）。
+
+### 当前处置
+
+**迁移后消除。** 迁移脚本 `tools/migrate_secrets.py` 负责搬迁。
+
+---
+
+## 9. chrome_debug/ 浏览器凭据（中危，无法消除）
+
+### 描述
+
+浏览器保存的网站登录凭据、cookies、表单数据在 `chrome_debug/` 目录。
+
+### 影响
+
+目录被访问时凭据暴露。
+
+### 缓解措施
+
+- `.gitignore` 排除 `chrome_debug/`
+- 独立用户数据目录（与工作浏览器隔离）
+- Chrome 自身的 SQLite 加密（DPAPI 保护）
+
+### 当前处置
+
+**无法消除。** 浏览器凭据是 SQLite 数据库，Chrome 用 DPAPI 加密，无法被 lib/secret 读取。依赖文件系统权限和 Chrome 自身加密。
+
+---
+
+## 10. 发布包脱敏依赖 path_mapping 规则完整性（低危）
+
+### 描述
+
+release engine 的 path_mapping 规则遗漏会导致个人路径泄露到发布包。
+
+### 影响
+
+发布包接收者可看到真实本地路径（如 `C:\<user_home>\`）。
+
+### 缓解措施
+
+- 每轮发布前跑 `uv run python -m tools.release.cli scan --profile friend-full` 验证
+- path_mapping 覆盖 4 种字面形式（单反斜杠/双反斜杠/正斜杠/转义）× 大小写变体
+- build_release 是扁平拷贝，不含 `.git` 历史
+
+### 当前处置
+
+**低危，每轮验证。** 规则已成熟。
+
+---
+
+## 11. 二级敏感内容（逻辑泄露）（中危）
+
+### 描述
+
+代码/文档中非明文但逻辑上可识别身份的内容：
+- 硬编码的个人邮箱/用户名/机器名
+- 文档中提到的私人项目结构、具体工作流描述
+- 注释中的个人习惯、内部约定
+- skill 文件中描述的私人场景（如"每天 9 点分析持仓"暴露交易习惯）
+- 测试数据中的伪个人数据
+- 错误信息/日志格式中可能暴露的系统配置
+
+### 影响
+
+发布包接收者可推断项目所有者身份和习惯。
+
+### 缓解措施
+
+- 本轮 LLM 语义审查（subagent 并行扫描所有 git-tracked 文件）
+- release engine scan 的 `private-repository-reference` 规则覆盖部分场景
+
+### 当前处置
+
+**中危，本轮审查。** 无法完全消除，依赖审查覆盖度。
+
+---
+
+## 12. git 历史可能含历史密钥（中危）
+
+### 描述
+
+历史 commit 中可能提交过密钥（gitignore 后加的）。
+
+### 影响
+
+clone 完整 git 历史可获取历史密钥。
+
+### 缓解措施
+
+- 发布包扁平拷贝不含 `.git` 历史
+- 定期轮换密钥（特别是 GitHub PAT）
+- git secrets / pre-commit hook（未实施，未来改进）
+
+### 当前处置
+
+**中危，密钥轮换。** 历史密钥需轮换消除。
+
+---
+
+## 风险登记时间线
+
+| 日期 | 风险项 | 处置 |
+|------|--------|------|
+| 2026-08-06 | 后端无认证（D18） | 个人用暂不修 |
+| 2026-08-06 | 凭据明文存储（D18） | 个人用暂不修 |
+| 2026-08-06 | 路径白名单缺失（D19） | 记入 wip，GUI 加工作区概念 |
+| 2026-08-06 | E10 MCP 审批 | 查证安全（C1/C3 已修复 2026-08-06；子项 1"未知 op 默认放行"理论缺口，已补 `TestUnknownOpDefaultPass` 回归测试 4 测试） |
+| 2026-08-06 | E11 memory 路径校验 | 查证安全（C4/C5 已修复 2026-08-06；缺口 C 已补 `TestKeyPatternValidation` 回归测试 74 测试全过） |
+| 2026-08-06 | E12 token 重放 | 查证安全（C7/C8 已修复 2026-08-06，51 测试；子项 3/4 设计记录已迁到 `docs/dev-workflow.md`） |
+| 2026-08-06 | lib/secret 密钥明文 at rest | 个人用暂不修（lib/secret 改造决策，未来 v2 加密） |
+| 2026-08-06 | config.toml 明文 token | 迁移后消除（迁到 secrets.toml） |
+| 2026-08-06 | chrome_debug 浏览器凭据 | 无法消除（SQLite + DPAPI，依赖 gitignore） |
+| 2026-08-06 | path_mapping 完整性 | 低危，每轮验证 |
+| 2026-08-06 | 二级敏感内容（逻辑泄露） | 中危，本轮 LLM 语义审查 |
+| 2026-08-06 | git 历史密钥 | 中危，密钥轮换 |
+| 2026-08-07 | route_tags fail-open | 低危，设计选择（安全靠 safety+approval） |
+| 2026-08-07 | server 侧 OCR 路径遍历 | 中危，工具通用性优先不改 |
+
+---
+
+## 13. route_tags fail-open 默认暴露（低危，设计选择）
+
+### 描述
+
+`server/route_tags.py` 的 `_is_agent_callable` 函数采用 fail-open 策略：新端点默认 `x-agent-callable=True`，只有显式加入 `GATEWAY_EXCLUDE` 的端点才不被标记为 agent 可调。
+
+### 影响
+
+新端点自动暴露给 agent。如果新端点有危险操作但未配置 `classify_safety` + `approval_level`，agent 可直接调用。
+
+### 缓解措施
+
+- 安全防护靠 `classify_safety` → `approval_level` → HTTP 中间件拦截，不靠 `x-agent-callable` 标志
+- 危险端点（如 auto_shutdown）应在 `classify_safety` 中标为 `danger` + `approval_required`
+- `x-agent-callable` 当前仅写入 OpenAPI 元数据，运行时消费方为 ToolRegistry
+
+### 当前处置
+
+**设计选择，不改。** 加 MCP 端点的目的就是给 agent 用，fail-open 是有意设计。docstring 已修正（T09）。
+
+---
+
+## 14. server 侧 OCR/VL/docviewer/mindforge 路径端点无白名单（中危，工具通用性优先）
+
+### 描述
+
+`server/ocr.py` 的 `vl_file_json`/`ocr_file_json`、`server/mindforge*.py` 的路径端点接受任意文件路径，仅检查 `p.exists()`，无工作区白名单。与 `client/core/agent/builtin_tools/base.py` 的 `is_path_safe`（4 重校验 + PROJECT_ROOT 白名单）形成防护不一致。
+
+### 影响
+
+agent 通过 `localagent_advanced_tool` 网关可调这些端点，传 `C:\<user_home>\.ssh\id_rsa` 等敏感路径。虽然 `Image.open` 限制只能读图片格式，但攻击者可通过截图/PDF 间接泄露敏感信息。`docviewer_read`/`mindforge_convert` 可能接受更多文档格式，风险更高。
+
+### 缓解措施
+
+- `vl_file_json`/`ocr_file_json` 用 `Image.open(p)` → 只能读图片格式，文本文件会报错
+- 端点在 `GATEWAY_EXCLUDE` 中的情况需确认（fail-open 默认暴露）
+- `classify_safety` + `approval_level` 提供一级防护
+
+### 当前处置
+
+**不改，工具通用性优先。** OCR 工具需读任意路径的图片（桌面截图、D 盘 PDF 等），加白名单会限制工具通用性。记入风险文档。

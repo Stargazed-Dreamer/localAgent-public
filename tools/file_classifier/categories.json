@@ -1,0 +1,104 @@
+{
+  "categories": [
+    {
+      "name": "<data_drive>:\<bilibili_videos>视频",
+      "path": "E:/<data_drive>:\<backup_root>/<data_drive>:\<bilibili_videos>视频",
+      "extensions": []
+    },
+    {
+      "name": "蓝p图片",
+      "path": "E:/Download_classify/蓝p图片",
+      "extensions": []
+    },
+    {
+      "name": "网页杂图片",
+      "path": "E:/Download_classify/网页杂图",
+      "extensions": []
+    },
+    {
+      "name": "#小心",
+      "path": "E:/Download_classify/#小心",
+      "extensions": []
+    },
+    {
+      "name": "漫画",
+      "path": "E:/#仓储/艺术ACGN/漫画",
+      "extensions": []
+    },
+    {
+      "name": "番",
+      "path": "E:/Download_classify/番",
+      "extensions": []
+    },
+    {
+      "name": "游戏",
+      "path": "E:/Download_classify/游戏",
+      "extensions": []
+    },
+    {
+      "name": "开源项目",
+      "path": "E:/Download_classify/开源项目",
+      "extensions": []
+    },
+    {
+      "name": "小说",
+      "path": "E:/#仓储/艺术ACGN/小说",
+      "extensions": []
+    },
+    {
+      "name": "安装包",
+      "path": "E:/Download_classify/安装包",
+      "extensions": []
+    },
+    {
+      "name": "资源备份",
+      "path": "E:/Download_classify/资源备份",
+      "extensions": []
+    },
+    {
+      "name": "技术学习",
+      "path": "E:/Download_classify/技术学习",
+      "extensions": []
+    },
+    {
+      "name": "弹钢琴",
+      "path": "E:/Download_classify/弹钢琴",
+      "extensions": []
+    },
+    {
+      "name": "开源成品工具",
+      "path": "E:/Download_classify/开源成品工具",
+      "extensions": []
+    },
+    {
+      "name": "高级学习资料",
+      "path": "E:/Download_classify/高级学习资料",
+      "extensions": []
+    },
+    {
+      "name": "私人图片",
+      "path": "E:/Download_classify",
+      "extensions": []
+    },
+    {
+      "name": "学校",
+      "path": "E:/Download_classify/学校",
+      "extensions": []
+    },
+    {
+      "name": "agent资源",
+      "path": "E:/Download_classify/agent资源",
+      "extensions": []
+    },
+    {
+      "name": "音乐",
+      "path": "E:/<data_drive>:\<working_root>/听の歌",
+      "extensions": []
+    },
+    {
+      "name": "画画",
+      "path": "E:/Download_classify/画画",
+      "extensions": []
+    }
+  ]
+}

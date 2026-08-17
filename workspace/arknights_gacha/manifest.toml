@@ -1,0 +1,36 @@
+[component]
+name = "arknights_gacha"
+version = "0.1.0"
+description = "明日方舟寻访官网/小黑盒数据采集"
+project_tag = "arknights_gacha"
+enabled = true
+
+[exports.runtime]
+files = []
+
+[exports.source]
+# G3 决策（2026-08-10）：白名单含游戏配置 JSON（bwiki_pools/prts_limited_pools），排除 pool_registry.json/gacha_records.json/raw_full.json/summary.json/小黑盒界面*.{md,jpg}/raw/
+files = [
+    "workspace/arknights_gacha/*.py",
+    "workspace/arknights_gacha/SKILL.md",
+    "workspace/arknights_gacha/manifest.toml",
+    "workspace/arknights_gacha/bwiki_pools.json",
+    "workspace/arknights_gacha/bwiki_pools_full.json",
+    "workspace/arknights_gacha/prts_limited_pools.json",
+]
+
+[release_facts]
+contains_personal_data = false
+requires_external_credentials = false
+# 2026-08-10 T-v4: 升级为 apache-2.0（playwright=Apache-2.0, playwright_stealth=MIT 兼容）
+# 审查记录：temp/sdd/release-engine/license-review-v4/arknights_gacha.md
+license_class = "apache-2.0"
+
+[agent_guide]
+file = "loop_actions.py"
+entries_var = "GUIDE_REGISTRY_ENTRIES"
+
+[skill]
+file = "SKILL.md"
+task_type = "recurring.arknights_gacha"
+index_section = "components"

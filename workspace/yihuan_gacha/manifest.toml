@@ -1,0 +1,34 @@
+[component]
+name = "yihuan_gacha"
+version = "0.1.0"
+description = "异环抽卡记录截图OCR采集+清洗归档"
+project_tag = "yihuan_gacha"
+enabled = true
+
+[exports.runtime]
+files = []
+
+[exports.source]
+# G3 决策（2026-08-10）：白名单只含代码+文档，所有 *.json 均为个人记录（database/final/review/summary），raw/ 排除
+# 注：debug/*.py 默认不含（开发调试脚本），如需包含可追加 "workspace/yihuan_gacha/debug/*.py"
+files = [
+    "workspace/yihuan_gacha/*.py",
+    "workspace/yihuan_gacha/SKILL.md",
+    "workspace/yihuan_gacha/manifest.toml",
+]
+
+[release_facts]
+contains_personal_data = false
+requires_external_credentials = false
+# 2026-08-10 T-v4: 升级为 apache-2.0（requests=Apache-2.0, Pillow=HPND 兼容；注：用 VL 模型 API，无 paddleocr/easyocr 依赖）
+# 审查记录：temp/sdd/release-engine/license-review-v4/yihuan_gacha.md
+license_class = "apache-2.0"
+
+[agent_guide]
+file = "loop_actions.py"
+entries_var = "GUIDE_REGISTRY_ENTRIES"
+
+[skill]
+file = "SKILL.md"
+task_type = "recurring.yihuan_gacha"
+index_section = "components"

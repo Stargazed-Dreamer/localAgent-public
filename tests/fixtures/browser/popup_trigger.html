@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Popup Trigger Fixture</title>
+<style>body{font-family:sans-serif;padding:20px}button{margin:8px;padding:6px 12px}</style>
+</head>
+<body>
+<h1>Popup Trigger Fixture</h1>
+<button id="popupBtn" onclick="window.open('about:blank', '_blank')">Open Popup</button>
+<p>Status: <span id="status">not triggered</span></p>
+<script>
+document.getElementById('popupBtn').addEventListener('click', function(){
+  document.getElementById('status').textContent = 'popup triggered';
+});
+</script>
+</body>
+</html>

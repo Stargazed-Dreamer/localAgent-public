@@ -1,0 +1,647 @@
+# localAgent 配置文件
+# 复制此文件为 config.toml 并填写实际值
+
+# ===== v9: VL provider 配置统一说明 =====
+# 自 v9 起，VL provider 配置（base_url/api_key/model/max_concurrency/timeout/rate_limit_cooldown）
+# 统一迁移到 data/llm/keys.json 的 key.vision 段（按 base_url 自动匹配）。
+# config.toml [vision] 段只保留全局参数（开关/编码/重试），不再含 provider 配置。
+# 迁移工具：tools/migrate_keys_v8_to_v9.py（v8→v9 一次性迁移，幂等可重复运行）
+#
+# ===== v8: model tier 系统说明 =====
+# 自 v8 起，[llm.models.*] 段已移除。model 的 tier (1-5) 由 keys.json 中每个 model 的
+# "tier" 字段直接定义：
+#   - tier 1: 最轻量（免费/简单任务）
+#   - tier 2: 轻量
+#   - tier 3: 默认
+#   - tier 4: 较强
+#   - tier 5: 最强大（复杂推理/VL/AIGC）
+# use_case 的 default_tier（定义在 server/llm_pool/key_store.py 的 USE_CASE_REGISTRY）
+# 决定调用时选用哪个 tier 的 key/model。tier 是硬匹配，model 是软偏好（同 tier 内可 fallback）。
+# 旧的 default/cheap/powerful 文本 tier 名仍向后兼容（_LEGACY_TIER_MAP: cheap=2, default=3, powerful=5）。
+
+# ===== LLM 配置 =====
+# 实际的 api_key/base_url/model 配置在 data/llm/keys.json（统一 Key 库）
+# config.toml 只保留全局 pool 策略和存储路径
+
+[llm]
+
+# v14: 全局默认 pool 策略（所有 key 的 fallback）
+# key 在 keys.json 中有 pool 段时用 key 级策略，否则用此全局默认。
+# 冲突优先级：key 级 pool 段 > [llm.pool] 全局默认
+[llm.pool]
+retry_count = 3                  # 失败重试次数（0=不重试）
+retry_base_delay = 2.0           # 重试基础延迟（秒，实际延迟 = base × 2^attempt + jitter）
+retry_max_delay = 30.0           # 重试最大延迟（秒，延迟上限封顶）
+retry_jitter = 0.2               # 重试抖动比例（0-1，随机化延迟避免惊群效应）
+rate_limit_cooldown_seconds = 60.0    # 收到 429 后的初始冷却时间（秒）
+rate_limit_backoff_multiplier = 2.0   # 429 退避倍数（连续 429 时冷却时间 ×此值）
+rate_limit_max_cooldown = 300.0       # 429 冷却时间上限（秒）
+
+# Provider 的 base_url / api_key / model 已迁移到 data/llm/keys.json（统一 Key 库）
+# v14: [llm.providers.*] 段已删除，pool 策略由 [llm.pool] 全局默认 + key 级 pool 段管理
+# data_safe 已删除（死配置），数据安全判断改用 key.privacy_warning
+
+[llm.storage]
+# LLM 池运行时数据存储路径（key 文件 + token 统计）
+keys_dir = "data/llm/keys"
+stats_dir = "data/llm/stats"
+# 统一 Key 库（schema v9）— 优先从此文件加载 LLM/VL/AIGC key
+unified_keys_file = "data/llm/keys.json"
+
+# 注：敏感 use_case 配置已迁移到 server/llm_pool/key_store.py 的 USE_CASE_REGISTRY（程序真源）
+# 不再支持通过 config.toml 配置 sensitive_uses
+
+[llm.privacy]
+# 当所有 key 都带 privacy_warning（如全免费 key）时，sensitive use_case 会全部失效。
+# 设为 true 可放行 sensitive+privacy_warning 的 key，由用户自担风险。
+# 默认 false（保持安全过滤）。vl_usable_for_sensitive 状态字段会反映此开关效果。
+allow_privacy_warning_for_sensitive = false
+
+# ===== 非 LLM 密钥配置（data/secret/secrets.toml）=====
+# 自 lib/secret 改造起，所有非 LLM 密钥（tushare_token / github_token / example_token 等）
+# 统一存到 data/secret/secrets.toml 的 [tokens] 段，由 lib/secret 统一读取。
+# config.toml 不再存放任何密钥（已删除 tushare_token / github_token 字段）。
+#
+# secrets.toml 模板（手动创建或用 tools/migrate_secrets.py 从旧 config.toml 迁移）：
+#   [tokens]
+#   tushare_token = "你的-tushare-pro-token"
+#   github_token = "你的-github-fine-grained-pat"
+#   example_token = "你的-example-pat"
+#
+# 读取方式（代码层）：
+#   from lib.secret import get_secret
+#   token = get_secret("tushare_token")  # 不存在返回 None
+#   token = get_secret_or_raise("tushare_token")  # 不存在抛 SecretNotFoundError
+#
+# 安全约束（见 .agents/rules/project_rules.md "密钥统一管理"段）：
+#   - 禁止将密钥硬编码到代码或写入 config.toml
+#   - 所有密钥读取必须经过 lib/secret 中转
+#   - 新增密钥必须存到 secrets.toml [tokens] 段或 data/llm/keys.json（LLM 密钥）
+#   - data/secret/ 已被 .gitignore 排除，不会进仓库
+
+# ===== Key 配置说明 =====
+# data/llm/keys.json 的每个 key 含 models 列表，每个 model 含 name/scope/tier/enabled/display_name
+# v14: limits 字段已删除（死配置，pool 用 429 冷却机制兜底，不读 limits 做限流）
+# 示例：
+#   {"key": "sk-xxx", "base_url": "https://apihub.agnes-ai.com/v1",
+#    "models": [
+#      {"name": "agnes-2.0-flash", "scope": ["llm", "vl"], "tier": 3},
+#      {"name": "agnes-image-2.0-flash", "scope": ["aigc_image"], "tier": 3}
+#    ]}
+# 注：scope 值为 llm | vl | aigc_image | aigc_video
+# 注：tier 值为 1-5 数字（详见上方"v8: model tier 系统说明"）
+#
+# ===== v12: pool_key 共享上游池去重（OmniRoute Pool-Deduped 借鉴）=====
+# 同一 pool_key 的多个 key 视为共享上游配额池（如多个 OpenRouter key 访问同一 Anthropic 上游）。
+# get_status 的 total_max_concurrency_deduped 按 pool_key 分组取 max(max_concurrency)，
+# 避免把同一上游池的多个 key 当成独立配额。
+# 默认空字符串 = 独立池（每个 key 独立计数）。
+# 示例：两个 key 都指向 OpenRouter 的 Anthropic 池
+#   {"id": "or-1", "key": "sk-or-1", "base_url": "https://openrouter.ai/api/v1",
+#    "pool_key": "openrouter-anthropic", "models": [{"name": "anthropic/claude-3.5-sonnet", "tier": 4}]},
+#   {"id": "or-2", "key": "sk-or-2", "base_url": "https://openrouter.ai/api/v1",
+#    "pool_key": "openrouter-anthropic", "models": [{"name": "anthropic/claude-3.5-sonnet", "tier": 4}]}
+# pool_key 仅在非空时写入 keys.json（保持文件简洁），通过 /keys API 显式设置。
+#
+# v12 运行时新增（schema 无需配置，自动启用）：
+# - Model Lockout：单 model 429 时只冷却该 model，同 key 其他 model 仍可用
+# - Saturation Reflow：解析上游 x-ratelimit-* 响应头写回 key.saturation，_acquire 优先选低饱和 key
+# - LKGP 会话粘性：call(session_id="xxx") 优先复用上次成功的 (key, model)，详见 docs/llm-pool.md
+
+# ===== v13: 多维配额跟踪（OmniRoute Multi-dim Quota 借鉴）=====
+# 每次 _release 时按 dimensions 配置在 SlidingWindowCounter 中累计 requests/tokens。
+# 用于观测 key/model 的实际配额消耗速率，不阻塞主调用链（Fail-Open 设计）。
+# dimension 格式："<metric>/<unit>"，metric ∈ {requests, tokens}，unit ∈ {minute, 5min, hour, 6h, 12h, day, week, month}
+[llm.quota_tracking]
+enabled = true
+dimensions = ["requests/hour", "tokens/hour", "tokens/day"]
+
+# ===== v13: Provider 级 Circuit Breaker（OmniRoute 三层独立熔断 借鉴）=====
+# 按 base_url 聚合熔断器（同 provider 的所有 key 共享），与 key 级 cooldown / model 级 lockout
+# 形成三层独立熔断。state 机：CLOSED →(N 次连续失败)→ OPEN →(T 秒)→ HALF_OPEN →(探测成功 M 次)→ CLOSED
+# HALF_OPEN 探测失败立即回到 OPEN；expired(401/402) 不触发熔断（key 失效 ≠ provider 故障）。
+[llm.circuit_breaker]
+enabled = true                    # 总开关
+fail_threshold = 5                # CLOSED→OPEN 触发阈值（连续失败次数）
+open_seconds = 60.0               # OPEN 持续时间（秒，最小 1.0），到期后转 HALF_OPEN
+half_open_probe_count = 1         # HALF_OPEN 允许的并发探测请求数
+success_threshold = 2             # HALF_OPEN→CLOSED 所需连续成功次数
+
+# ===== v14: 消息压缩（OmniRoute RTK + Caveman 借鉴）=====
+# call() 在 protocol dispatch 前对 messages 应用压缩；Bloat Protection 保证不反向增加长度。
+# 4 模式：off（关闭）/ lite（仅 code block RTK 规则：strip 行号 + dedup stack trace + 截断长 block）/
+#        standard（lite + Latin whitespace/标点/短语 + CJK whitespace）/
+#        aggressive（standard + CJK 填充短语过滤 + code block 截断更激进）
+# Fail-Open：压缩模块加载失败/异常 → 返回原 messages 不阻塞主调用链。
+[llm.compression]
+enabled = false                   # 总开关（默认关闭，避免影响未配置场景的语义保真）
+mode = "standard"                 # 压缩模式：off / lite / standard / aggressive（enabled=false 时强制 off）
+min_length = 2000                 # 触发压缩的最小消息长度（字符数，最小 100）
+
+# ===== v14: 路由策略（OmniRoute Auto 评分路由借鉴，ADR-0001）=====
+# strategy="auto" 时用 6 因子加权评分替代 round-robin 主选路（health 0.25 + quota_remaining 0.25 +
+# latency_p95_inv 0.20 + cost_inv 0.10 + tier_match 0.10 + lkgp_bonus 0.10）。
+# 中性分 0.5 兜底（无数据/异常 → 0.5），避免冷启动偏差。详见 docs/adr/0001-auto-scoring-routing.md。
+# Fail-Open：评分模块加载失败 → 回退 round-robin 取 pick_pool[0]。
+[llm.routing]
+strategy = "round_robin"          # 路由策略：round_robin（默认）/ auto（6 因子加权评分）
+mode_pack = "balanced"            # 权重组：balanced（默认，全权重）/ fast/quality/cheap/offline（占位）
+
+# ===== v15: Model 级健康度（model_disabled + 退避 + 探针恢复）=====
+# 非 429/非 401-402 失败时写 model_cooldowns（指数退避）+ 更新 consecutive_fails，
+# 达阈值标记 model_disabled，从可选池排除。disabled 后定时放探针尝试恢复。
+# 429 维持现有 model_cooldown 机制不计 consecutive_fails；401/402 归 key 级（标 expired）。
+[llm.model_health]
+enabled = true                          # 总开关，false 时禁用 model_disabled 机制（仍保留 429 的 model_cooldown）
+consecutive_fail_threshold = 5          # 连续失败 N 次触发 model_disabled
+probe_interval_seconds = 300.0          # disabled 后探针间隔（秒，固定间隔）
+probe_max_concurrency = 1               # 探针并发上限（通常 1，避免瞬间多请求打上游）
+cooldown_base_timeout = 5.0             # timeout 错误的首次退避秒数
+cooldown_base_http_5xx = 10.0           # HTTP 500/502/503 的首次退避秒数
+cooldown_base_http_other = 10.0         # 其他非 200 HTTP 的首次退避秒数
+cooldown_base_empty_content = 15.0      # 200 但 content 空的首次退避秒数
+cooldown_base_exception = 20.0          # 其他异常（TypeError/JSON 解析失败等）的首次退避秒数
+cooldown_max = 60.0                     # 退避封顶秒数（指数递增 base*2^attempt 后封顶）
+
+# v14: [llm.providers.*] 段已删除，provider 配置统一在 data/llm/keys.json
+# 新增 provider：在 keys.json 中添加一条记录即可（含 base_url/api_key/models）
+
+[browser]
+# 调试浏览器配置（通用，支持任何 Chromium 内核浏览器：Chrome / Edge / Brave / Vivaldi 等）
+# 独立于日常浏览器，通过 CDP 协议控制。
+# 兼容旧 [chrome] 段：若未配置 [browser]，后端会回退读取 [chrome] 段（向后兼容）。
+debug_port = 9222                         # 远程调试端口
+user_data_dir = "F:\\project_temp\\localAgent\\chrome_debug"  # 独立用户数据目录（默认沿用 chrome_debug 名）
+# 浏览器原子操作 VL 反馈闭环（browser_action/wait_for/wait_and_action）
+# agent 传 verify_prompt 时，操作后截图 + 调远程 VL 返回 ≤200 字画面描述，无论成败都反馈
+# 让 agent 据此决定下一步而非猜原因。紧急时设 false 跳过 VL 调用
+feedback_vl_enabled = true
+# 持久浏览器会话（评估文档 P0 第 1 项）
+# 服务端维持长连接 Playwright Page 句柄，避免每次 DOM 操作重新 connect_over_cdp +
+# 启动子进程导致的 0.5–1.4 秒固定开销。新接口 /browser/snapshot /action /wait_for
+# /evaluate /console_logs /navigate /screenshot 都支持 session_id 复用热态。
+session_idle_timeout_secs = 900           # 持久 session idle 超时（秒，默认 900=15min），超时自动清理并关闭 tab
+session_max_count = 20                    # 持久 session 数量上限（防内存泄漏，按 LRU 淘汰）
+# P2-1: browser_session_create(url=...) 时自动按域名匹配 .agents/skills/browser_lessons/sites/*.md
+# 结果存到 TabSession.site_lessons，snapshot/action 响应附带 site_lessons_hint。
+# P2-3: browser_action 每次调用记录到 stats_db_path 指向的 SQLite 库，供 /browser/selector_stats 查询成功率
+stats_db_path = "data/browser_stats.db"   # 选择器调用统计 SQLite 路径（默认 data/browser_stats.db）
+
+[server]
+# 后端服务监听地址
+host = "127.0.0.1"                        # 监听地址（127.0.0.1 仅本机访问）
+port = 8766                               # 监听端口
+# v16: exec_python 内联等待秒数。子进程在 N 秒内完成则直接返回完整结果（status=done，
+# 含 stdout/stderr/exit_code），否则返回 terminal_id（status=running）让 agent 调
+# exec_inspect(tid, timeout=N) 查状态。
+# 0=禁用，回退 v15 立即返回行为。默认 10s 覆盖 ~80% 短任务（读文件/查信息/简单计算）。
+# 长任务（>10s）仍返回 running，行为与 v15 一致。
+exec_python_inline_wait_secs = 10
+
+[runner]
+# v6-lite SessionRunner 配置（exec_python 统一 terminal 机制 + 3 分钟唤醒 LLM）
+# long_tool_first_check_secs: exec_python 调用后首次自动 inspect 的等待秒数
+#   - 默认 180（3 分钟）：3 分钟内子进程结束 → 返回完整结果；3 分钟到仍 running → 唤醒 LLM 决策
+#   - 0 = 禁用唤醒机制（exec_python 立即返回 terminal_id，LLM 自己决定何时 inspect）
+#   - LLM 唤醒后可用工具：exec_inspect(tid, timeout=N) / exec_kill(tid) / exec_send_input(tid, text) / wait(seconds)
+#   - 后续不再自动唤醒，LLM 自己决定何时 inspect/wait（spec D5 + Anti-Cheat 6）
+long_tool_first_check_secs = 180
+
+# v6-lite-streaming-gui T03: 打字机配置（spec D07/D08/D09）
+# typewriter_mode: close（关闭，流结束一次性显示）/ fast（快速，chunk 到达即渲染，默认）/ normal（正常，16ms 60fps 平滑）
+#   - UI 工具栏 toggle 按钮可运行时循环切换 close→fast→normal→close，状态存内存重启回退此默认值
+# typewriter_normal_interval_ms: normal 档 QTimer 间隔（ms），默认 16（60fps）
+typewriter_mode = "fast"
+typewriter_normal_interval_ms = 16
+
+# v6-lite-streaming-gui T02/T04: 流式看门狗 + DoomLoop 配置
+# stream_idle_timeout_secs: SSE 流空闲超时（秒），无任何数据超过此值 → yield provider_error 事件
+# stall_detection_window_secs: stall 检测窗口（秒），窗口内 token 增量不足 → yield provider_error
+stream_idle_timeout_secs = 90
+stall_detection_window_secs = 30
+
+[runner.doom_loop]
+# v6-lite-streaming-gui T04: DoomLoop 检测 thinking_delta 尾重复（spec D10/D11）
+# enabled: 总开关，false 时 runner 不创建 DoomLoopDetector
+# tail_size: 检测窗口字符数（最近 N 字符）
+# min_repeat_len: 最小重复单元长度（≥ 此长度的 pattern 才算重复）
+# repeat_threshold: 连续重复次数阈值（pattern 连续出现 ≥ N 次判定为死循环）
+# max_retries: 连续命中最多重试次数，超出写 error event 终止
+# backoff_base_ms / backoff_jitter_ms: 重试前 backoff（base + random(0, jitter)）
+enabled = true
+tail_size = 2000
+min_repeat_len = 50
+repeat_threshold = 3
+max_retries = 3
+backoff_base_ms = 200
+backoff_jitter_ms = 300
+
+[models]
+# 统一模型存储根目录。所有 AI 模型集中存储在此目录下按子目录分类。
+# 个人部署设为绝对路径（如 "<data_drive>:\\ai_models"）；发布时留空 "" 则各模块回退到项目内 weights/ 目录。
+#
+# 子目录映射（external_dir 非空时）:
+#   paddleocr/      - PaddleOCR 模型 (server/ocr.py)
+#   embeddings/     - 嵌入模型 bge-small-zh-v1.5 (server/memory/)
+#   faster_whisper/ - Whisper STT 模型 (非本项目，仅共享存储)
+#   cosyvoice/      - CosyVoice TTS 模型 (非本项目，仅共享存储)
+#   huggingface/    - HF 缓存 (同时由环境变量 HF_HOME 指向)
+#   modelscope/     - ModelScope 缓存 (同时由环境变量 MODELSCOPE_CACHE 指向)
+#
+# 回退路径（external_dir 为空 "" 时，发布模式）:
+#   weights/paddlex      - PaddleOCR
+#   weights/             - OmniParser
+#   weights/embeddings   - 嵌入模型
+external_dir = ""
+
+[logging]
+# 日志配置（崩溃可追溯）
+file_enabled = true                       # 是否写入文件日志（默认 true；关闭后仅控制台输出，崩溃后无法追溯）
+file_path = "data/logs/server.log"        # 日志文件路径（相对项目根）
+max_bytes = 10485760                      # 单文件最大字节数（10MB，超出后轮转）
+backup_count = 10                         # 保留的备份文件数（轮转后保留 N 份历史）
+file_level = "INFO"                       # 文件日志级别（DEBUG/INFO/WARNING/ERROR）
+console_level = "INFO"                    # 控制台日志级别
+
+[command_guard]
+# 破坏性命令拦截（exec_cmd/exec_terminal_spawn/exec_python 的安全防线）
+enabled = true                            # dcg 二进制预检查总开关（仅控制 shell 命令预扫描）
+                                          # 注意：HTTP/MCP 端点审批由 approval_level 控制，与 enabled 独立
+# 审批严格性四级（控制 HTTP 中间件和 MCP 网关对 approval_required 端点的拦截）
+#   strict   = 完整审批清单（系统/loop/activity/browser/exec/terminals/mindforge/user_message/模型卸载 + PUT/DELETE 默认审批）
+#   moderate = strict 减去 6 个低风险运维端点（loop 任务/活动日报/浏览器关闭/OCR 与 Vision 模型卸载与 keep）
+#   loose    = 仅拦截代码执行类（exec_python / exec_apply_patch / exec_cmd），PUT/DELETE 全放行
+#   none     = 不拦截任何端点（仅 dcg 二进制预检查仍独立生效，受 enabled 控制）
+approval_level = "strict"
+dcg_path = ""                             # dcg 可执行文件路径（空则仅做规则检查）
+fail_closed = true                        # 拦截失败时拒绝执行（true=安全优先）
+timeout_seconds = 3.0                     # 拦截器超时秒数
+approval_ttl_seconds = 300                # 用户批准有效期（秒）
+token_ttl_seconds = 120                   # 一次性 approval_token 有效期（秒）
+gui_timeout_seconds = 180                 # 命令审批 GUI 弹窗超时（秒，超时后返回 deny）
+# LLM 预审：对通用工具类端点，先 LLM 审查可自动放行合法场景
+llm_review_enabled = true                  # 总开关（false=全部走人审）
+llm_review_timeout = 5                     # LLM 审查超时秒数（超时回退人审）
+llm_review_endpoints = ["exec_python", "exec_cmd", "exec_terminal_spawn", "exec_apply_patch"]
+# 详细审查日志：开启时记录 code/cmd/agent_reason/token 签发与丢弃等全量细节
+# 到 data/approval_audit.jsonl，用于排查审批流程问题（如 token 丢弃、路径异常、agent_reason 来源）。
+# 默认关闭，排查期临时开启，问题定位后建议关闭避免日志增长。
+detailed_audit_log = false
+
+[screen]
+# 截图设置
+default_mode = "window"              # fullscreen | window
+# 安全设置
+require_confirm_by_default = true    # 默认开启待验证模式
+emergency_hotkey = "<ctrl>+`"        # 紧急停止快捷键（可自定义）
+emergency_cooldown_seconds = 10      # 紧急停止后冷却时间
+# 危险关键词（追加到内置列表）
+danger_keywords_block = []           # 直接拦截的关键词
+danger_keywords_confirm = []         # 强制确认的关键词
+# execute_action VL 反馈闭环（仅单步 execute_action，batch_actions 不受影响）
+# agent 传 verify_prompt 时，操作后截图 + 调远程 VL 返回 ≤200 字画面描述，无论成败都反馈
+feedback_vl_enabled = true
+confirm_timeout_seconds = 180             # 屏幕操作确认弹窗超时（秒，超时后返回 cancelled）
+# 覆盖层自动隐藏：agent N 秒无屏幕操作后自动收起"Agent操作中"提示（0=禁用）
+# 默认 30s——agent 连续操作会重置计时；若 agent 忘记调 /overlay hide，30s 后自动收起
+overlay_auto_hide_seconds = 30
+
+# 焦点安全（评估文档 P0：docs/evaluations/2026-07-20-computer-use-vs-localagent.md）
+# 键盘动作（type/type_immediate/hotkey）执行前强制焦点校验：
+#   - FOCUS_LEAK_PREVENTED：前台是 ChatGPT/Codex/Trae/Cursor 等受保护进程而目标不是它 → 零按键发送
+#   - FOCUS_NOT_VERIFIED：未指定 target 且 allow_unfocused_input=false → 零按键发送
+# 关闭后等同于旧版行为（不推荐——曾导致键盘输入泄漏到 ChatGPT 输入框但 API 报告成功）
+focus_protection_enabled = true
+# 受保护进程名列表（前台是这个且目标不是它时阻断键盘动作）
+# 留空 / 不配置 → 使用 server.screen.focus.DEFAULT_PROTECTED_PROCESSES
+# 默认包含：ChatGPT.exe / Codex.exe / trae.exe / Trae.exe / cursor.exe / Cursor.exe
+# protected_processes = ["ChatGPT.exe", "Codex.exe", "trae.exe", "Trae.exe", "cursor.exe", "Cursor.exe"]
+# 键盘动作未验证焦点时是否放行（默认 False 强校验；agent 可在请求中显式传 allow_unfocused_input=true 覆盖）
+allow_unfocused_input_default = false
+
+# 接管确认（takeover confirm）：顶栏 overlay 未显示时，agent 调用键鼠端点前弹窗询问用户
+# 当前任务授权未激活时作为被动兜底；GUI 异常、拒绝或超时均 fail-closed
+takeover_confirm_enabled = true
+# 弹窗超时秒数（用户未点击时的等待时长）
+takeover_confirm_timeout_seconds = 30
+# 超时行为：cancel（默认，推荐）/ proceed（仅兼容旧配置）
+takeover_timeout_action = "cancel"
+
+# 当前任务授权（旧配置名 takeover_persistent 保留兼容）：用户在接管弹窗中勾选后，
+# 当前任务的普通控制免重复确认；危险操作和安全阻断仍生效。授权仅存内存。
+# 请求：GUI"请求任务授权" / screen_request_control
+# 收回：GUI"收回授权" / screen_release_control / task_closure
+takeover_persistent_enabled = true
+# 最后一次成功投递控制操作后的空闲撤销秒数；只读、dry-run、失败操作不续期
+takeover_idle_timeout_seconds = 300
+# 旧配置 takeover_idle_warning_seconds 仍可读取，但新配置请只使用上面的 canonical 名称
+
+# 看门狗模式（mode="watchdog"）硬上限秒数，到期自动撤销授权。默认 10h=36000s。
+# watchdog 模式不因空闲撤销，仅由硬上限/紧急停止/用户主动撤销。
+# 适用场景：用户离开前调 screen_request_control(mode="watchdog") 让 agent 持续监控。
+takeover_watchdog_max_duration_seconds = 36000
+
+# ===== 会话管理层（SessionManager）时间策略 =====
+# 重构后 computer use 三档权限模式（无权限/普通执行/看门狗）的时间参数。
+# 详见 temp/sdd/computer-use-session-refactor/spec.md
+# normal 模式两阶段降级：正常阶段（浅蓝横条）→ 告警阶段（黄色横条）→ 无权限（横条消失）
+idle_warning_seconds = 600            # normal 正常阶段秒数（默认 10 分钟），超过进入告警
+idle_grace_seconds = 1200             # normal 告警阶段秒数（默认 20 分钟），超过降级到无权限
+# watchdog 模式时长（小时），用户可在授权弹窗中修改，范围 [watchdog_min_hours, watchdog_max_hours]
+watchdog_default_hours = 10           # watchdog 默认时长（默认 10 小时），到期降级到普通执行模式
+watchdog_min_hours = 1                # watchdog 最小时长（弹窗输入框下限）
+watchdog_max_hours = 999              # watchdog 最大时长（弹窗输入框上限）
+# SessionManager worker 线程检查间隔（秒），仅用于过期检查（5 秒精度足够）
+# 不影响 GUI 横条 1 秒倒计时刷新（由 OverlayClient 独立 Timer 负责）
+session_check_interval_seconds = 5.0
+
+[ocr]
+# Screenshot OCR keeps UVDoc unwarping disabled so returned boxes remain in the
+# original image coordinate system. Keep this identity transform unless a
+# replacement detector shows stable error in direct-detector A/B tests.
+# After PaddleOCR/PaddleX updates, run tools/debug/verify_bbox_affine.py first;
+# do not restore historical non-identity values to compensate for UVDoc.
+# Optional affine correction: actual = (raw + ratio * dim) / k
+kx = 1.0
+ky = 1.0
+bx_ratio = 0.0
+by_ratio = 0.0
+# P1-A：启动后后台预热 PaddleOCR（不阻塞 startup，首次调用可省 ~10s 加载耗时）
+# true = 启动后立即在后台线程加载模型；false = 首次 OCR 调用时加载（默认）
+preload_on_startup = false
+
+[vision]
+# 远程 VL（v9 起：provider 配置在 keys.json 的 key.vision 段，config.toml 仅保留全局开关）
+# 注：OmniParser（YOLOv8+Florence2 本地图标检测）已于 2026-07-31 移除（MCP 调用 0 次）
+#     纯图标/无文字元素场景由远程 VL 兜底；如需本地纯图标检测可参考
+#     temp/sdd/omniparser-removal/spec.md 重新引入
+vl_enabled = true
+# VL 图片编码与重试策略（全局，与 provider 无关）
+vl_max_image_edge = 1280             # 发给 VL API 的图片最长边像素（等比缩放，控制 payload 大小）
+vl_jpeg_quality = 85                 # JPEG 编码质量（1-95）
+vl_retry_backoffs = [2, 4, 8, 16, 32, 60]  # 失败后重试退避序列（秒）
+# VL Provider 级额度耗尽 fallback（单个 provider 429 只冷却该 provider，其他 provider 照常调用）
+vl_provider_exhausted_cooldown_seconds = 3600  # 单 provider 额度耗尽冷却时长（秒，3600=1小时，冷却后可重试）
+vl_provider_exhausted_max_consecutive = 3      # 连续额度耗尽上限，达此值 cooldown 到次日 00:00（当日不再试该 provider）
+
+# v9 起已移除 [vision.vl_providers.*] 段：
+#   - base_url/api_key/model 从 keys.json 中含 vl scope 的 key 记录读取
+#   - max_concurrency/timeout/rate_limit_cooldown 从该 key 的 vision 段读取
+#   - vl_default_provider 已移除（改由 use_case 驱动选 key，见 USE_CASE_REGISTRY）
+# 新增 VL provider：在 keys.json 中加一条含 vl scope model 的 key，并附 vision 段即可
+# 示例 keys.json 片段（vl scope key，含 vision 段）：
+#   {
+#     "id": "modelscope-vl", "label": "ModelScope VL",
+#     "key": "ms-xxx", "base_url": "https://api-inference.modelscope.cn/v1",
+#     "models": [{"name": "Qwen/Qwen3-VL-235B-A22B-Instruct", "scope": ["vl"], "tier": 5}],
+#     "vision": {"max_concurrency": 1, "timeout": 60, "rate_limit_cooldown": 60}
+#   }
+
+# 注：endfield / accounting / stock_advisor 配置已迁移到各自组件的 config_schema.toml
+# 由 component_config.load_component_configs() 运行时合并到主 config 对象
+# 删除 workspace/<module>/ 目录后此组件配置自动消失，主 config.example.toml 零残留
+
+[mindforge]
+# MindForge 外部项目集成（文档处理+知识库搜索）
+enabled = false
+path = ""  # MindForge 项目根目录的绝对路径（必填，启用时需用户配置）
+# python_executable = ""  # 留空则自动检测（优先 MindForge 的 .venv）
+
+[memory]
+# 三层记忆系统 v2 配置
+# db_path = "data/memory/memory.db"           # SQLite 数据库路径
+# recent_dir = "data/memory/recent"           # Recent 层滑动窗口持久化目录
+# recent_window_size = 50                     # 近期记忆滑动窗口大小
+# compress_threshold = 200                    # 未压缩消息数达到此值时触发压缩
+# compress_model_tier = "cheap"               # 压缩使用的模型层级
+# embedding_model = "BAAI/bge-small-zh-v1.5" # 语义嵌入模型
+hf_mirror = "https://hf-mirror.com"        # HuggingFace 镜像源（中国用户默认推荐；海外用户可改回 https://huggingface.co 或留空）
+# enable_semantic = true                      # 是否启用语义检索（设为 false 可跳过嵌入模型下载，仅用BM25；详见 docs/memory-system.md）
+# hybrid_alpha = 0.5                          # 向量检索权重（0=纯BM25, 1=纯向量）
+# auto_record = true                          # 是否自动记录 agent 交互
+# maintenance_interval = 10                   # 每 N 次 agent 交互触发记忆维护
+# orphan_cleanup_days = 30                    # 孤立消息清理阈值（天）
+# summary_cleanup_days = 180                  # 孤立摘要清理阈值（天）
+
+# [memory.maintain]
+# 记忆维护器配置（自动老化 + LLM 验证）
+# v8: model_tier 字段已移除。维护器通过 resolve_key("memory_maintainer") 从 keys.json 获取 key，
+# tier 由 USE_CASE_REGISTRY.memory_maintainer.default_tier (=2) 决定。
+# interval_hours = 6                          # 维护器运行间隔（小时）
+# stale_days = 7                              # 记忆过期阈值（天），超过标记为 stale
+# enable_validate = true                      # 是否启用 LLM 验证（false 则只做老化标记）
+
+# Evidence Ledger（A）— 证据组织层
+# 在 memory_search 与 agent 之间插入证据组织层，把多源召回（messages + facts + summaries）
+# 组织为可审计、可交叉核对的证据集。借鉴 HMS Evidence Ledger 模式。
+# enable_evidence_ledger = true                # 是否启用证据组织层
+# evidence_top_k = 10                          # 返回给 agent 的证据数量
+# evidence_corroboration_threshold = 0.7       # Jaccard 相似度阈值，超过视为互相佐证
+# evidence_conflict_window_minutes = 5         # 冲突检测时间窗口（分钟）
+# evidence_audit_keep_days = 30                # evidence_ledger 表保留天数
+
+# Search Tracer（C）— 检索可观测性
+# 记录每次 search 的完整过程（query/params/子检索结果/scores/latency/error），便于事后诊断
+# enable_search_tracer = true                  # 是否启用检索可观测性
+# search_tracer_retention_days = 30            # search_traces 表保留天数
+# search_tracer_sample_rate = 1.0              # 采样率 0-1，1.0=全采样，0.1=10% 采样
+# search_tracer_candidates_to_store = 20        # 每次 trace 存储前 N 条候选
+
+# ===== Loop 自动触发系统 =====
+# 后端定时任务调度，startup 时起 asyncio 协程
+[loops]
+enabled = true                              # 全局开关
+timezone = "Asia/Shanghai"
+
+# 场景A：活动追踪（采集窗口 + 截屏VL描述 + 小时总结）
+[loops.activity_tracker]
+enabled = true
+collect_windows_interval = 60               # 秒，每分钟采集窗口列表
+screen_vl_interval = 300                    # 秒，每5分钟截图+VL描述
+vl_retry_count = 3                          # ScreenVL 调用失败重试次数
+vl_retry_backoff_base = 30                  # 重试退避基数（秒），实际等待 = base * 2^attempt（30/60/120）
+hourly_summarize_cron = "0 * * * *"         # 每小时整点总结（cron 表达式）
+hourly_summarize_max_retries = 3            # HourlySummarize quota/rate_limit 类失败退避重试次数（30s→60s→120s 指数退避）
+hourly_summarize_retry_backoff = 30         # HourlySummarize 退避重试基数（秒），实际等待 = backoff * 2^attempt
+hourly_content_filter_enabled = true        # 启用内容审核保护：预检敏感窗口标题 + 模糊化 + 后置检查，防 GLM code 1301 拒绝生成
+daily_summarize_cron = "30 5 * * *"         # 每天 05:30 自动生成前一天日报（catchup=True，后端未启动时启动后补跑）
+daily_summarize_max_retries = 3             # DailySummarize quota/rate_limit 类失败退避重试次数（60s→120s→240s）
+daily_summarize_retry_backoff = 60          # DailySummarize 退避重试基数（秒）
+screen_vl_question = "用一句话描述当前屏幕内容和用户正在做什么"
+raw_data_dir = "data/activity/raw"          # 原始事件 jsonl
+hourly_data_dir = "data/activity/hourly"    # 每小时总结 md
+daily_data_dir = "private_vault/activity/daily"  # 每日总结 md（obsidian vault，不进 release，不自动清理）
+raw_retention_days = 3                      # raw 数据保留天数（超过自动删除）
+hourly_retention_days = 7                   # hourly 总结保留天数
+cleanup_cron = "30 * * * *"                 # 清理任务 cron（每半点运行，避开整点 hourly_summarize；关机错过最多等 1 小时）
+fail_threshold = 5                          # 连续失败 N 次自动暂停（collect_windows/hourly_summarize/cleanup）
+screen_summary_interval = 1800              # 秒，每30分钟检查是否该总结今日任务
+screen_summary_first_run_delay = 60         # 后端启动后首次检查延迟（秒），不等满整个 interval
+screen_summary_record_threshold = 20        # 当日 screen 记录数阈值（超此值触发总结提醒）
+screen_summary_char_threshold = 5000        # 当日 answer 总字符数阈值（超此值触发总结提醒）
+# VL 配额管理（每日限制 + 动态节流 + 活动信号感知）
+vl_daily_quota = 100                         # 每日 VL 调用上限（ModelScope 免费额度约 100-200/天）
+vl_quota_reset_hour = 0                     # 配额重置小时（0=自然日 00:00 重置）
+vl_min_interval_seconds = 180               # 最快调用间隔（秒，物理节流基线，180=最快每3分钟一次）
+vl_min_interval_high_load_seconds = 60      # 高频 focus 切换（≥5次/10min）时的 min_interval（降到 60s 不漏窗口切换）
+vl_min_interval_low_load_seconds = 180      # 低频 focus 切换（0-1次/10min）时的 min_interval（保持 180s 节流）
+vl_ocr_fallback_enabled = true              # VL 被跳过时是否用 OCR 兜底
+vl_ocr_fallback_cpu_threshold = 50         # OCR 兜底：CPU 占用（%），CPU 和 GPU 均超阈值才跳过
+vl_ocr_fallback_gpu_threshold = 50         # OCR 兜底：GPU 占用（%），CPU 和 GPU 均超阈值才跳过
+vl_activity_intensity_window_minutes = 60  # 活动强度计算窗口（分钟），读近 N 分钟 windows 记录算 focus 频率→pace 调整系数
+vl_skip_idle = true                        # idle 状态（用户挂机/睡觉）跳过 VL 调用，避免浪费配额
+vl_persist_batch_threshold = 20            # 配额文件批量写盘阈值（决策计数达阈值才写盘，原 5 提到 20 降为 1/4 频次；shutdown 时 flush 强制写盘）
+
+# 场景B：下载文件夹监控（超阈值触发三分类 → 收件箱）
+[loops.download_watcher]
+enabled = false                             # 默认关闭；启用前确认 watch_dir 目录存在，否则后端会自动跳过该 loop（不崩溃）
+scan_interval = 300                         # 秒，每5分钟扫描
+watch_dir = "E:/<data_drive>:\<system_data_root>/<data_drive>:/Downloads"  # 监控目录（你的实际下载路径，可在 shell:<data_drive>:/Downloads 查看；导出时自动替换为占位符）
+file_count_threshold = 15                   # 超过15个文件触发分类
+classify_batch_size = 50                    # 单次分类文件数上限
+folder_batch_size = 10                      # 单次文件夹分类数上限（文件夹分类成本高，默认 10）
+# Phase 2 内容增强（仅对 Phase 1 标为 inspect/unknown 的文件提取内容再分类）
+content_aware = true                        # 是否启用内容增强（v14: 自动由 pool 过滤 privacy_warning 非空的 key）
+content_max_chars = 500                     # 单个文件内容摘要最大字符数
+content_max_files = 10                      # 单次 Phase 2 最多提取内容的文件数
+fail_threshold = 3                          # 连续失败 N 次自动暂停（LLM 分类失败容忍度低）
+
+# 场景D：todos triggered 任务触发检查（轮询 file_arrived 事件）
+[loops.todos_trigger]
+enabled = true
+check_interval = 300                        # 秒，每5分钟检查触发条件
+fail_threshold = 5
+
+# 场景E：workspace 可选组件（独立组件，通过约定接口动态注册）
+# 各组件的配置示例见 workspace/<component>/README.md 或 SETUP_GUIDE.md
+# 组件通过 _load_optional_loop_defs() 动态注册，主代码库不直接引用
+
+# 场景F：记忆维护器（老化 stale 记忆 + LLM 验证准确性 → 收件箱通知）
+[loops.memory]
+enabled = true
+maintain_interval = 21600                  # 秒，每 6 小时运行一次（与 [memory.maintain] interval_hours 一致）
+maintain_first_run_delay = 300             # 后端启动后 5 分钟首次触发（避开启动高峰）
+max_retries = 2                            # maintainer.run() 抛异常时退避重试次数（仅 LLM Pool 未初始化/quota 类）
+retry_backoff = 60                         # 退避重试基数（秒），实际等待 = backoff * 2^attempt（60→120）
+# 注意：维护器参数（老化天数/验证开关/模型层级）在 [memory.maintain] 段配置
+
+# 场景G：VL 智能配额上限调整建议器（冗余模块，只读 + 推 inbox，不写 config）
+[loops.smart_limit]
+enabled = true
+check_cron = "0 4 * * *"                    # 每天凌晨 4 点运行一次（避开整点 hourly_summarize）
+analyze_days = 7                            # 回看最近 N 天的 429 日志
+current_quota = 100                         # 当前 vl_daily_quota 配置值（用于计算建议值，与上方 [loops.activity_tracker] vl_daily_quota 保持一致）
+
+# 场景G2：key 级健康检查定时触发
+# 用途：每 12 小时检查 should_run_health_check()，距上次检查超过 10 天则自动执行 check_health()
+#       解决健康检查纯按需触发（/health 端点被调时才检查）的问题——后端长期运行但无人访问 /health 时死 key 不会被自动发现
+[loops.key_health]
+enabled = true
+check_interval = 43200                      # 检查间隔（秒，默认 12 小时）
+first_run_delay = 300                       # 首次运行延迟（秒，避开启动高峰）
+
+# 场景H：headless agent session（后端自主启动 agent 会话，IDE 关了也能跑）
+# spec: temp/sdd/headless-agent-session/spec.md
+# 用途：定时触发 agent 任务（一次性 / 周期性），到时后端自主启动 SessionRunner 会话跑完，
+#       跑完启动 judge agent 判定成功/失败/不确定（uncertain 算 failed），写 memory + wip 留档。
+# client chat 面板可查看历史记录（会话带"后端"/"判定"badge）。
+#
+# 两种典型用法（取消注释其中一种）：
+#
+# 用法 1：一次性任务（如"1 小时后查日志"）—— one_shot=true，执行后自动 paused
+# [loops.headless_session]
+# enabled = true
+# cron = "0 * * * *"                         # 触发时间（cron 表达式，按 [loops] timezone 解析）
+# trigger_text = "查 dmca-backup 最近一次 run 的日志并报告失败原因"  # 触发任务文本
+# one_shot = true                            # 一次性任务：执行后自动 paused，不重复触发
+#
+# 用法 2：周期性任务（如"每天 9 点跑股票分析"）—— one_shot=false，按 cron 周期触发
+# [loops.headless_session]
+# enabled = true
+# cron = "0 9 * * *"                         # 每天 9 点触发
+# skill = "recurring.stock_analysis"         # trigger_text 留空时调 agent_guide(task_type=skill) 取 first_action
+# one_shot = false                           # 周期性任务：按 cron 重复触发
+#
+# 默认禁用（用户根据需要取消注释并配置 trigger_text 或 skill）
+[loops.headless_session]
+enabled = false
+cron = "0 9 * * *"                          # 触发 cron（默认每天 9 点）
+trigger_text = ""                           # 触发任务文本（与 skill 二选一，trigger_text 优先）
+skill = ""                                  # trigger_text 留空时调 agent_guide(task_type=skill) 取 first_action
+one_shot = false                            # true=一次性任务（执行后自动 paused），false=周期性
+# 主 agent 资源限制（spec 默认值，宽松到正常任务能跑完）
+max_iterations = 100                        # 最大迭代数（chat 会话 50 翻倍）
+# B2（spec D2/D3）：删 max_budget_usd，本地无法准确算 cost（缓存比例不明），只记账 token
+wall_clock_budget_secs = 1800               # 最大墙钟时间（秒，1800=30 分钟）
+model = ""                                  # 主 agent 模型（留空用默认 tier）
+# judge agent 配置（判定主 agent 成功/失败/不确定）
+judge_model = ""                            # judge 模型（留空用默认 tier）
+judge_max_iterations = 10                   # judge 最大迭代数
+# B2（spec D2/D3）：删 judge_max_budget_usd，本地无法准确算 cost
+judge_wall_clock_budget_secs = 300          # judge 最大墙钟时间（秒，300=5 分钟）
+# 其他
+# base_url = "http://127.0.0.1:8766"        # 后端 base_url（默认 127.0.0.1:8766，通常不需改）
+# db_path = ""                              # EventStore DB 路径（留空用默认 data/client/agent.db）
+fail_threshold = 3                          # 连续失败 N 次自动暂停（headless 任务失败容忍度低）
+
+# ===== 收件箱 =====
+# Loop 推送的待用户审查条目（如文件分类建议）
+[inbox]
+db_path = "data/inbox.db"
+auto_cleanup_days = 10                      # 已解决/忽略条目保留 10 天后自动删除（CleanupActivityAction 调度）
+
+# ===== 数据存储清理机制（CleanupActivityAction 调度，每小时半点） =====
+# 补全无清理机制的数据源：browser_stats 聚合归档、approvals 日志轮转、storage_growth 告警
+[cleanup]
+# browser_stats 明细保留天数（超过后聚合到 summary 表再删除）
+browser_stats_details_retention_days = 30
+# approvals.jsonl 按大小轮转（单文件上限 + 备份数）
+approvals_log_max_bytes = 10485760           # 10MB
+approvals_log_backup_count = 5
+# approval_audit.jsonl 跟随同一轮转策略（独立配置）
+approval_audit_log_max_bytes = 10485760      # 10MB
+approval_audit_log_backup_count = 5
+# storage_growth 告警阈值（超阈值推 inbox，同 source pending 去重）
+memory_facts_warn_rows = 5000                # memory.db facts 表行数阈值
+todos_archived_warn_count = 1000             # memory.db todos 表 archived 记录数阈值
+db_file_warn_size_mb = 50                    # memory.db 文件大小阈值（todos 表也在 memory.db 中）
+
+# ===== 操作录制器（L0 采集层，独立进程） =====
+# 通过 `python -m tools.recorder.main` 启动，不走后端 API（D018）
+# CLI 参数覆盖此处配置；缺失参数时弹 ConfigDialog 让用户选择
+[recording]
+default_mode = "small"                      # GUI 启动模式：small=悬浮条 / large=监控面板（双屏场景）
+default_range = "fullscreen"                # 录制范围：fullscreen / monitor / window
+default_detail_level = "detailed"           # 录制模式：detailed（500ms 截图）/ coarse（2s 截图）
+default_monitor_index = 0                   # 显示器索引（range=monitor 时用，0=主屏）
+default_window_hwnd = 0                     # 目标窗口句柄（range=window 时用，0=不指定，由 ConfigDialog 选）
+max_duration_seconds = 1800                 # 最大录制时长（秒），默认 30 分钟，到时自动停止
+audio_enabled = true                        # 是否录麦克风
+audio_device = -1                           # 麦克风设备索引（-1=系统默认；ConfigDialog 下拉选具体 index）
+clipboard_enabled = false                   # 是否采集剪贴板变化（默认关，启用后记录文本/图片/密码框遮蔽）
+base_dir = "workspace/recorder/recordings"           # 录制包根目录（相对项目根，绝对路径也支持）
+
+[recording.capture]
+interval_detailed = 0.5                     # 详细模式截图间隔（秒）
+interval_coarse = 2.0                       # 粗略模式截图间隔（秒）
+burst_intervals_detailed = [0.05, 0.10, 0.15]   # 详细模式 click 后多帧采样时刻（秒，相对 click）
+burst_intervals_coarse = [0.10, 0.20, 0.30]     # 粗略模式 click 后多帧采样时刻
+phash_threshold = 5                         # 定时截图 pHash 相邻帧去重阈值（汉明距离，0=禁用，默认 5）
+
+[recording.audio]
+sample_rate = 16000                         # 麦克风采样率（Hz，int16 PCM）
+channels = 1                                # 声道数（1=mono）
+silence_threshold_db = -45.0                # 静音判定阈值（dBFS，麦克风偏弱 -50~-45，噪音大 -40~-35；>1.5s 删除）
+
+[recording.stt]                             # L1 处理层 P1 STT 转换器配置
+enabled = false                             # L1 是否启用 STT（离线 faster-whisper）
+model = "large-v3"                          # STT 模型名（large-v3 / large-v3-turbo / medium / small / base / tiny）
+model_dir = ""                              # 模型存放目录（空=用 huggingface 默认缓存；指向 stt-main/models/ 复用已有权重）
+language = "zh"                             # 语言代码（zh / en / auto 等，对应 initial_prompt 按语言配置）
+vad_threshold = 0.5                         # VAD 阈值（0-1，传给 faster-whisper vad_parameters.threshold）
+junk_threshold = 0.3                        # 垃圾文本字符占比阈值（>此值触发归一化重试，D038）
+target_lufs = -15.0                         # LUFS 归一化初始目标响度（每次 +lufs_step，最多 lufs_attempt 次）
+lufs_attempt = 4                            # LUFS 归一化最大重试次数
+lufs_step = 3.0                             # 每次 LUFS 目标响度增量
+max_chars_per_line = 40                     # 单条字幕最大字符数（0=不拆分，超过按词级时间戳拆分）
+min_duration_per_line = 1.5                 # 单条字幕最短持续时间秒（0=不限，优先级高于最大字数）

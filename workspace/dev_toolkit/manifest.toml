@@ -1,0 +1,22 @@
+[component]
+name = "dev_toolkit"
+version = "0.1.0"
+description = "开发工具包 - skill 集合 + 工程化模板（含 hallmark/impeccable/ui-ux-pro-max 等第三方 skill）"
+project_tag = "dev_toolkit"
+enabled = true
+
+[exports.runtime]
+files = []
+
+[exports.source]
+# G15 决策（2026-08-10）：files_exclude 排除 dev_toolkit_v3.zip（二进制压缩包，不应进入源码发布）
+# 保留完整 .agents/skills/ 子树（含 hallmark/impeccable/tdd 等 + upstream/LICENSE）
+files = ["workspace/dev_toolkit/**"]
+files_exclude = ["workspace/dev_toolkit/dev_toolkit_v3.zip"]
+
+[release_facts]
+contains_personal_data = false
+requires_external_credentials = false
+# 2026-08-10 T-v4: 升级为 apache-2.0（含 hallmark=MIT, impeccable=Apache-2.0, ui-ux-pro-max=MIT, leader=Apache-2.0 第三方 skill，upstream/LICENSE 保留）
+# 审查记录：temp/sdd/release-engine/license-review-v4/dev_toolkit.md
+license_class = "apache-2.0"
