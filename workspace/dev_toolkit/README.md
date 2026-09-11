@@ -29,19 +29,19 @@
 
 | 文件 | 主题 | 来源 | 行数 |
 |------|------|------|------|
-| [README.md](file:///f:/<project_root>/workspace/dev_toolkit/README.md) | 入口导航（本文件） | - | ~170 |
-| [DEPLOY.md](file:///f:/<project_root>/workspace/dev_toolkit/DEPLOY.md) | 部署指南（6 步流程 + 占位符清单 + skill 裁剪推荐 + 常见误用） | LocalAgent | ~150 |
-| [AGENTS.md](file:///f:/<project_root>/workspace/dev_toolkit/AGENTS.md) | AI Agent 协作指引模板（含 23 个 skill 的 SDD 主流程 + 部署初始化章节） | LocalAgent | ~330 |
-| [checklist.md](file:///f:/<project_root>/workspace/dev_toolkit/checklist.md) | 功能变更检查清单模板 | LocalAgent | ~80 |
-| [html_toolkit.md](file:///f:/<project_root>/workspace/dev_toolkit/html_toolkit.md) | HTML 生成工具栈（algorithmic-art / brand-guidelines / canvas-design / frontend-design / web-artifacts-builder / theme-factory 整合去重） | anthropics/skills | ~500 |
-| [mcp_builder.md](file:///f:/<project_root>/workspace/dev_toolkit/mcp_builder.md) | MCP 服务构建（Python fastapi-mcp / TypeScript @modelcontextprotocol/sdk） | anthropics/skills + LocalAgent | ~400 |
-| [webapp_testing.md](file:///f:/<project_root>/workspace/dev_toolkit/webapp_testing.md) | Web 应用测试（Playwright + Reconnaissance-Then-Action + JS 错误捕获） | anthropics/skills + LocalAgent | ~400 |
-| [skill_creator.md](file:///f:/<project_root>/workspace/dev_toolkit/skill_creator.md) | Skill 创建精华（补充 anthropic 版的 evals/progressive disclosure/description 优化器） | anthropics/skills | ~350 |
-| [evals_template.json](file:///f:/<project_root>/workspace/dev_toolkit/evals_template.json) | evals 模板（5 种 assertion 类型 + 对照组） | anthropics/skills | ~80 |
-| [project_essentials.md](file:///f:/<project_root>/workspace/dev_toolkit/project_essentials.md) | LocalAgent 项目改进精华（三层 MCP / Tool Annotations / anti-AI-slop 实战 / 磁盘清理铁律） | LocalAgent | ~450 |
-| [.agents/skills/](file:///f:/<project_root>/workspace/dev_toolkit/.agents/skills/) | 23 个 skill 蓝图（SDD 链 6 + 安全网 1 + 验证调试 2 + 元 skill 3 + 工程化 dev/* 7 + UI/UX 1 + 前端设计工艺 2） | anthropics/skills + LocalAgent + mattpocock/skills + pbakaus/impeccable + nutlope/hallmark + KKKKhazix/khazix-skills | - |
+| [README.md](file:///<project_root>/workspace/dev_toolkit/README.md) | 入口导航（本文件） | - | ~170 |
+| [DEPLOY.md](file:///<project_root>/workspace/dev_toolkit/DEPLOY.md) | 部署指南（6 步流程 + 占位符清单 + skill 裁剪推荐 + 常见误用） | LocalAgent | ~150 |
+| [AGENTS.md](file:///<project_root>/workspace/dev_toolkit/AGENTS.md) | AI Agent 协作指引模板（含 23 个 skill 的 SDD 主流程 + 部署初始化章节） | LocalAgent | ~330 |
+| [checklist.md](file:///<project_root>/workspace/dev_toolkit/checklist.md) | 功能变更检查清单模板 | LocalAgent | ~80 |
+| [html_toolkit.md](file:///<project_root>/workspace/dev_toolkit/html_toolkit.md) | HTML 生成工具栈（algorithmic-art / brand-guidelines / canvas-design / frontend-design / web-artifacts-builder / theme-factory 整合去重） | anthropics/skills | ~500 |
+| [mcp_builder.md](file:///<project_root>/workspace/dev_toolkit/mcp_builder.md) | MCP 服务构建（Python fastapi-mcp / TypeScript @modelcontextprotocol/sdk） | anthropics/skills + LocalAgent | ~400 |
+| [webapp_testing.md](file:///<project_root>/workspace/dev_toolkit/webapp_testing.md) | Web 应用测试（Playwright + Reconnaissance-Then-Action + JS 错误捕获） | anthropics/skills + LocalAgent | ~400 |
+| [skill_creator.md](file:///<project_root>/workspace/dev_toolkit/skill_creator.md) | Skill 创建精华（补充 anthropic 版的 evals/progressive disclosure/description 优化器） | anthropics/skills | ~350 |
+| [evals_template.json](file:///<project_root>/workspace/dev_toolkit/evals_template.json) | evals 模板（5 种 assertion 类型 + 对照组） | anthropics/skills | ~80 |
+| [project_essentials.md](file:///<project_root>/workspace/dev_toolkit/project_essentials.md) | LocalAgent 项目改进精华（三层 MCP / Tool Annotations / anti-AI-slop 实战 / 磁盘清理铁律） | LocalAgent | ~450 |
+| [.agents/skills/](file:///<project_root>/workspace/dev_toolkit/.agents/skills/) | 34 个 skill 蓝图（SDD 链 6 + 安全网 1 + 验证调试 2 + 元 skill 3 + 工程化 dev/* 7 + UI/UX 1 + 前端设计工艺 2 + 思维工具集 daily/ 11） | anthropics/skills + LocalAgent + mattpocock/skills + pbakaus/impeccable + nutlope/hallmark + KKKKhazix/khazix-skills + 数字生命卡兹克文章 | - |
 
-## Skill 蓝图概览（.agents/skills/，23 个）
+## Skill 蓝图概览（.agents/skills/，34 个）
 
 | 类别 | Skill | 用途 |
 |------|-------|------|
@@ -52,10 +52,11 @@
 | **工程化开发 dev/** | prototype, tdd, codebase-design, domain-modeling, resolving-merge-conflicts, leader, goal_engineering | 原型 / TDD / 架构 / 领域建模 / 解冲突 / 目标工程方法论 / 开发任务统一入口 |
 | **UI/UX 设计** | ui-ux-pro-max | 第三方 UI/UX 设计数据库（67 风格+161 配色+57 字体） |
 | **前端设计工艺（vendor 融合）** | dev/impeccable, dev/hallmark | 23 命令前端设计工艺 + 反 AI-slop 设计（含 upstream/ 原版档案） |
+| **思维工具集 daily/** | socratic_questionning, dual_layer_explanation, reverse_decomposition, fact_checking, expert_consultation, first_principles, cross_domain_borrowing, steel_man_decision, minimal_experiment, talent_mining, decision_protocol | 12 个通用思维 Prompt（问清问题/学习/解决问题/决策/认识自己），含组合哲学，可互相组合使用 |
 
-> 关键修复：原 `systematic-debugging` skill 名是幻觉（既不存在于上游 mattpocock 也不存在于本项目），实际应为 `diagnosing-bugs`（6 阶段 feedback loop 流程）。详见 [_index.md 变更记录](file:///f:/<project_root>/workspace/dev_toolkit/.agents/skills/_index.md)。
+> 关键修复：原 `systematic-debugging` skill 名是幻觉（既不存在于上游 mattpocock 也不存在于本项目），实际应为 `diagnosing-bugs`（6 阶段 feedback loop 流程）。详见 [_index.md 变更记录](file:///<project_root>/workspace/dev_toolkit/.agents/skills/_index.md)。
 >
-> Vendor 融合：dev/impeccable（来源 pbakaus/impeccable，Apache-2.0）+ dev/hallmark（来源 nutlope/hallmark，MIT）采用"Vendor 克隆 + 适配 wrapper"模式融合，每个 skill 含完整 upstream/ 子目录保留原版档案。详见 [ADR-0003](file:///f:/<project_root>/docs/adr/0003-vendor-skill-absorption-criteria.md)。
+> Vendor 融合：dev/impeccable（来源 pbakaus/impeccable，Apache-2.0）+ dev/hallmark（来源 nutlope/hallmark，MIT）采用"Vendor 克隆 + 适配 wrapper"模式融合，每个 skill 含完整 upstream/ 子目录保留原版档案。详见 [ADR-0003](file:///<project_root>/docs/adr/0003-vendor-skill-absorption-criteria.md)。
 >
 > 目标工程：dev/leader（来源 KKKKhazix/khazix-skills/leader，Apache-2.0）+ dev/goal_engineering 是开发任务的统一入口。goal_engineering 把"模糊想法→自主完成"编排成三阶段闸门流程（询问→写方案→执行），引用 leader 的目标七问 + 五种死法 + Harness 心法，融入 spec 模板的 Anti-Cheat 节。执行阶段不再询问，压缩后读 spec.md + tasks.md 续跑。
 
@@ -135,10 +136,10 @@
 
 以下 LocalAgent 项目文件已强化含相关内容，本工具包不重复，仅引用：
 
-- `f:\<project_root>\.agents\skills\skill-creator.md` — 已强化含 pushy description / 500 行软上限 / evals 机制 / 反模式
-- `f:\<project_root>\.agents\skills\html-dev-debug.md` — 已强化含 Reconnaissance-Then-Action / JS console 捕获 / anti-AI-slop 设计规范
-- `f:\<project_root>\server\mcp_whitelist.py` — 已强化含 Tool Annotations 完整映射
-- `f:\<project_root>\.agents\skills\office_pdf\`、`office_docx\`、`office_xlsx\`、`office_pptx\` — 办公文档生成套件（PDF / Word / Excel / PPT 4 个独立方法论 skill，原 `office_export` 已按格式拆分）
+- `<project_root>\.agents\skills\skill-creator.md` — 已强化含 pushy description / 500 行软上限 / evals 机制 / 反模式
+- `<project_root>\.agents\skills\html-dev-debug.md` — 已强化含 Reconnaissance-Then-Action / JS console 捕获 / anti-AI-slop 设计规范
+- `<project_root>\server\mcp_whitelist.py` — 已强化含 Tool Annotations 完整映射
+- `<project_root>\.agents\skills\office_pdf\`、`office_docx\`、`office_xlsx\`、`office_pptx\` — 办公文档生成套件（PDF / Word / Excel / PPT 4 个独立方法论 skill，原 `office_export` 已按格式拆分）
 
 ## 维护说明
 

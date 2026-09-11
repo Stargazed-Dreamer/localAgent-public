@@ -11,7 +11,8 @@
 | `/health` | GET | 全局健康检查（含所有模块状态） |
 | `/config` | GET/POST | 获取/更新配置 |
 | `/shutdown` | POST | 优雅关闭服务器 |
-| `/mcp/stats` | GET/POST | 查询/重置 MCP 工具调用统计 |
+| `/mcp/stats` | GET | 查询 MCP 工具调用统计 |
+| `/mcp/stats/reset` | POST | 重置 MCP 工具调用统计 |
 
 ## OCR
 
@@ -22,9 +23,10 @@
 | `/ocr/base64` | POST | 经典 OCR（Form 上传） |
 | `/ocr/path/json` | POST | 经典 OCR（本地路径） |
 | `/ocr/vl/file/json` | POST | 远程 VL 文档解析（JSON Body） |
-| `/ocr/vl/base64` | POST | 远程 VL（Form 上传） |
 | `/ocr/vl/path/json` | POST | 远程 VL（本地路径） |
-| `/ocr/models/{keep\|unload\|preload}/json` | POST | 模型管理 |
+| `/ocr/models/keep/json` | POST | OCR 模型管理：保留指定模型 |
+| `/ocr/models/unload/json` | POST | OCR 模型管理：卸载指定模型 |
+| `/ocr/models/preload/json` | POST | OCR 模型管理：预加载指定模型 |
 
 ## Agent / Guide
 
@@ -42,7 +44,7 @@
 |------|------|------|
 | `/exec/status` | GET | Exec 模块状态 |
 | `/exec/python` | POST | 执行 Python 代码（万能回退） |
-| `/exec/apply_patch` | POST | 应用补丁（支持 dry-run、回滚） |
+| `/exec/apply-patch` | POST | 应用补丁（支持 dry-run、回滚） |
 | `/exec/cmd` | POST | 执行 Shell 命令 |
 | `/terminals/spawn` | POST | 启动后台终端会话 |
 | `/terminals/{tid}` | GET/DELETE | 查看/删除终端 |
@@ -58,17 +60,19 @@
 |------|------|------|
 | `/screen/status` | GET | 屏幕状态（管理员权限、紧急停止） |
 | `/screen/windows` | GET | 列出所有可见窗口 |
-| `/screen/capture` | POST | 截图（inline=ImageContent / path / base64） |
-| `/screen/ocr` | POST | 截图+本地 OCR，返回文字 bbox（Computer Use 首选） |
-| `/screen/action` | POST | 键鼠操作（含安全检查；支持 verify_prompt） |
+| `/screen/capture` | POST | 截图（inline=ImageContent / path / base64；返回 snapshot_id，帧缓存供 zoom/局部 OCR 复用） |
+| `/screen/ocr` | POST | 截图+本地 OCR，返回文字 bbox（Computer Use 首选；支持 snapshot_id 帧复用 + region 局部 OCR） |
+| `/screen/zoom` | POST | 最近帧局部裁剪放大（不重截图；inline=ImageContent / path） |
+| `/screen/action` | POST | 键鼠操作（含安全检查；click 默认 UIA 融合 strategy=auto；支持 mouse_down/up/move 分段原语；支持 verify_prompt） |
 | `/screen/focus-window` | POST | 强力激活窗口 |
-| `/screen/batch-actions` | POST | 批量键鼠操作 |
+| `/screen/batch-actions` | POST | 批量键鼠操作（click 步骤支持 strategy 融合） |
+| `/screen/clipboard` | GET/POST | 剪贴板读（截断 2000）/写（danger block 拦截；受会话权限保护） |
 | `/screen/scroll-capture` | POST | 滚动截图拼接 |
 | `/screen/wait-for` | POST | 条件等待（OCR/VL 检测文字出现） |
 | `/screen/snapshot` | POST | 桌面快照（窗口列表+OCR文本，无 base64） |
 | `/screen/analyze` | POST | 图像特征分析（颜色/亮度/异常告警） |
 | `/screen/preview/action` | POST | 点击位置预览（红点标记） |
-| `/screen/overlay/{show\|hide}` | POST | 显示/隐藏操作提示覆盖层 |
+| `/screen/overlay` | POST | 显示操作提示覆盖层（持久显示，文案/颜色/倒计时由 SessionManager.status 推送 tick 自动刷新；传 message 字段已弃用） |
 | `/screen/control/request` | POST | 请求用户介导的当前任务授权（确认窗复选框默认未勾选） |
 | `/screen/control/release` | POST | 主动收回当前任务授权（幂等） |
 
@@ -185,14 +189,31 @@
 
 > `/llm/pool/models` 和 `/llm/pool/recent-calls` 已加入 `GATEWAY_EXCLUDE`（监控面板专用），agent 用 `/health.llm_pool` 获取聚合状态。详见 `docs/llm-pool.md`。
 
+## 入站网关（Inbound Gateway）
+
+OpenAI 兼容本地中转：外部 harness（Cline / Cherry Studio 等）把 `base_url` 指到 `http://127.0.0.1:8766/v1`、配 `sk-la-` 本地 key，即可用整个模型池。每次调用落 `data/inbound_calls.db`（key/模型映射/上游 key/tokens/TTFT/状态码），统计全部由网关自己的 SQLite 聚合（**不复用** `pool.project_stats`——`pool.stream()` 侧零统计）。
+
+| 路径 | 方法 | 说明 |
+|------|------|------|
+| `/v1/chat/completions` | POST | OpenAI 兼容对话（流式与非流式），需 `sk-la-` key |
+| `/v1/models` | GET | OpenAI 兼容模型列表（需 `sk-la-` key） |
+| `/inbound/keys` | GET/POST | 入站 key 列表 / 创建（仅 127.0.0.1，无鉴权） |
+| `/inbound/keys/{key_id}` | PATCH/DELETE | 更新（启停/改名/限额）/ 删除入站 key |
+| `/inbound/calls` | GET | 调用日志（支持 key_id/model/状态筛选分页） |
+| `/inbound/stats` | GET | Token 统计聚合（`days` 参数，含 TTFT p50/p95、成功率） |
+
+> 8 个 operation_id 全部在 `server/mcp_whitelist.py` 的 `GATEWAY_EXCLUDE`（不进 MCP 工具列表）。模型解析三段：key 别名 → 池内精确匹配 → 404 带可用列表（无 tier 兜底）。面板见 `client/panels/inbound.py`（入站管理，四页签）。
+
 ## 高级工具 / 模板网关
 
 | 路径 | 方法 | 说明 |
 |------|------|------|
 | `/advanced/run` | POST | 调用低频/运维工具（116 个，通过 `localagent_advanced_tool`） |
-| `/advanced/list` | POST | 列出可用高级工具 |
+| `/advanced/tools` | GET | 列出可用高级工具（含 7 段语义说明） |
+| `/advanced/docs/tool` | GET | 单个工具的完整语义说明 |
+| `/advanced/docs/project` | GET | 项目级文档索引 |
 | `/templates/run` | POST | 执行工作流模板（通过 `localagent_template_tool`） |
-| `/templates/list` | POST | 列出可用模板 |
+| `/templates/list` | GET | 列出可用模板 |
 
 ## 其他模块
 
@@ -227,7 +248,7 @@
 - 批量管理（resolve/ignore/delete）：`inbox_batch` 端点，仅监控面板调用，不进 MCP（防膨胀）
 - 当用户问"我的 inbox 咋回事 / 收件箱"时，调 `inbox_list(status=pending)` 按来源归类汇总
 
-**注意**：测试 auto_shutdown 等模块时，必须 mock `_push_inbox`，否则测试会真往 inbox 写条目污染收件箱（见 `tests/test_auto_shutdown.py` 的 autouse fixture）。
+**注意**：测试 auto_shutdown 等模块时，必须 mock `_push_inbox`，否则测试会真往 inbox 写条目污染收件箱（见 `tests/approval_screen/test_auto_shutdown.py` 的 autouse fixture）。
 
 ## MCP
 

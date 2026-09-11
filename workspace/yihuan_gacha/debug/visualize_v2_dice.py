@@ -110,7 +110,7 @@ for img_name, target_idx in TARGET_CASES:
     zoom_bot = min(img.size[1], int(name_cy + 80))
     zoom_img = draw_img.crop((zoom_left, zoom_top, zoom_right, zoom_bot))
     # 放大 2 倍
-    zoom_img = zoom_img.resize((zoom_img.size[0] * 2, zoom_img.size[1] * 2), Image.NEAREST)
+    zoom_img = zoom_img.resize((zoom_img.size[0] * 2, zoom_img.size[1] * 2), Image.Resampling.NEAREST)
 
     out_path = SAMPLES_DIR / "debug" / "v2" / f"compare_{img_name.replace('.png','')}_idx{target_idx}.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)

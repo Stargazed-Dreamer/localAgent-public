@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 LLM Token 消耗统计报告
 
@@ -15,9 +14,9 @@ LLM Token 消耗统计报告
   uv run python tools/llm/llm_token_stats.py --watch       # 持续刷新（每10秒）
 """
 
+import argparse
 import json
 import time
-import argparse
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -192,10 +191,10 @@ def print_report():
         print(f"  │  {'-'*67}")
         print(f"  │  {'TOTAL':<22s} {total_cl:7d} {total_pt:12,d} {total_ct:12,d} {total_tt:12,d}")
     else:
-        print(f"  │  (暂无数据)")
+        print("  │  (暂无数据)")
 
     # ---- 帖子总结 Checkpoint（独立验证） ----
-    print(f"\n  ┌─ 社群帖子总结 Checkpoint（独立验证）")
+    print("\n  ┌─ 社群帖子总结 Checkpoint（独立验证）")
     print(f"  │  来源: {POSTS_CHECKPOINT}")
     if posts_tokens:
         print(f"  │  已处理帖子: {posts_tokens['posts_count']:,d}")
@@ -207,36 +206,36 @@ def print_report():
             avg = posts_tokens["total_tokens"] / posts_tokens["posts_count"]
             print(f"  │  平均每篇 tokens:   {avg:>12,.0f}")
     else:
-        print(f"  │  (暂无数据)")
+        print("  │  (暂无数据)")
 
     # ---- 代码注释进度 ----
-    print(f"\n  ┌─ 代码注释进度")
+    print("\n  ┌─ 代码注释进度")
     print(f"  │  来源: {COMMENT_STATE}")
     if comment_prog:
         print(f"  │  总文件: {comment_prog['total_files']}  已完成: {comment_prog['completed_files']}  处理单元: {comment_prog['total_units']}")
-        print(f"  │  按项目分组:")
+        print("  │  按项目分组:")
         for proj, info in sorted(comment_prog["by_project"].items()):
             print(f"  │    {proj:<20s} files={info['files']:4d}  units={info['units']:4d}")
     else:
-        print(f"  │  (暂无数据)")
+        print("  │  (暂无数据)")
 
     # ---- LRC 分析进度 ----
-    print(f"\n  ┌─ LRC 歌词分析进度")
+    print("\n  ┌─ LRC 歌词分析进度")
     print(f"  │  来源: {LRC_STATE}")
     if lrc_prog:
         print(f"  │  已处理: {lrc_prog['processed']}  结果数: {lrc_prog['results']}")
     else:
-        print(f"  │  (暂无数据)")
+        print("  │  (暂无数据)")
 
     # ---- 汇总 ----
-    print(f"\n  ┌─ 汇总")
+    print("\n  ┌─ 汇总")
     pool_tt = sum(v.get("total_tokens", 0) for v in projects.values())
     posts_tt = posts_tokens["total_tokens"] if posts_tokens else 0
     # 帖子总结的 token 在 pool stats 和 checkpoint 中可能重复，取较大值
     grand_total = max(pool_tt, posts_tt)
     print(f"  │  池统计 Total tokens:  {pool_tt:>12,d}")
     print(f"  │  Checkpoint Total:     {posts_tt:>12,d}")
-    print(f"  │  ─────────────────────────────────")
+    print("  │  ─────────────────────────────────")
     print(f"  │  累计消耗（取较大值）: {grand_total:>12,d}")
     if grand_total > 0:
         # mimo-v2.5-pro 2x credit, 估算消耗的 credit

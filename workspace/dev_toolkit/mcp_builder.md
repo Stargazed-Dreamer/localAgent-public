@@ -89,7 +89,7 @@ TOOL_ANNOTATIONS = {
 
 ### 3.3 LocalAgent 全工具映射（参考）
 
-来自 `f:\<project_root>\server\mcp_whitelist.py`：
+来自 `<project_root>\server\mcp_whitelist.py`：
 
 ```python
 TOOL_ANNOTATIONS = {
@@ -119,7 +119,7 @@ TOOL_ANNOTATIONS = {
 
 ## 4. 用 Python + fastapi-mcp 构建
 
-来自 LocalAgent 项目实践（`f:\<project_root>\server\core\mcp_gateway.py`）。
+来自 LocalAgent 项目实践（`<project_root>\server\core\mcp_gateway.py`）。
 
 ### 4.1 项目结构
 
@@ -369,7 +369,7 @@ app.listen(3000);
 
 ### 7.4 LocalAgent 实际数据
 
-来自 `f:\<project_root>\server\mcp_whitelist.py`：
+来自 `<project_root>\server\mcp_whitelist.py`：
 - DIRECT_TOOLS：~35 个直连工具
 - 网关自动收纳：~50 个工具（通过 `localagent_advanced_tool` 访问）
 - GATEWAY_EXCLUDE：~20 个排除工具（仅 REST 可用）
@@ -577,6 +577,6 @@ curl -X POST http://127.0.0.1:8766/mcp \
 - **Python SDK**：`https://github.com/modelcontextprotocol/python-sdk`
 - **fastapi-mcp**：`https://github.com/jlowin/fastapi-mcp`
 - **anthropics/skills mcp-builder**：`https://github.com/anthropics/skills/blob/main/skills/mcp-builder/SKILL.md`
-- **LocalAgent 项目 MCP 网关**：`f:\<project_root>\server\core\mcp_gateway.py`
-- **LocalAgent 项目白名单**：`f:\<project_root>\server\mcp_whitelist.py`
-- **LocalAgent 三层架构文档**：`f:\<project_root>\docs\mcp-reference.md`
+- **LocalAgent 项目 MCP 网关**：`<project_root>\server\core\mcp_gateway.py`
+- **LocalAgent 项目白名单**：`<project_root>\server\mcp_whitelist.py`
+- **LocalAgent 三层架构文档**：`<project_root>\docs\mcp-reference.md`

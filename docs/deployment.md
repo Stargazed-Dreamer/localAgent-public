@@ -271,7 +271,7 @@ uv run python tools/browser/start_debug_browser.py --copy-user-data
 uv run python tools/browser/start_debug_browser.py --browser-path "C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 # 指定端口和用户数据目录
-uv run python tools/browser/start_debug_browser.py --port 9222 --user-data-dir "D:\chrome_debug"
+uv run python tools/browser/start_debug_browser.py --port 9222 --user-data-dir "<debug_profile_dir>"
 ```
 
 **重要约束**（见 [docs/environment-constraints.md](environment-constraints.md) "调试浏览器实例"章节）：
@@ -335,7 +335,7 @@ ChatGPT 桌面客户端的"流式 HTTP"强制要求 OAuth，本地 MCP 无法满
 | 类型 | STDIO |
 | 启动命令 | `node` |
 | 参数 | `tools/mcp_bridge.js` |
-| 工作目录 | 项目根目录（如 `F:\<project_root>`） |
+| 工作目录 | 项目根目录（如 `<project_root>`） |
 
 后端零改动，原有直连配置不受影响。详见 [AGENTS.md](../AGENTS.md) 的 "MCP 接入" 章节。
 
@@ -458,6 +458,64 @@ start_client.bat
 # 在 IDE 里让 LLM 调用：agent_guide(task='hello')
 # 应返回候选 Skill 清单 + first_action
 ```
+
+## 其他机器部署常见问题
+
+### 记忆系统静默退化为 BM25-only
+
+**症状**：`/health` 中 `memory.embedding_ready` 为 `false`，语义检索不可用，且**没有任何报错**。
+
+**根因（已修，2026-08-31）**：`server/memory/embeddings.py` 的 `_load_model()` 在本地检测到
+sentence-transformers 结构（`model.safetensors` + `1_Pooling/` + `modules.json`）时会无条件
+`return self._ready`。若目标机器**没装 sentence-transformers**，降级失败后直接返回 `False`，
+`_export_onnx()` 与 `_download_model()` **永远不会被调用** —— 于是不联网、不转换、不报错，
+直接退化成 BM25-only。
+
+**排查**：目标机器需满足以下任意一条，否则嵌入不可用：
+
+| 条件 | 走的路径 |
+|------|----------|
+| 本地已有 `model.onnx` + 装了 `onnxruntime` | ONNX 直接推理（最快） |
+| 本地有权重 + 装了 `torch` + `transformers` | 本地导出 ONNX（不联网） |
+| 装了 `sentence-transformers` | ST 降级推理 |
+
+三者全无 → BM25-only。
+
+### 嵌入模型下载后仍然不可用
+
+`BAAI/bge-small-zh-v1.5` 官方仓库（HuggingFace 与 ModelScope 一致）
+**不含任何 ONNX 文件**，只有 `model.safetensors` / `pytorch_model.bin` 及配套配置。
+所以下载阶段拿不到 `model.onnx` 是**正常的**，必须靠本地 `torch` 转换，
+或装 sentence-transformers 走降级路径。
+
+历史 bug（已修，2026-08-31）：`_download_model()` 的 `allow_patterns` 只列了
+`model.onnx` 与 tokenizer 配置，**连权重文件都没包含**，导致即便下载成功也无法转换。
+现已按 ONNX（含 `onnx/*` 子目录）/ 权重 / ST 结构三类补齐，
+并会把仓库里的 `onnx/model.onnx` 自动提到模型根目录。
+
+### PaddleOCR 模型缓存位置不受 `external_dir` 控制
+
+`server/ocr.py` 设置的 `PADDLEOCR_HOME` 环境变量**对 paddlex 无效**。paddlex 实际读的是：
+
+```
+paddlex/utils/cache.py:29
+CACHE_DIR = os.environ.get("PADDLE_PDX_CACHE_HOME", DEFAULT_CACHE_DIR)   # DEFAULT = ~/.paddlex
+```
+
+因此模型默认落在 `%USERPROFILE%\.paddlex\official_models\`。想让 `config.toml` 的
+`external_dir` 真正接管 OCR 模型，需要改用 **`PADDLE_PDX_CACHE_HOME`**。
+（已于 2026-09-01 修复：`ModelManager._ensure_env()` 在 `from paddleocr import PaddleOCR`
+之前同时设置 `PADDLE_PDX_CACHE_HOME`（保留 `PADDLEX_HOME` 兼容旧版 paddlex），且因
+`CACHE_DIR` 是 paddlex 模块 import 时固化的常量，必须在首次 import 前设置才能生效。
+无 GPU 环境实测日志 `Using cached files: <项目根>\weights\paddlex\official_models\PP-OCRv6_medium_det`，
+权重回到项目目录，`external_dir` / `weights/paddlex` 回退路径均恢复生效。坑位详情见
+[model-paths.md](model-paths.md)）
+
+### OCR 推理设备的默认值
+
+`config.toml [models] paddle_device` 当前默认 `gpu`（可选 `cpu` / `auto`）。
+详见 [environment-constraints.md](environment-constraints.md) 的 PaddlePaddle 兼容性章节，
+其中记录了为何曾短暂降为 cpu、以及 2026-08-31 的推翻依据。
 
 ## 进一步阅读
 

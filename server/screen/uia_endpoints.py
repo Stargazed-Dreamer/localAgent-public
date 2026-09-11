@@ -77,6 +77,10 @@ class UiaElement(BaseSchema):
     depth: int
     parent_index: int | None = None
     children_indices: list[int] = []
+    # ZCode 风格能力标志：空格连接短串（pressable/editable/toggleable/selectable/expandable/focused）
+    flags: str = ""
+    # 该元素支持的语义动作列表（对齐 screen_semantic_action 的 action 枚举）
+    actions: list[str] = []
 
 
 class UiaSnapshotResponse(BaseSchema):
@@ -168,7 +172,7 @@ def uia_snapshot(req: UiaSnapshotRequest):
     ]
     # 自动注入软件经验提示（按目标窗口 process_name 匹配 apps/*.md）
     try:
-        from server.screen.app_lessons import match_app_for_process, build_app_lessons_hint
+        from server.screen.app_lessons import build_app_lessons_hint, match_app_for_process
         if target_process_name:
             lessons = match_app_for_process(target_process_name)
             result["app_lessons_hint"] = build_app_lessons_hint(lessons)

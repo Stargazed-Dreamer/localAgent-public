@@ -24,6 +24,7 @@ def _enum_windows() -> list[dict]:
     # 依赖一次性导入（缺失则提前返回空列表，避免回调内重复 import 开销）
     try:
         import psutil
+        import win32con
         import win32gui
         import win32process
     except ImportError:
@@ -64,7 +65,7 @@ def _enum_windows() -> list[dict]:
         # 获取Z序
         z_order = 0
         try:
-            z_order = win32gui.GetWindow(hwnd, win32gui.GW_HWNDPREV)
+            z_order = win32gui.GetWindow(hwnd, win32con.GW_HWNDPREV)
         except Exception:
             pass
 
@@ -198,6 +199,7 @@ def _force_focus_window(hwnd: int) -> bool:
 
     import win32con
     import win32gui
+    import win32process
 
     try:
         # 最小化时先恢复
@@ -211,8 +213,8 @@ def _force_focus_window(hwnd: int) -> bool:
 
         # 方法 1: AttachThreadInput + SetForegroundWindow
         try:
-            cur_tid = win32gui.GetWindowThreadProcessId(cur_fg)[0]
-            target_tid = win32gui.GetWindowThreadProcessId(hwnd)[0]
+            cur_tid = win32process.GetWindowThreadProcessId(cur_fg)[0]
+            target_tid = win32process.GetWindowThreadProcessId(hwnd)[0]
             ctypes.windll.user32.AttachThreadInput(cur_tid, target_tid, True)
             try:
                 win32gui.ShowWindow(hwnd, win32con.SW_SHOW)

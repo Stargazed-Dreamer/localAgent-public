@@ -296,9 +296,12 @@ async def command_guard_request_approval(req: ApprovalRequest):
         "agent_reason_source": "agent_written",
         "is_http": is_http,
     })
+    # 审批会话兜底时长（与 run_gui_dialog 的 server_timeout 语义一致）
+    gui_timeout = float(get_command_guard_config().get("gui_timeout_seconds", 180))
+    session_ttl = gui_timeout + 20.0
     try:
         if is_http:
-            from server.http_guard import get_pending_http
+            from server.http_guard import extend_pending_http, get_pending_http
             pending = get_pending_http(req.approval_id)
         else:
             pending = get_pending(req.approval_id)
@@ -327,6 +330,11 @@ async def command_guard_request_approval(req: ApprovalRequest):
             "agent_reason": req.agent_reason,
         }
     try:
+        # 发起 GUI 审批前延长 pending 存活期，覆盖整个审批会话
+        # （默认 approval_ttl_seconds=300s，gui_timeout>280s 时 pending 会先过期
+        # 导致用户批准后 record_http_decision 抛 ValueError，见 extend_pending_http）
+        if is_http:
+            extend_pending_http(req.approval_id, session_ttl)
         result = await run_gui_dialog(payload, approval_id=req.approval_id)
     except TimeoutError as exc:
         log_approval_detailed({

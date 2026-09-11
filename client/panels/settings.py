@@ -49,6 +49,8 @@ def _load_descriptions() -> dict:
         _DESC_CACHE = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         _DESC_CACHE = {}
+    # _DESC_CACHE 此时必为 dict（上面两条赋值路径都给了 dict）
+    assert _DESC_CACHE is not None
     return _DESC_CACHE
 
 
@@ -473,9 +475,12 @@ class SettingsPanel(PanelBase):
 
     def _update_approval_detail(self, level: str) -> None:
         """根据级别更新端点清单小字"""
+        label = self._approval_detail_label
+        if label is None:
+            return
         lines = _APPROVAL_LEVEL_ENDPOINTS.get(level, [])
         if not lines:
-            self._approval_detail_label.setText("")
+            label.setText("")
             return
         html_lines = []
         for line in lines:
@@ -486,7 +491,7 @@ class SettingsPanel(PanelBase):
                 html_lines.append(f"<span style='color:{tokens.TEXT_DISABLED};'>{safe}</span>")
             else:
                 html_lines.append(f"<span style='color:{tokens.TEXT_TERTIARY};'>• {safe}</span>")
-        self._approval_detail_label.setText("<br>".join(html_lines))
+        label.setText("<br>".join(html_lines))
 
     def _on_approval_level_changed(self, _idx: int) -> None:
         """下拉框选择变化：更新小字 + 提交到后端"""
@@ -641,9 +646,12 @@ class SettingsPanel(PanelBase):
     def _populate_tree(self, config: dict) -> None:
         global _DESC_CACHE
         _DESC_CACHE = None  # 强制重新加载说明映射
+        tree = self._tree
+        if tree is None:
+            return
         # 保存展开状态，重建后恢复（避免编辑后全部折叠）
         expanded_paths = self._save_expansion_state()
-        self._tree.clear()
+        tree.clear()
         for section_name in sorted(config.keys()):
             value = config[section_name]
             is_container = isinstance(value, dict)
@@ -660,7 +668,7 @@ class SettingsPanel(PanelBase):
                 self._style_empty(top_item, section_name)
             else:
                 self._style_leaf_value(top_item, value, section_name)
-            self._tree.addTopLevelItem(top_item)
+            tree.addTopLevelItem(top_item)
             if is_container:
                 self._fill_section(top_item, section_name, value)
         # 恢复展开状态
@@ -785,7 +793,10 @@ class SettingsPanel(PanelBase):
         self._edit_item(item)
 
     def _on_edit_clicked(self) -> None:
-        items = self._tree.selectedItems()
+        tree = self._tree
+        if tree is None:
+            return
+        items = tree.selectedItems()
         if not items:
             QMessageBox.information(self, "提示", "请先选择一个字段")
             return

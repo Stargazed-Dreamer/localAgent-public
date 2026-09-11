@@ -1,6 +1,6 @@
 # Excel 基础元素参考 (basic)
 
-本文件是 [office_xlsx skill](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md) 的基础参考，覆盖 openpyxl 全部 13 个元素 + 验证清单 + Common Pitfalls。条件格式 / 财务模型 / 仪表盘场景见对应独立 references。
+本文件是 [office_xlsx skill](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md) 的基础参考，覆盖 openpyxl 全部 13 个元素 + 验证清单 + Common Pitfalls。条件格式 / 财务模型 / 仪表盘场景见对应独立 references。
 
 ## Mental Model
 
@@ -434,7 +434,7 @@ sg.highMarkerColor = 'FF0000'
 
 ## Element 8: Conditional Formatting
 
-详见 [conditional_formatting.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md)。3 flavors + iconSet + 完整代码示例。
+详见 [conditional_formatting.md](file:///<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md)。3 flavors + iconSet + 完整代码示例。
 
 ## Element 9: Data Validation
 
@@ -695,7 +695,7 @@ def validate(path):
 ## 参考
 
 - [openpyxl 官方文档](https://openpyxl.readthedocs.io/)
-- [SKILL.md](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md)
-- [conditional_formatting.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md) - 条件格式详解
-- [financial_model.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/financial_model.md) - 财务模型场景
-- [data_dashboard.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/data_dashboard.md) - 数据仪表盘场景
+- [SKILL.md](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md)
+- [conditional_formatting.md](file:///<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md) - 条件格式详解
+- [financial_model.md](file:///<project_root>/.agents/skills/office_xlsx/references/financial_model.md) - 财务模型场景
+- [data_dashboard.md](file:///<project_root>/.agents/skills/office_xlsx/references/data_dashboard.md) - 数据仪表盘场景

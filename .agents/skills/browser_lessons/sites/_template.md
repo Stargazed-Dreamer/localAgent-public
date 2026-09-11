@@ -34,7 +34,7 @@ aliases: [网站中文名, 其他别名]
 | 连接方式 | `connect_over_cdp("http://127.0.0.1:9222")` | 项目统一 |
 | 无头模式 | 禁止 | 用户要求 + 环境不支持 |
 | 登录态来源 | 调试浏览器中扫码登录 | 独立 `user-data-dir` |
-| 反风控 | playwright-stealth + 随机延迟 | （如有） |
+| 反风控 | 不注入 JS 伪装补丁 + 随机延迟 | 项目统一：CDP 连真实 Chrome，指纹天然合规；禁止 playwright-stealth（见 docs/browser-anti-detection.md） |
 
 ## 反爬/风控
 

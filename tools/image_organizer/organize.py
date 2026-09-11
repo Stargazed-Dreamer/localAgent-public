@@ -1,4 +1,4 @@
-"""图片整理工具：Florence-2 caption+detailed+OCR → LLM 多维度分类 → move 文件 → SQLite 标签库
+r"""图片整理工具：Florence-2 caption+detailed+OCR → LLM 多维度分类 → move 文件 → SQLite 标签库
 运行环境：主项目虚拟环境（.venv，CUDA torch + transformers，Florence-2 已随 OmniParser 安装）
 运行命令：
   .venv\Scripts\python.exe tools\image_organizer\organize.py
@@ -13,16 +13,15 @@ v2 改进：
 - 改进 prompt：强调二次元识别、IP 谨慎判断、使用图像尺寸作为提示
 """
 import argparse
+import concurrent.futures
 import json
 import os
 import shutil
 import sqlite3
-import sys
 import threading
 import time
-import concurrent.futures
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 import requests
 
@@ -36,7 +35,7 @@ COMMIT_EVERY = 100
 DEFAULT_MODEL = "microsoft/Florence-2-large"
 
 TARGET_ROOT = Path(r"I:\<data_drive>:\<image_organize_output>")
-OUTPUT_DIR = Path(r"f:\<project_root>\output\image_organizer")
+OUTPUT_DIR = Path(r"<project_root>\output\image_organizer")
 DB_PATH = OUTPUT_DIR / "files.db"
 MAPPING_FILE = OUTPUT_DIR / "mapping.jsonl"
 
@@ -168,8 +167,8 @@ def scan_files():
 # ============ Florence-2 ============
 def load_florence(model_name=DEFAULT_MODEL):
     import torch
-    from transformers import AutoModelForCausalLM, AutoProcessor
     from PIL import Image
+    from transformers import AutoModelForCausalLM, AutoProcessor
     print(f"  加载模型: {model_name}")
     print(f"  torch={torch.__version__}, cuda={torch.cuda.is_available()}")
     proc = AutoProcessor.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)

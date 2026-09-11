@@ -88,9 +88,9 @@ core_files_exclude = [
   # 测试文件（内部组件专用测试 + 依赖 policy.toml 的 v2 测试 + release-engine v4 自测，朋友包不含 policy.toml/release-engine 内部实现）
   # 注：tests/test_release_v4.py 故意构造敏感样本验证 scanner 排除逻辑，
   # scanner 不区分测试代码，必须从发布包排除（与 test_gh_mirror_release.py 同性质处理）
-  "tests/test_gh_mirror_release.py",
-  "tests/test_release_policy.py",
-  "tests/test_release_v4.py",
+  "tests/release_ci/test_gh_mirror_release.py",
+  "tests/release_ci/test_release_policy.py",
+  "tests/release_ci/test_release_v4.py",
 
   # 源仓库 README（朋友包用 README_public.md → README.md，build 期 path_renames 处理）
   "README.md",
@@ -122,6 +122,10 @@ core_files_exclude = [
 
   # .agents WIP（工作进行中笔记，个人维护用）
   ".agents/wip/**",
+
+  # 个人系统重建内容（个人路径密集，friend 决策 2026-07-18 起即排除；2026-09-12
+  # triage 核对确认仍有 100+ 行本机路径残留，public/friend 同步排除）
+  "workspace/disk_manager/system_rebuild/**",
 ]
 
 [audience.gates]

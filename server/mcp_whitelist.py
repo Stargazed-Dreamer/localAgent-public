@@ -178,6 +178,14 @@ GATEWAY_EXCLUDE: set[str] = {
     #    EvidenceLedger — 证据集审计
     "memory_evidence_recent", "memory_evidence_detail",
     "memory_evidence_cleanup",
+
+    # === 入站网关（inbound-gateway SDD）：/v1/* 与 /inbound/* 不进 MCP 网关 ===
+    # OpenAI 兼容入站面是给外部 harness 用的，管理面是给 client 面板用的；
+    # MCP 为 fail-open（新端点默认进 advanced 网关），必须逐个 operation_id 显式排除。
+    "inbound_v1_models", "inbound_v1_chat_completions",
+    "inbound_keys_list", "inbound_keys_create",
+    "inbound_keys_update", "inbound_keys_delete",
+    "inbound_calls_list", "inbound_stats",
 }
 
 
@@ -243,6 +251,10 @@ TOOL_ANNOTATIONS: dict[str, dict[str, bool]] = {
     "vision_status":             {"readOnlyHint": True,  "idempotentHint": True},
     "screen_accessibility_snapshot": {"readOnlyHint": True,  "idempotentHint": True},
     "screen_semantic_action":    {"openWorldHint": True},
+    # ZCode 对齐新增（网关层工具的注解；直连升级按调用频次另行决策）
+    "screen_zoom":               {"readOnlyHint": True,  "openWorldHint": True},
+    "read_clipboard":            {"readOnlyHint": True,  "openWorldHint": True},
+    "write_clipboard":           {"openWorldHint": True},
 
     # === browser ===
     "browser_status":            {"readOnlyHint": True,  "idempotentHint": True},

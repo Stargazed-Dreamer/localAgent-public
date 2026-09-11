@@ -36,9 +36,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 from playwright.async_api import async_playwright
-from playwright_stealth import Stealth
 
-_stealth = Stealth()
 CDP_PORT = 9222
 
 # 项目根目录
@@ -433,7 +431,6 @@ async def authenticate_via_browser(provider: str) -> dict | None:
         )
         if page is None:
             page = await context.new_page()
-            await _stealth.apply_stealth_async(page)
             await page.goto(LOGIN_URLS[provider], wait_until="domcontentloaded", timeout=30000)
             await human_delay(3, 5)
 

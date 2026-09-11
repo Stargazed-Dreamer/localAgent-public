@@ -22,8 +22,12 @@ from __future__ import annotations
 import logging
 import time
 from datetime import UTC
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
+
+if TYPE_CHECKING:
+    import requests
 
 logger = logging.getLogger("localagent.agent.web_anti_crawl")
 
@@ -224,7 +228,7 @@ def fetch_with_backoff(
     headers: dict | None = None,
     params: dict | None = None,
     max_redirects: int = 5,
-) -> tuple[bool, object, str]:
+) -> tuple[bool, requests.Response | None, str]:
     """带指数退避的 GET 请求（SSRF 安全的 redirect 跟随）。
 
     Args:

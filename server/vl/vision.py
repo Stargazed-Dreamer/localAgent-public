@@ -1,8 +1,7 @@
 """Vision routes - remote VL understanding & element location.
 
-OmniParser (YOLOv8 + Florence2 + PaddleOCR) 已于 2026-07-31 移除（MCP 调用 0 次，
-远程 VL + OCR bbox 已覆盖全部实际场景）。如需重新引入本地纯图标检测，参考
-temp/sdd/omniparser-removal/spec.md 和记忆 omniparser_removal。
+职责：远程 VL 图像理解（understand）与无文字元素坐标定位（locate）。
+定位分工见 docs/environment-constraints.md「Computer Use 定位策略」。
 """
 
 from __future__ import annotations

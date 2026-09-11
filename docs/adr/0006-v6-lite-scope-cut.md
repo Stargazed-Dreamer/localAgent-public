@@ -52,7 +52,7 @@ v6 全量设计的规模与现状严重脱节：
 
 ## References
 
-- 唯一开工依据：[`planning_notes/v6/v6-lite.md`](file:///f:/<project_root>/planning_notes/v6/v6-lite.md)
-- 实现产物（v6-lite 引擎核心库）：[`client/core/agent/`](file:///f:/<project_root>/client/core/agent/)（[runner.py](file:///f:/<project_root>/client/core/agent/runner.py) / [event_store.py](file:///f:/<project_root>/client/core/agent/event_store.py) / [compactor.py](file:///f:/<project_root>/client/core/agent/compactor.py) / [tool_registry.py](file:///f:/<project_root>/client/core/agent/tool_registry.py) / [llm_pool_gateway.py](file:///f:/<project_root>/client/core/agent/llm_pool_gateway.py) / [reconciler.py](file:///f:/<project_root>/client/core/agent/reconciler.py) / [facade.py](file:///f:/<project_root>/client/core/agent/facade.py) / [doom_loop.py](file:///f:/<project_root>/client/core/agent/doom_loop.py)）
+- 唯一开工依据：[`planning_notes/v6/v6-lite.md`](file:///<project_root>/planning_notes/v6/v6-lite.md)
+- 实现产物（v6-lite 引擎核心库）：[`client/core/agent/`](file:///<project_root>/client/core/agent/)（[runner.py](file:///<project_root>/client/core/agent/runner.py) / [event_store.py](file:///<project_root>/client/core/agent/event_store.py) / [compactor.py](file:///<project_root>/client/core/agent/compactor.py) / [tool_registry.py](file:///<project_root>/client/core/agent/tool_registry.py) / [llm_pool_gateway.py](file:///<project_root>/client/core/agent/llm_pool_gateway.py) / [reconciler.py](file:///<project_root>/client/core/agent/reconciler.py) / [facade.py](file:///<project_root>/client/core/agent/facade.py) / [doom_loop.py](file:///<project_root>/client/core/agent/doom_loop.py)）
 - 相关 ADR：[ADR-0009](0009-toolresult-five-variant-enum.md)（ToolResult 5 变体）、[ADR-0010](0010-tool-list-four-categories.md)（工具清单分四类）——均为 v6-lite 后续 v6.1 改造
 - 切片落地记录：`docs/changelog-archive.md` [0.31.0] v6-lite 对话引擎核心库 / [0.32.0] v6-lite-streaming-gui

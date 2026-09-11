@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Fake LLM Proxy v2 - 学习用虚拟 API 端点 + 实时网页监控
 ========================================================
@@ -15,18 +14,17 @@ Fake LLM Proxy v2 - 学习用虚拟 API 端点 + 实时网页监控
     base_url = http://127.0.0.1:9999/v1
     api_key  = 随便填
 """
-import sys
-import json
-import time
-import uuid
 import asyncio
+import hashlib
+import json
 import os
 import signal
-import hashlib
-from pathlib import Path
-from datetime import datetime
+import sys
+import time
+import uuid
 from collections import defaultdict
-from typing import Optional
+from datetime import datetime
+from pathlib import Path
 
 # 行缓冲：重定向到文件也能实时显示
 try:
@@ -37,8 +35,8 @@ except Exception:
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 # ==================== 日志配置 ====================
 # 直接写文件 + 终端，不依赖 logging 模块（避免 uvicorn 干扰）
@@ -85,7 +83,7 @@ class RequestRecord:
         self.method = method
         self.path = path
         self.headers: dict = {}
-        self.body: Optional[dict] = None        # 解析后的 JSON body
+        self.body: dict | None = None        # 解析后的 JSON body
         self.body_raw: str = ""                  # 原始 body 文本（非 JSON 时用）
         self.body_size: int = 0                  # body 字节数
         self.is_json: bool = False
@@ -258,7 +256,7 @@ class RequestStore:
             except asyncio.QueueFull:
                 pass
 
-    def get(self, rid: str) -> Optional[RequestRecord]:
+    def get(self, rid: str) -> RequestRecord | None:
         for r in self.records:
             if r.id == rid:
                 return r
@@ -535,7 +533,7 @@ def _render_input_item_md(item, content_limit: int = 800, dedup_info=None) -> li
             if "similar_to" in dedup_info:
                 first = dedup_info["similar_to"]
                 return [f"<details><summary>{emoji} `{role}` ≈ 同 input[{first}] 变体 ({dedup_info['len']}字)</summary>", "",
-                        f"_(前 200 字符相似，全文见全量 JSON `input[?].content`)_", "", "</details>", ""]
+                        "_(前 200 字符相似，全文见全量 JSON `input[?].content`)_", "", "</details>", ""]
         lines = [f"#### {emoji} `{role}`", ""]
         if len(text) > content_limit:
             text = text[:content_limit] + f"\n\n…(共 {len(text)} 字符，路径 `input[?].content`)"
@@ -1153,7 +1151,7 @@ async def sse_events():
                 try:
                     item = await asyncio.wait_for(q.get(), timeout=30)
                     yield f"data: {json.dumps({'type': 'request', 'data': item, 'stats': store.get_stats()})}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # 心跳
                     yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         except asyncio.CancelledError:
@@ -1439,10 +1437,10 @@ loadAll();
 
 if __name__ == "__main__":
     print("=" * 50)
-    print(f"Fake LLM Proxy v2 启动中...")
+    print("Fake LLM Proxy v2 启动中...")
     print(f"监控页: http://127.0.0.1:{PORT}/")
     print(f"对接:   base_url=http://127.0.0.1:{PORT}/v1  key=随便填")
     print(f"日志:   {_LOG_FILE}")
-    print(f"关闭:   POST /shutdown 或网页按钮或 Ctrl+C")
+    print("关闭:   POST /shutdown 或网页按钮或 Ctrl+C")
     print("=" * 50)
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

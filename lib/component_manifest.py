@@ -83,6 +83,26 @@ class WatchEntry:
 
 
 @dataclass
+class BackupEntry:
+    """组件级关键数据备份声明（[backup] 段）
+
+    与 [watch] 段解耦：[watch] 用于变更监听（语义混乱，可能含源码/模板），
+    [backup] 专门声明需要纳入定时备份的关键数据文件/目录。
+
+    paths 相对组件目录（workspace/<component>/），可为：
+    - 文件路径（如 "watchlist.json" / "data/stock_advisor.db"）
+    - 目录路径（以 "/" 结尾，如 "账单/"）→ 备份时打 zip
+
+    消费方：tools/backup_workspace.py 由 WorkspaceBackupAction loop 调度，
+    按 paths 收集文件后备份到 config.toml [workspace_backup] 配置的位置。
+
+    ADR-0029: 与 [secret_backup] 对称设计，但独立配置目录和保留策略，
+    避免 workspace 大文件挤占密钥备份的保留窗口。
+    """
+    paths: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ReleaseEntry:
     """发布元数据（新 shape，spec-v2-compiler.md Q5 决策）
 
@@ -119,6 +139,21 @@ class HealthCheckEntry:
 
 
 @dataclass
+class TestsEntry:
+    """组件自动化测试声明（[tests] 段）
+
+    测试套件（tests/run_all.py / tools/run_tests_collect.py）扫描本段，
+    把声明目录追加进 pytest 收集目标，实现"组件测试自动归位 + 自动执行"。
+
+    - paths 相对组件目录（workspace/<component>/），通常为 ["tests"]
+    - enabled=false 时套件跳过该组件的测试收集（如仅手工运行的 GUI 冒烟）
+    - 组件无测试时写 enabled = false + paths = []，显式声明而非缺省
+    """
+    paths: list[str] = field(default_factory=list)
+    enabled: bool = True
+
+
+@dataclass
 class LlmUseCaseEntry:
     """LLM use case 声明式注册条目"""
     name: str
@@ -147,8 +182,10 @@ class Manifest:
     skill: SkillEntry | None = None
     config_schema: ConfigSchemaEntry | None = None
     watch: WatchEntry | None = None
+    backup: BackupEntry | None = None
     release: ReleaseEntry | None = None
     health_check: HealthCheckEntry | None = None
+    tests: TestsEntry | None = None
     llm_use_cases: list[LlmUseCaseEntry] = field(default_factory=list)
 
 
@@ -224,6 +261,13 @@ def _parse_manifest(manifest_path: Path) -> Manifest | None:
         paths = d.get("paths", [])
         if isinstance(paths, list):
             watch = WatchEntry(paths=paths)
+
+    backup = None
+    if "backup" in data and isinstance(data["backup"], dict):
+        d = data["backup"]
+        paths = d.get("paths", [])
+        if isinstance(paths, list):
+            backup = BackupEntry(paths=paths)
 
     release = None
     # 新 shape: [exports.runtime] / [exports.source] / [release_facts]（spec-v2-compiler.md Q5）
@@ -307,6 +351,17 @@ def _parse_manifest(manifest_path: Path) -> Manifest | None:
                     desc=uc.get("desc", ""),
                 ))
 
+    tests = None
+    if "tests" in data and isinstance(data["tests"], dict):
+        d = data["tests"]
+        paths = d.get("paths", [])
+        if not isinstance(paths, list):
+            paths = []
+        tests = TestsEntry(
+            paths=[p for p in paths if isinstance(p, str)],
+            enabled=bool(d.get("enabled", True)),
+        )
+
     return Manifest(
         name=name,
         version=version,
@@ -320,8 +375,10 @@ def _parse_manifest(manifest_path: Path) -> Manifest | None:
         skill=skill,
         config_schema=config_schema,
         watch=watch,
+        backup=backup,
         release=release,
         health_check=health_check,
+        tests=tests,
         llm_use_cases=llm_use_cases,
     )
 
@@ -391,3 +448,29 @@ def reset_cache() -> None:
     global _manifests_cache
     with _cache_lock:
         _manifests_cache = None
+
+
+def collect_test_dirs() -> list[str]:
+    """收集所有组件在 [tests] 段声明的测试目录（绝对路径，排序去重）。
+
+    消费方：tests/run_all.py / tools/run_tests_collect.py 构建 pytest 命令时，
+    把本函数返回的目录追加进收集目标 → 组件测试自动纳入套件，无需手工维护清单。
+
+    规则：
+    - 组件整体 enabled=True 且 [tests].enabled=True
+    - paths 里的目录必须真实存在（不存在则静默跳过 + warning）
+    """
+    result: list[str] = []
+    for m in load_manifests().values():
+        if not m.enabled or m.tests is None or not m.tests.enabled:
+            continue
+        for rel in m.tests.paths:
+            d = (m.workspace_dir / rel).resolve()
+            if d.exists():
+                result.append(str(d))
+            else:
+                logger.warning(
+                    "manifest [tests] 声明的路径不存在（跳过）: %s (%s)", d, m.name
+                )
+    # 去重后保持稳定顺序（跨 skill 重名或共享目录）
+    return sorted(set(result))

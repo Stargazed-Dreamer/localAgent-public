@@ -1,6 +1,7 @@
 """读取所有 docx 文件的段落结构，判断是短文段集合还是长文章"""
 import os
 from pathlib import Path
+
 import docx
 
 ROOT = Path(r"E:\<data_drive>:\<articles_root>")

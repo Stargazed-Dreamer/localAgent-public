@@ -110,8 +110,8 @@ status=done（v16 内联等待完成，短任务）：
   "status": "done",
   "temp_file": "temp/exec_abc123def456.py",
   "pid": 12345,
-  "python_executable": "F:\\project_temp\\localAgent\\.venv\\Scripts\\python.exe",
-  "cwd": "F:\\project_temp\\localAgent",
+  "python_executable": "<project_root>\\.venv\\Scripts\\python.exe",
+  "cwd": "<project_root>",
   "environment": "default",
   "stdout": "hello\n",
   "stderr": "",
@@ -132,8 +132,8 @@ status=running（内联等待超时或禁用，长任务，同 v15）：
   "status": "running",
   "temp_file": "temp/exec_abc123def456.py",
   "pid": 12345,
-  "python_executable": "F:\\project_temp\\localAgent\\.venv\\Scripts\\python.exe",
-  "cwd": "F:\\project_temp\\localAgent",
+  "python_executable": "<project_root>\\.venv\\Scripts\\python.exe",
+  "cwd": "<project_root>",
   "environment": "default"
 }
 ```
@@ -184,10 +184,11 @@ status=running（内联等待超时或禁用，长任务，同 v15）：
 
 | 类型 | 脚本路径 | 用法 |
 |------|---------|------|
+| 回收站删除（公共模块） | `tools/disk/recycle.py` | `uv run python tools/disk/recycle.py --list paths.txt`（库用法 `from tools.disk.recycle import send_to_recycle`） |
 | 磁盘扫描 | `workspace/disk_manager/scripts/scan_disk.py` | `uv run python workspace/disk_manager/scripts/scan_disk.py` |
 | 磁盘清理 | `workspace/disk_manager/scripts/cleanup.py` | `uv run python workspace/disk_manager/scripts/cleanup.py` |
 | 环境备份 | `workspace/disk_manager/scripts/backup_env.py` | `uv run python workspace/disk_manager/scripts/backup_env.py` |
-| 调试 Chrome 启动 | `tools/browser/start_debug_chrome.py` | `uv run python tools/browser/start_debug_chrome.py` |
+| 调试 Chrome 启动 | `tools/browser/start_debug_browser.py` | `uv run python tools/browser/start_debug_browser.py` |
 | 批量打开标签页 | `tools/browser/open_tabs.py` | `uv run python tools/browser/open_tabs.py` |
 | 文件自动分类 | `tools/file_classifier/classifier_gui.py` | `uv run python tools/file_classifier/classifier_gui.py` |
 | 批量代码注释 | `tools/llm/mimo_batch_comment.py` | `uv run python tools/llm/mimo_batch_comment.py --project <目录> --no-check` |
@@ -231,7 +232,7 @@ GUI 特点：
 
 ## 文件自动分类工具
 
-`tools/file_classifier/` 提供可视化文件分类工具（PySide6 GUI），支持文件+文件夹 LLM 辅助预测、类交互式文件夹分类协议、state.json 状态持久化。**完整操作指引见 [tools/file_classifier/file_classifier_guide.md](file:///f:/<project_root>/tools/file_classifier/file_classifier_guide.md)**。
+`tools/file_classifier/` 提供可视化文件分类工具（PySide6 GUI），支持文件+文件夹 LLM 辅助预测、类交互式文件夹分类协议、state.json 状态持久化。**完整操作指引见 [tools/file_classifier/file_classifier_guide.md](file:///<project_root>/tools/file_classifier/file_classifier_guide.md)**。
 
 ### 工作流程
 
@@ -252,8 +253,8 @@ GUI 特点：
 ```json
 {
   "categories": [
-    {"name": "文档", "path": "F:\\<data_drive>:\Documents", "extensions": [".pdf", ".doc", ".docx", ".txt", ".md"]},
-    {"name": "图片", "path": "F:\\<data_drive>:\Pictures", "extensions": [".jpg", ".png", ".gif", ".bmp", ".webp"]},
+    {"name": "文档", "path": "<data_drive>:\<data_drive>:\Documents", "extensions": [".pdf", ".doc", ".docx", ".txt", ".md"]},
+    {"name": "图片", "path": "<data_drive>:\<data_drive>:\Pictures", "extensions": [".jpg", ".png", ".gif", ".bmp", ".webp"]},
     {"name": "暂存", "path": "", "extensions": []}
   ]
 }
@@ -313,7 +314,7 @@ uv run python tools/file_classifier/classifier_gui.py
 
 ### 运行环境
 
-主项目 `.venv` 即可运行（Florence-2 通过 `transformers` + `torch` 从 HF cache 加载；OmniParser 移除后不再依赖 `ultralytics`/`torchvision` 等）：
+主项目 `.venv` 即可运行（Florence-2 通过 `transformers` + `torch` 从 HF cache 加载）：
 
 ```bash
 uv run python tools/image_organizer/organize.py
@@ -373,19 +374,19 @@ uv run python tools/image_organizer/organize.py
 
 ```bash
 # 单个项目
-uv run python tools/llm/mimo_batch_comment.py --project F:\<external_project_root>\MuseArc --no-check
+uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\MuseArc --no-check
 
 # 多个项目
-uv run python tools/llm/mimo_batch_comment.py --project F:\<external_project_root>\MuseArc --project F:\<external_project_root>\MusePlayer --no-check
+uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\MuseArc --project <external_project_root>\MusePlayer --no-check
 
 # 只扫描不调用 API
-uv run python tools/llm/mimo_batch_comment.py --project F:\<external_project_root>\MuseArc --dry-run
+uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\MuseArc --dry-run
 
 # 强制重新处理已处理文件
-uv run python tools/llm/mimo_batch_comment.py --project F:\<external_project_root>\MuseArc --force --no-check
+uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\MuseArc --force --no-check
 
 # 调试模式（保存被拒绝的单元到文件）
-uv run python tools/llm/mimo_batch_comment.py --project F:\<external_project_root>\MuseArc --debug --no-check
+uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\MuseArc --debug --no-check
 ```
 
 ### 注意事项
@@ -400,9 +401,9 @@ uv run python tools/llm/mimo_batch_comment.py --project F:\<external_project_roo
 
 `workspace/recorder/tools/` 提供键鼠操作 + 屏幕截图 + 麦克风音频 + 窗口焦点的同步录制，生成可回放的录制包。**独立进程运行（不走后端 API）**，是录制功能分层架构的 L0 采集层；L1 处理层入口 `process_recording_package` 在 `lib/recorder/processor/` 中实现（编排 P1 STT / P4 事件聚合 / P5 关键帧抽取）；L2 时间轴层入口 `build_timeline` 在 `lib/recorder/timeline/` 中实现（合并三 JSON 为统一 timeline.json + 章节切分 + 初始化空 annotations.json）；L3 编辑层入口 `python -m workspace.recorder.tools.editor` 在 `lib/recorder/editor/` 中实现（13 个 action + annotations.json + merge 逻辑）；L4 消费层在 `workspace/recorder/consumer/` 中实现（agent 直接 import 公用库发现/读取/VL 协议辅助/消费日志，**无后端 HTTP 端点**，D055 变更）。
 
-**完整用户文档**：[docs/recorder-guide.md](file:///f:/<project_root>/docs/recorder-guide.md)（含 L4 消费层章节：consumer API + 多轮 VL 协议 + 场景路由）
+**完整用户文档**：[docs/recorder-guide.md](file:///<project_root>/docs/recorder-guide.md)（含 L4 消费层章节：consumer API + 多轮 VL 协议 + 场景路由）
 
-**端到端测试说明**：[docs/recorder-test-guide.md](file:///f:/<project_root>/docs/recorder-test-guide.md)（覆盖 L0-L4 全部功能和 GUI 外观验收，含 25 个测试文件索引和设计决策覆盖矩阵）
+**端到端测试说明**：[docs/recorder-test-guide.md](file:///<project_root>/docs/recorder-test-guide.md)（覆盖 L0-L4 全部功能和 GUI 外观验收，含 25 个测试文件索引和设计决策覆盖矩阵）
 
 **工具面板入口**：在 client 工具面板的 `🎥 操作录制` 分类下，含录制器（小模式）、录制器（大模式）、录制包编辑器、时间轴构建 4 个工具条目，可通过选项面板配置参数后直接启动。
 

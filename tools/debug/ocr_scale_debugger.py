@@ -1,11 +1,12 @@
 """交互式OCR坐标缩放调试工具 - 拖动滑块调整sx/sy，实时预览"""
-import requests
 import base64
 import io
 import json
-from PIL import Image, ImageDraw, ImageFont, ImageTk
 import tkinter as tk
 from tkinter import ttk
+
+import requests
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 API = "http://127.0.0.1:8766"
 WINDOW = "异环  "
@@ -120,7 +121,7 @@ class OCRScaleDebugger:
         new_w = int(self.W * scale)
         new_h = int(self.H * scale)
 
-        display = img.resize((new_w, new_h), Image.LANCZOS)
+        display = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         self.tk_img = ImageTk.PhotoImage(display)
 
         self.canvas.delete("all")

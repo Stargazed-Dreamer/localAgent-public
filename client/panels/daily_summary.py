@@ -281,8 +281,8 @@ class DailySummaryPanel(PanelBase):
 
         if current is None:
             self._current_name = None
-            self._detail_title.setText("选择左侧日期查看内容")
-            self._viewer.set_markdown("")
+            self._detail_title.setText("")
+            self._viewer.set_markdown("*从左侧选择一个日期，查看当日工作总结。*")
             self._update_button_states()
             return
 
@@ -413,8 +413,8 @@ class DailySummaryPanel(PanelBase):
         # 清空当前选中状态并刷新列表
         self._current_name = None
         self._current_reviewed = False
-        self._viewer.set_markdown("")
-        self._detail_title.setText("选择左侧日期查看内容")
+        self._viewer.set_markdown("*从左侧选择一个日期，查看当日工作总结。*")
+        self._detail_title.setText("")
         self._on_refresh_clicked()
 
         # 提示用户删除结果

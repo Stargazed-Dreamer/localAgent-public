@@ -139,7 +139,7 @@ def app_list():
     # 自动注入软件经验提示
     hint = None
     try:
-        from server.screen.app_lessons import match_app_for_process_names, build_app_lessons_hint
+        from server.screen.app_lessons import build_app_lessons_hint, match_app_for_process_names
         process_names = [a.get("process_name", "") for a in apps if a.get("process_name")]
         lessons = match_app_for_process_names(process_names)
         hint = build_app_lessons_hint(lessons)

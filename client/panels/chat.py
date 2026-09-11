@@ -26,6 +26,7 @@ import logging
 import time
 import uuid as _uuid
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -93,7 +94,7 @@ from client.core.agent.types import (
 )
 from client.core.constants import SERVER_URL
 from client.core.panel_base import PanelBase, PanelMeta
-from lib.ui import icon_button, tokens
+from lib.ui import EmptyState, icon_button, tokens
 from lib.ui.theme import set_kind, set_text_role
 
 logger = logging.getLogger("localagent.panel.chat")
@@ -306,6 +307,13 @@ def _content_to_text(content) -> str:
 # ============================================================================
 
 
+def _msg_field(msg: object, name: str, default: Any = "") -> Any:
+    """D32 双模兼容：消息可能是对象或 dict，通用字段读取。"""
+    if isinstance(msg, dict):
+        return msg.get(name, default)
+    return getattr(msg, name, default)
+
+
 def _tool_call_to_md_quote(tool_call) -> str:
     """把 ToolCall 渲染为 MD 引用块（D32：tool_calls 引用块）。
 
@@ -386,12 +394,12 @@ def _format_session_as_markdown(
         visible = getattr(msg, "visible", True) if not isinstance(msg, dict) else msg.get("visible", True)
         if not visible:
             continue
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "unknown")
-        content_text = _content_to_text(msg.content if hasattr(msg, "content") else msg.get("content", ""))
-        thinking = msg.thinking if hasattr(msg, "thinking") else msg.get("thinking", "")
-        msg_tool_calls = msg.tool_calls if hasattr(msg, "tool_calls") else msg.get("tool_calls", [])
-        model = msg.model if hasattr(msg, "model") else msg.get("model", "")
-        seq = msg.seq if hasattr(msg, "seq") else msg.get("seq", 0)
+        role = _msg_field(msg, "role", "unknown")
+        content_text = _content_to_text(_msg_field(msg, "content", ""))
+        thinking = _msg_field(msg, "thinking", "")
+        msg_tool_calls = _msg_field(msg, "tool_calls", [])
+        model = _msg_field(msg, "model", "")
+        seq = _msg_field(msg, "seq", 0)
 
         if role == "user":
             lines.append("## user")
@@ -422,7 +430,7 @@ def _format_session_as_markdown(
                 lines.append("")
         elif role == "tool":
             # tool_result 渲染为引用块（D32：tool_result 一并归到 agent 回复范围内）
-            tc_id = msg.tool_call_id if hasattr(msg, "tool_call_id") else msg.get("tool_call_id", "")
+            tc_id = _msg_field(msg, "tool_call_id", "")
             lines.append(f"> [tool_result] (call_id: {tc_id})")
             for tl in content_text.splitlines() or [""]:
                 lines.append(f"> {tl}")
@@ -1323,13 +1331,16 @@ class _ToolCallBlock(_TimelineBlock):
     def _rebuild_ui(self) -> None:
         """重建整个 UI（保持 _expanded 状态）。"""
         layout = self.layout()
-        if layout is None:
+        if layout is None or not isinstance(layout, QVBoxLayout):
             return
         # 清空现有子 widget（deleteLater 安全）
         while layout.count() > 0:
             item = layout.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
         self._row_widget = None
         self._toggle_btn = None
         self._expand_content = None
@@ -1794,10 +1805,15 @@ class _ChatWorker(QThread):
         """
         if not text or not self._loop or not self._facade:
             return
+        # 守卫通过后立即捕获局部变量——闭包从 _do_steer 调度到 worker loop 执行之间，
+        # run() 的 finally 可能已置 self._facade = None（会话切换/结束），
+        # 若闭包仍读 self._facade 会 AttributeError 导致用户引导消息无声丢失
+        facade = self._facade
+        session_id = self._session_id
 
         async def _do_steer():
             try:
-                await self._facade.steer(self._session_id, text)
+                await facade.steer(session_id, text)
             except Exception as e:
                 logger.warning("ChatWorker.steer failed: %s", e)
 
@@ -1882,20 +1898,9 @@ class _StartPage(QFrame):
         self._template_tabs.setCornerWidget(add_tab_btn)
         layout.addWidget(self._template_tabs)
 
-        # --- 输入框 ---
-        self._input_edit = QTextEdit()
-        self._input_edit.setPlaceholderText("输入消息... (Ctrl+Enter 发送)")
-        self._input_edit.setMinimumHeight(80)
-        self._input_edit.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed,
-        )
-        self._input_edit.setStyleSheet(
-            f"QTextEdit {{ background: {tokens.BG_INPUT}; color: {tokens.TEXT_PRIMARY};"
-            f" border: 1px solid {tokens.BORDER}; border-radius: {tokens.RADIUS_SM};"
-            f" padding: 8px; font-size: {tokens.FONT_BODY}px; }}"
-        )
-        self._input_edit.keyPressEvent = self._input_key_press
-        layout.addWidget(self._input_edit)
+        # 单输入框设计（用户定版）：不使用模板/使用模板都是模板 tab 内的输入位置，
+        # 不渲染独立兜底输入框——旧 _input_edit 永远不会被 _current_input_edit 选中，
+        # 只会在界面上多出一个从不下沉内容的"死"输入框
 
         # --- 发送按钮 + 模型选择器（D30：模型选择器在发送按钮左侧）---
         btn_row = QHBoxLayout()
@@ -1936,6 +1941,15 @@ class _StartPage(QFrame):
         self._recent_list.itemClicked.connect(self._on_recent_clicked)
         layout.addWidget(self._recent_list)
 
+        # 最近对话空状态（components.md §12）
+        self._recent_empty = EmptyState(
+            "message-square",
+            "还没有对话",
+            hint="在上方输入消息开始第一个对话",
+        )
+        self._recent_empty.setVisible(False)
+        layout.addWidget(self._recent_empty, 1)
+
         # 加载模板 tab
         self._templates: list = []  # list[Template]
         self.refresh_templates()
@@ -1971,7 +1985,7 @@ class _StartPage(QFrame):
         for tpl in self._templates:
             # 恢复缓存的文本（如有），否则用模板预设 prompt
             text = cached_texts.get(tpl.id, tpl.prompt)
-            self._add_template_tab(tpl.id, tpl.name, text, tpl.skills)
+            self._add_template_tab(tpl.id, tpl.name, text or "", tpl.skills)
 
         # 默认选中第一个 tab
         if self._template_tabs.count() > 0:
@@ -2010,21 +2024,22 @@ class _StartPage(QFrame):
         ):
             self._on_send()
             return
-        QTextEdit.keyPressEvent(self._current_input_edit(), event)
+        edit = self._current_input_edit()
+        if edit is not None:
+            QTextEdit.keyPressEvent(edit, event)
 
-    def _current_input_edit(self) -> QTextEdit:
-        """获取当前激活 tab 的 QTextEdit（或独立输入框）。"""
-        # 优先取 tab 内的 input
+    def _current_input_edit(self) -> QTextEdit | None:
+        """获取当前激活 tab 的输入框（单输入框设计：即模板 tab 内的 QTextEdit）。"""
         if self._template_tabs.count() > 0:
             widget = self._template_tabs.currentWidget()
             if isinstance(widget, QTextEdit):
                 return widget
-        return self._input_edit
+        return None
 
     def _on_send(self) -> None:
         """发送按钮：取当前 tab 文本 + 模板 skills + 分组 → emit send_requested。"""
         edit = self._current_input_edit()
-        text = edit.toPlainText().strip()
+        text = edit.toPlainText().strip() if edit is not None else ""
         if not text:
             return
         # 取当前 tab 对应模板的 skills（template_id 存于 widget property）
@@ -2086,11 +2101,14 @@ class _StartPage(QFrame):
     def clear_input(self) -> None:
         """清空当前 tab 的输入框。"""
         edit = self._current_input_edit()
-        edit.clear()
+        if edit is not None:
+            edit.clear()
 
     def focus_input(self) -> None:
         """聚焦当前 tab 的输入框。"""
-        self._current_input_edit().setFocus()
+        edit = self._current_input_edit()
+        if edit is not None:
+            edit.setFocus()
 
     # ------------------------------------------------------------------
     # 最近 5 对话
@@ -2121,6 +2139,9 @@ class _StartPage(QFrame):
             item = QListWidgetItem(item_text)
             item.setData(Qt.ItemDataRole.UserRole, sid)
             self._recent_list.addItem(item)
+        has_recent = self._recent_list.count() > 0
+        self._recent_list.setVisible(has_recent)
+        self._recent_empty.setVisible(not has_recent)
 
     def _on_recent_clicked(self, item: QListWidgetItem) -> None:
         sid = item.data(Qt.ItemDataRole.UserRole)

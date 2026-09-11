@@ -335,6 +335,8 @@ class EventStore:
         旧 DB（schema v1/v2）的 messages 表没有此列，需 ALTER TABLE ADD COLUMN。
         新 DB 在 _SCHEMA_SQL 中已含此列，此方法 no-op。
         """
+        # 初始化不变量：migrate 仅在 init() 中 _init_conn 赋值后调用
+        assert self._init_conn is not None
         cols = {r[1] for r in self._init_conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "tool_calls_json" not in cols:
             self._init_conn.execute("ALTER TABLE messages ADD COLUMN tool_calls_json TEXT")
@@ -346,6 +348,8 @@ class EventStore:
         旧 DB（schema v3）的 messages 表没有此列，需 ALTER TABLE ADD COLUMN。
         新 DB 在 _SCHEMA_SQL 中已含此列，此方法 no-op。
         """
+        # 初始化不变量：migrate 仅在 init() 中 _init_conn 赋值后调用
+        assert self._init_conn is not None
         cols = {r[1] for r in self._init_conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "thinking_json" not in cols:
             self._init_conn.execute("ALTER TABLE messages ADD COLUMN thinking_json TEXT")
@@ -360,6 +364,8 @@ class EventStore:
         headless 主会话写 mode="headless"，judge 会话写 mode="headless_judge"，
         普通 chat 会话保持默认 mode="dialogue"。
         """
+        # 初始化不变量：migrate 仅在 init() 中 _init_conn 赋值后调用
+        assert self._init_conn is not None
         cols = {r[1] for r in self._init_conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if "mode" not in cols:
             self._init_conn.execute("ALTER TABLE sessions ADD COLUMN mode TEXT DEFAULT 'dialogue'")
@@ -373,6 +379,8 @@ class EventStore:
         - pinned INTEGER DEFAULT 0（0=否，1=是，已有行自动取默认值 0）
         新 DB 在 _SCHEMA_SQL 中已含这两列，此方法 no-op。
         """
+        # 初始化不变量：migrate 仅在 init() 中 _init_conn 赋值后调用
+        assert self._init_conn is not None
         cols = {r[1] for r in self._init_conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if "group_name" not in cols:
             self._init_conn.execute("ALTER TABLE sessions ADD COLUMN group_name TEXT")
@@ -387,6 +395,8 @@ class EventStore:
         旧 DB（schema v4 及之前）的 messages 表没有此列，需 ALTER TABLE ADD COLUMN。
         新 DB 在 _SCHEMA_SQL 中已含此列，此方法 no-op。
         """
+        # 初始化不变量：migrate 仅在 init() 中 _init_conn 赋值后调用
+        assert self._init_conn is not None
         cols = {r[1] for r in self._init_conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "model" not in cols:
             self._init_conn.execute("ALTER TABLE messages ADD COLUMN model TEXT")
@@ -476,6 +486,8 @@ class EventStore:
         后 INSERT 的 read-modify-write 模式）必须用 _run_write_sync 串行化。
         """
         def _pool_exec():
+            # 初始化不变量：init() 后 _write_lock 已赋值（WAL/DELETE 均非 None）
+            assert self._write_lock is not None
             with self._borrow_conn():
                 # WAL 模式：直接执行（读不阻塞写，并发读无锁）
                 # DELETE 模式：_write_lock 串行化所有操作（读+写互斥）
@@ -497,6 +509,8 @@ class EventStore:
         - 跨进程保护靠 SQLite 内置文件锁（WAL 模式下多进程写串行）
         """
         def _pool_exec():
+            # 初始化不变量：init() 后 _write_lock 已赋值
+            assert self._write_lock is not None
             with self._borrow_conn(), self._write_lock:
                 # _write_lock 串行化进程内写操作（WAL + DELETE 都需要）。
                 # ADR-0021 修正：原设计用 BEGIN IMMEDIATE + busy_timeout 串行化，

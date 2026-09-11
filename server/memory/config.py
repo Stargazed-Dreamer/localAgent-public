@@ -146,6 +146,15 @@ def get_memory_config() -> MemoryConfig:
     except Exception as e:
         logger.warning(f"加载 config.toml [memory] 失败，使用默认配置: {e}")
 
+    # 环境变量覆盖（测试隔离用）：LOCALAGENT_MEMORY_DB_PATH / LOCALAGENT_MEMORY_RECENT_DIR
+    # 优先级高于 config.toml，确保测试进程可重定向到临时 DB，不污染生产 memory.db
+    env_db_path = os.environ.get("LOCALAGENT_MEMORY_DB_PATH", "").strip()
+    if env_db_path:
+        cfg.db_path = env_db_path
+    env_recent_dir = os.environ.get("LOCALAGENT_MEMORY_RECENT_DIR", "").strip()
+    if env_recent_dir:
+        cfg.recent_dir = env_recent_dir
+
     # 统一模型路径：如果 [models] external_dir 已设置，覆盖 embedding_cache_dir
     # 这样发布时 external_dir 留空则回退到 weights/embeddings，个人部署则用 <data_drive>:\ai_models\embeddings
     try:

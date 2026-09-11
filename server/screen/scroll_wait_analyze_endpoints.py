@@ -16,6 +16,7 @@ import time
 from fastapi import HTTPException
 
 from lib.schema import BaseSchema
+from server.model_manager.types import ModelUnavailableError
 
 # 截图子模块
 from server.screen.capture import (
@@ -107,11 +108,11 @@ def scroll_capture(req: ScrollCaptureRequest):
 
     if not _ADMIN_STATUS:
         return ScrollCaptureResponse(
-            success=False, segments_count=0, message="需要管理员权限"
+            success=False, segments_count=0, message="需要管理员权限", elapsed_ms=0
         )
     if not emergency.can_operate():
         return ScrollCaptureResponse(
-            success=False, segments_count=0, message="紧急停止已触发"
+            success=False, segments_count=0, message="紧急停止已触发", elapsed_ms=0
         )
 
     t0 = time.perf_counter()
@@ -197,7 +198,7 @@ def scroll_capture(req: ScrollCaptureRequest):
 
     if not segments:
         return ScrollCaptureResponse(
-            success=False, segments_count=0, message="未获取到任何截图"
+            success=False, segments_count=0, message="未获取到任何截图", elapsed_ms=0
         )
 
     # 拼接
@@ -221,7 +222,7 @@ def scroll_capture(req: ScrollCaptureRequest):
                 ratio = max_h / stitched.height
                 stitched = stitched.resize(
                     (int(stitched.width * ratio), max_h),
-                    Image.LANCZOS
+                    Image.Resampling.LANCZOS
                 )
                 stitched_width = stitched.width
                 stitched_height = stitched.height
@@ -294,6 +295,7 @@ class WaitForResponse(BaseSchema):
     check_count: int = 0
     last_ocr_text: str = ""
     matched_at: float | None = None  # 匹配成功的相对时间秒
+    error_code: str | None = None  # 快速失败原因（如 "ocr_unavailable"）；正常结束为 None
     message: str = ""
 
 
@@ -388,7 +390,10 @@ def screen_wait_for(req: WaitForRequest):
                         if not w:
                             raise RuntimeError(f"未找到窗口: {req.window_title}")
                         target_hwnd_wait = w["hwnd"]
-                    png_bytes = _capture_window(target_hwnd_wait)
+                    if target_hwnd_wait is not None:
+                        png_bytes = _capture_window(target_hwnd_wait)
+                    else:
+                        png_bytes = _capture_fullscreen()
                 else:
                     png_bytes = _capture_fullscreen()
 
@@ -398,7 +403,7 @@ def screen_wait_for(req: WaitForRequest):
                 from PIL import Image
                 img = Image.open(io.BytesIO(png_bytes))
                 if region:
-                    img = img.crop(region)
+                    img = img.crop((region[0], region[1], region[2], region[3]))
             finally:
                 if overlay_was_visible:
                     try:
@@ -437,6 +442,17 @@ def screen_wait_for(req: WaitForRequest):
                     matched_at=round(time.perf_counter() - t0, 2),
                     message=f"条件满足: {exp_type} '{exp_text_raw}'"
                 )
+        except ModelUnavailableError as e:
+            # 模型被存活管理器拒绝（压力/卸载/冷却）：重试无意义，快速失败
+            # 而非烧完整个 timeout（design §6 消费者矩阵）
+            logger.warning(f"wait_for OCR 不可用，快速失败: {e.reason}")
+            return WaitForResponse(
+                success=False, condition_met=False,
+                elapsed_ms=int((time.perf_counter() - t0) * 1000),
+                check_count=check_count, last_ocr_text=last_ocr_text,
+                error_code="ocr_unavailable",
+                message=f"OCR 模型不可用（{e.reason}），无法检查条件；压力回落后重试"
+            )
         except Exception as e:
             logger.warning(f"wait_for 第 {check_count} 次检查失败: {e}")
             last_ocr_text = f"[ERROR] {e}"
@@ -502,7 +518,10 @@ def screen_analyze(req: AnalyzeRequest):
                     if not w:
                         raise RuntimeError(f"未找到窗口: {req.window_title}")
                     target_hwnd_analyze = w["hwnd"]
-                png_bytes = _capture_window(target_hwnd_analyze)
+                if target_hwnd_analyze is not None:
+                    png_bytes = _capture_window(target_hwnd_analyze)
+                else:
+                    png_bytes = _capture_fullscreen()
             else:
                 png_bytes = _capture_fullscreen()
 
@@ -515,7 +534,8 @@ def screen_analyze(req: AnalyzeRequest):
                 if len(parts_raw) != 4:
                     raise HTTPException(status_code=400, detail=f"region 格式错误：需 'left,top,right,bottom'（4 个整数），当前 {len(parts_raw)} 段")
                 try:
-                    img = img.crop([int(p.strip()) for p in parts_raw])
+                    parts = [int(p.strip()) for p in parts_raw]
+                    img = img.crop((parts[0], parts[1], parts[2], parts[3]))
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=f"region 含非整数: {e}（格式: 'left,top,right,bottom'）") from None
         finally:

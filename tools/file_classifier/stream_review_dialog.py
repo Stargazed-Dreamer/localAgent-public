@@ -16,17 +16,24 @@
     action ∈ {"accept", "adjust", "skip"}；skip 时 category 为 ""
 """
 
-import os
 from datetime import datetime
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QComboBox, QWidget, QAbstractItemView, QFrame,
+    QAbstractItemView,
+    QComboBox,
+    QDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-
 from type_descriptor import describe_file_type
 
 # 置信度配色（与主表格一致）

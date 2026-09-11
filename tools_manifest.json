@@ -6,62 +6,67 @@
     {
       "id": "system",
       "name": "系统启动",
-      "icon": "⚙️"
+      "icon": "settings"
     },
     {
       "id": "gacha",
       "name": "抽卡采集",
-      "icon": "🎲"
+      "icon": "dices"
     },
     {
       "id": "bilibili",
       "name": "<data_drive>:\<bilibili_videos>工具",
-      "icon": "📺"
+      "icon": "tv"
     },
     {
       "id": "nowcoder",
       "name": "牛客面经",
-      "icon": "📝"
+      "icon": "clipboard-list"
     },
     {
       "id": "disk",
       "name": "磁盘管理",
-      "icon": "💾"
+      "icon": "hard-drive"
     },
     {
       "id": "yihuan_sim",
       "name": "异环模拟器",
-      "icon": "🎯"
+      "icon": "target"
     },
     {
       "id": "debug",
       "name": "调试工具",
-      "icon": "🔧"
+      "icon": "wrench"
     },
     {
       "id": "docs",
       "name": "文档转换",
-      "icon": "📄"
+      "icon": "file-text"
     },
     {
       "id": "file_tools",
       "name": "文件整理",
-      "icon": "📁"
+      "icon": "folder"
     },
     {
       "id": "llm_tools",
       "name": "LLM 工具",
-      "icon": "🧠"
+      "icon": "bot"
     },
     {
       "id": "image_organize",
       "name": "图片整理",
-      "icon": "🖼️"
+      "icon": "image"
     },
     {
       "id": "recorder",
       "name": "操作录制",
-      "icon": "🎥"
+      "icon": "video"
+    },
+    {
+      "id": "secrets",
+      "name": "密钥备份",
+      "icon": "key"
     }
   ],
   "tools": [
@@ -245,6 +250,7 @@
       "options": [
         {
           "name": "subcommand",
+          "label": "子命令",
           "choices": [
             "scan",
             "check",
@@ -283,6 +289,7 @@
       "options": [
         {
           "name": "subcommand",
+          "label": "子命令",
           "choices": [
             "scan",
             "join",
@@ -406,6 +413,25 @@
         {"name": "--json", "description": "JSON 直返 stdout（agent 用）"}
       ],
       "notes": "两步闭环：先 --dry-run 拿 id → 用户勾选 → --delete --items <ids>；删除走回收站可恢复；路径白名单保护",
+      "user_facing": false
+    },
+    {
+      "id": "recycle",
+      "name": "回收站删除",
+      "category": "disk",
+      "description": "回收站删除公共模块（ctypes SHFileOperationW + FOF_ALLOWUNDO）—— 项目统一的可恢复删除入口，也可作 CLI 批量删除",
+      "script": "tools/disk/recycle.py",
+      "command": ".venv\\Scripts\\python.exe tools/disk/recycle.py --list <paths.txt>",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {"name": "<path> [path...]", "description": "位置参数指定待删路径（文件或目录）"},
+        {"name": "--list <FILE>", "description": "从文件读取路径列表（每行一个）"},
+        {"name": "--stdin", "description": "从 stdin 读取路径列表"},
+        {"name": "--on-error abort|continue", "description": "遇错即停（默认 abort）还是跳过失败项继续"}
+      ],
+      "notes": "库用法：from tools.disk.recycle import send_to_recycle, recycle_batch；PowerShell Add-Type 被安全策略拦截，勿改用 Microsoft.VisualBasic.FileIO；client/ 产品代码保留独立实现（打包分发不依赖 tools/）",
       "user_facing": false
     },
     {
@@ -548,6 +574,36 @@
       "requires_admin": false,
       "options": [],
       "user_facing": false
+    },
+    {
+      "id": "clean_bom",
+      "name": "BOM清理工具",
+      "category": "debug",
+      "description": "扫描/清理文件头部U+FEFF BOM字符（PowerShell 5.1 Set-Content -Encoding UTF8写文件必带BOM，多次写会累积导致SyntaxError）",
+      "script": "tools/clean_bom.py",
+      "command": ".venv\\Scripts\\python.exe tools/clean_bom.py",
+      "usage": "both",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "--fix",
+          "optional": true,
+          "description": "清理头部BOM（默认只报告不修改）"
+        },
+        {
+          "name": "--fix-all",
+          "optional": true,
+          "description": "连中部U+FEFF一起清理（慎用，可能误删正文零宽字符）"
+        },
+        {
+          "name": "--path",
+          "optional": true,
+          "description": "指定目录或文件（默认项目根）"
+        }
+      ],
+      "notes": "解决Python脚本因BOM字符累积导致的SyntaxError。默认只清理头部BOM、保留中部零宽字符。预防：PowerShell写UTF-8文件用[IO.File]::WriteAllText而非Set-Content -Encoding UTF8（PS 5.1必带BOM）",
+      "user_facing": true
     },
     {
       "id": "start_backend",
@@ -866,6 +922,75 @@
         }
       ],
       "notes": "通常 L3 编辑器启动时自动构建 timeline.json。此 CLI 供手动重建或预览用，预览输出到 stdout 便于管道处理。",
+      "user_facing": true
+    },
+    {
+      "id": "backup_secrets",
+      "name": "密钥备份",
+      "category": "secrets",
+      "description": "备份密钥文件（keys.json / secrets.toml / config.toml）到项目内 backups/secrets/ + 项目外目录双位置，明文副本，按 N+M 天保留策略轮转",
+      "script": "tools/backup_secrets.py",
+      "command": ".venv\\Scripts\\python.exe tools/backup_secrets.py",
+      "usage": "both",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {"name": "--location", "choices": ["both", "internal", "external"], "default": "both", "description": "备份位置（默认 both = 项目内 + 项目外）"},
+        {"name": "--json", "description": "输出 JSON 到 stdout（agent 用）"},
+        {"name": "--dry-run", "description": "只显示会做什么，不实际写/删"}
+      ],
+      "notes": "配置在 config.toml [secret_backup] 段。防 agent 误删 keys.json 后无法恢复（gitignored 不可追踪）。可手动触发或由 TRAE Schedule 每 5 天定时触发。风险登记见 SECURITY-RISKS.md 第 15 项（明文备份，暂不加密）。",
+      "user_facing": true
+    },
+    {
+      "id": "restore_secrets",
+      "name": "密钥恢复",
+      "category": "secrets",
+      "description": "从备份恢复密钥文件（list 子命令列出可用备份；restore 子命令从指定备份恢复，会先备份当前文件到 .pre_restore.bak 防误操作）",
+      "script": "tools/restore_secrets.py",
+      "command": ".venv\\Scripts\\python.exe tools/restore_secrets.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {"name": "subcommand", "label": "子命令", "choices": ["list", "restore"], "description": "子命令：list 列出备份 / restore 恢复（默认 list）"},
+        {"name": "--file", "description": "目标文件（keys.json / secrets.toml / config.toml），list 子命令可省略"},
+        {"name": "--version", "description": "备份时间戳 YYYYMMDD_HHMMSS（仅 restore）"},
+        {"name": "--source", "choices": ["internal", "external"], "description": "备份来源位置（仅 restore）"},
+        {"name": "--dry-run", "description": "只显示会做什么，不实际恢复（仅 restore）"},
+        {"name": "--yes / -y", "description": "跳过交互确认（agent 用，仅 restore）"},
+        {"name": "--json", "description": "输出 JSON 到 stdout（agent 用，仅 list）"}
+      ],
+      "notes": "恢复前自动给当前文件做 .pre_restore.<timestamp>.bak 安全备份。仅手动恢复（不在自动流程中调用）。",
+      "user_facing": true
+    },
+    {
+      "id": "check_hard_rules",
+      "name": "硬化规则检查",
+      "category": "debug",
+      "description": "C1 BOM / C2 硬编码密钥 / C3 文档路径越界 / C4 import 边界 四项检查；install 子命令一键配置 pre-commit hook",
+      "command": ".venv\\Scripts\\python.exe tools/check_hard_rules.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {"name": "subcommand", "label": "子命令", "choices": ["check", "install", "uninstall"], "description": "check 全量检查（默认）/ install 配置 hooksPath / uninstall 恢复"},
+        {"name": "--staged", "description": "只查 git staged 文件（pre-commit 语义，秒级）"}
+      ],
+      "notes": "白名单在脚本常量内，变更必须显式 commit。pytest 侧 tests/test_hard_rules.py 挂 quick 层。",
+      "user_facing": true
+    },
+    {
+      "id": "gen_feature_map",
+      "name": "GUI Feature Map 生成",
+      "category": "debug",
+      "description": "AST 解析 client/panels/*.py 生成 data/feature_map.json（面板→入口/控件/验证方式地图），重跑不覆盖手写字段",
+      "command": ".venv\\Scripts\\python.exe tools/gen_feature_map.py",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [],
+      "notes": "手写字段 entry/user_perspective/verify_howto 重跑保留；改面板后重跑并回填缺失。",
       "user_facing": true
     }
   ]

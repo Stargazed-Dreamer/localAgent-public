@@ -85,6 +85,9 @@ class WebSearchTool(BuiltinTool):
                 err_type = "backoff_exhausted" if "backoff" in err_msg else "search_error"
                 return self._error(tool_call, f"Web search failed: {err_msg}", err_type)
 
+            # 契约（fetch_with_backoff）：success=True ⟹ resp 非 None
+            assert resp is not None
+
             if resp.status_code != 200:
                 return self._error(
                     tool_call,

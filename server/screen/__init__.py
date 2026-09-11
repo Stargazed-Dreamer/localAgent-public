@@ -15,7 +15,6 @@
 # 截图子模块：mss 复用、全屏/窗口截图、滚动拼接、颜色命名
 from server.screen.capture import (
     _capture_fullscreen,
-    is_desktop_locked,
     _capture_via_fullscreen_crop,
     _capture_window,
     _color_name,
@@ -24,6 +23,7 @@ from server.screen.capture import (
     _get_mss,
     _images_equal,
     _mss_local,
+    is_desktop_locked,
 )
 
 # 焦点安全子模块：评估文档 P0 改造
@@ -88,6 +88,9 @@ from server.screen.routes import (
     CaptureInlineResponse,
     CaptureRequest,
     CaptureResponse,
+    ClipboardReadResponse,
+    ClipboardWriteRequest,
+    ClipboardWriteResponse,
     ConfirmStartRequest,
     ConfirmStartResponse,
     FocusWindowRequest,
@@ -109,6 +112,8 @@ from server.screen.routes import (
     WaitForResponse,
     WindowInfo,
     WindowsResponse,
+    ZoomRequest,
+    ZoomResponse,
     on_shutdown,
     on_startup,
     router,

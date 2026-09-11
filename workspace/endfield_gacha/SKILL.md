@@ -1,4 +1,4 @@
-﻿---
+---
 name: endfield_gacha
 description: >
   终末地寻访记录采集与统计。触发词：终末地抽卡、终末地寻访、endfield抽卡、终末地抽卡记录、

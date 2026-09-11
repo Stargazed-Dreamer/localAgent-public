@@ -1,6 +1,6 @@
 # 通用配方参考 (recipes.md)
 
-本文件是 [office_pptx skill](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注通用 pptx 配方（cover / divider / content / chart / table / thank-you / project report / 复习 PPT）。
+本文件是 [office_pptx skill](file:///<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注通用 pptx 配方（cover / divider / content / chart / table / thank-you / project report / 复习 PPT）。
 
 ## 目录
 
@@ -911,8 +911,8 @@ def validate_pptx(path, min_slides=1, expected_keywords=None):
 
 ## 参考
 
-- [office_pptx SKILL.md](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md)
-- [references/basic.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/basic.md)
-- [references/design_principles.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/design_principles.md)
-- [references/pitch_deck.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/pitch_deck.md)
+- [office_pptx SKILL.md](file:///<project_root>/.agents/skills/office_pptx/SKILL.md)
+- [references/basic.md](file:///<project_root>/.agents/skills/office_pptx/references/basic.md)
+- [references/design_principles.md](file:///<project_root>/.agents/skills/office_pptx/references/design_principles.md)
+- [references/pitch_deck.md](file:///<project_root>/.agents/skills/office_pptx/references/pitch_deck.md)
 - [python-pptx 官方文档](https://python-pptx.readthedocs.io/)

@@ -11,7 +11,7 @@ LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工�
 
 - **后端**: FastAPI + Uvicorn，端口 8766
 - **OCR**: 经典 PaddleOCR 3.7（PP-OCRv6）+ PaddlePaddle-GPU 3.2.2（CUDA 12.6，PIR 懒加载禁用）；截图管线关闭 UVDoc 去畸变，bbox 三档分辨率回归误差 1-3px，可作为 Computer Use 文字定位主路径；远程 VL 主要提供文档解析和图像描述
-- **视觉AI**: 远程 VL（ModelScope Qwen3-VL-235B-A22B-Instruct）；OmniParser 已于 2026-07-31 移除（调用 0 次，远程 VL + OCR bbox 已覆盖全部实际场景）
+- **视觉AI**: 远程 VL（ModelScope Qwen3-VL-235B-A22B-Instruct），负责文档解析、图像描述与无文字元素定位兜底
 - **LLM**: 多提供商配置（DeepSeek/OpenAI/智谱等），v8 tier 系统（model.tier 1-5 由 keys.json 定义，use_case.default_tier 决定调用层级，tier 硬匹配 + model 软偏好）
 - **记忆**: 三层记忆系统 v3（Recent 滑动窗口 + SQLite 时间索引 + 向量语义检索 + BM25 + HMS 风格三源召回/EvidenceLedger/SearchTracer）
 - **多进程**: 已移除（原 ZeroMQ Worker 系统在 2026-07-08 远程 VL 上线后未使用，已删除）
@@ -32,12 +32,13 @@ LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工�
 | `docs/release-policy.md` | 源码分发策略（friend-full profile、Apache-2.0） | 打包/分发源码时 |
 | `.agents/skills/_index.md` | Skill 索引 + API 快速参考 + 项目结构 | 需查看 skill 完整信息/API 接口表时（任务路由走 `agent_guide`） |
 | `docs/api-reference.md` | 后端 API 速查（按功能分桶、浏览器分三层、精简描述） | 查 REST 端点/MCP 工具名时 |
+| `docs/browser-anti-detection.md` | **浏览器反检测（伪装）规范**：为什么本项目不注入任何 JS 伪装补丁（实测证据）、禁止 playwright-stealth、指纹自检工具 | 改动浏览器链路前；想加"反爬/伪装"补丁时**必读** |
 | `docs/computer-use-reference.md` | UIA 语义层、桌面事务、DPI、API 速查、注意事项 | 屏幕操控深入参考时 |
 | `docs/mcp-reference.md` | MCP 三层架构、工具排除清单、REST→MCP 映射规则、统计 | 需要查 MCP 工具名/网关时 |
 | `docs/tools-guide.md` | 所有工具脚本的详细用法、参数、安全机制 | 运行工具脚本时 |
 | `docs/memory-system.md` | 三层记忆系统架构、API、压缩、自动记录 | 读写记忆时 |
 | `docs/llm-pool.md` | LLM 并发池架构 | 脚本调用 LLM 时 |
-| `docs/environment-constraints.md` | PaddlePaddle 兼容性、Playwright、调试浏览器 | OCR/Vision/浏览器操作时 |
+| `docs/environment-constraints.md` | PaddlePaddle 兼容性、Model Lifecycle Manager（含"无 GPU→CPU 降级"缺口）、Playwright、调试浏览器、**网络与环境查询技巧**（HF 访问/查 wheel/验证 GPU/测挂死） | OCR/Vision/浏览器操作时；查环境类通用技巧时 |
 | `docs/model-paths.md` | 模型路径管理（`[models]` 配置、外部目录回退） | 配置模型权重路径时 |
 | `docs/recorder-guide.md` | 操作录制器用户指南（L0-L4 五层架构） | 使用录制器/采集操作时 |
 | `docs/recorder-test-guide.md` | Recorder 模块端到端测试说明 | 测试录制器功能时 |
@@ -51,6 +52,30 @@ LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工�
 | `docs/agent-guide.md` | 任务路由系统（GUIDE_REGISTRY 结构/6 scope/consumption_contexts 消费闭环/first_action 注入/workspace 动态扩展） | 维护 skill 或理解任务路由时 |
 | `docs/todos-wip.md` | 待办与 WIP 系统（三类型 todo/WIP 生命周期/task_closure 整合/API 端点表） | 使用 todos 或 WIP 功能时 |
 | `.agents/rules/project_rules.md` | 功能变更检查清单 | 新增/修改功能后 |
+
+## 知识沉淀位置
+
+**两类内容分开存放，不要混：**
+
+| 类型 | 存放位置 | 说明 |
+|------|----------|------|
+| **日志**（今天做了什么、排查过程、因果链） | 各端要求的位置 | WorkBuddy 写 `.workbuddy/memory/YYYY-MM-DD.md`；其他 agent 按各自约定。日志是流水账，不需要进项目文档 |
+| **通用知识**（环境技巧、网络访问姿势、部署坑、可复用的方法论） | 项目专题文档 | 见下表。这类知识与具体某次任务无关，下次还会用到 |
+
+通用知识的推荐落点：
+
+| 知识类型 | 落到哪 |
+|----------|--------|
+| 网络访问、依赖版本查询、硬件/驱动、推理设备验证 | `docs/environment-constraints.md`（「网络与环境查询技巧」章节） |
+| 其他机器部署故障、模型下载与路径、依赖缺失 | `docs/deployment.md`（「其他机器部署常见问题」章节） |
+| 架构决策与其原因 | `docs/adr/` |
+| 功能变更的对外描述 | `CHANGELOG.md`（按 `docs/dev-workflow.md` 流程） |
+
+> 判断标准：**下次换个任务还用得上吗？** 用得上 → 项目专题文档；只是这次干了什么 → 日志。
+
+## 提交前机械防线（强制）
+
+对 `server/` / `client/` / `lib/` 的任何代码变更，声称"完成"前**必须**跑两道检查：① `uv run python -m pytest tests/server_endpoints/test_smoke_endpoints.py -q`（GET 端点冒烟，≥500 即失败）；② `uv run pyright` 与基线 0 错误对比（不允许新增）。⚠️ `pyrightconfig.json` 的 `include` 只列这三个目录，`workspace/` / `tools/` 脚本仓库级运行**从不被检查**，改这类脚本必须显式 `uv run pyright workspace/.../xxx.py`。注册表类改动（GUIDE_REGISTRY/manifest/白名单/config）另跑 `tools/audit/drift_detector.py`（该脚本自写报告到 `temp/audit/drift_report.md`）。详见 `docs/dev-workflow.md` "提交前机械防线"章节。
 
 ## 会话启动检查清单（每次新会话第一步，必须执行）
 
@@ -259,6 +284,10 @@ ADR 是项目架构决策的真源，位于 `docs/adr/`（索引见 `docs/adr/RE
   - 用 `$LASTEXITCODE` 显式判断：`cmd1 ; if ($LASTEXITCODE -eq 0) { cmd2 }`
   - 或改用 PowerShell 7（`pwsh.exe`，支持 `&&` 和 `||`）
   - **Shell 工具链式命令时不要用 `&&`**，用 `;` 或拆成多次调用
+- **PowerShell 5.1 写 UTF-8 文件必带 BOM（跨平台坑，agent 写文件必读！）**：`Set-Content -Encoding UTF8` / `Out-File -Encoding UTF8` 在 Windows PowerShell 5.1 下写出的文件**必带 BOM**（U+FEFF），多次写会**累积**（yihuan_clean.py 曾堆 3 个 BOM 直接 `SyntaxError`；早期误归因"harness 平台写入叠加"，对照实验已推翻）。**避免方法**：
+  - agent 写/改文件**优先用 IDE 的 Write/Edit 工具**（Trae 已对照实验验证不加 BOM；其他平台同理），不要走 shell 重定向
+  - 必须 PowerShell 写 UTF-8 时用 `[IO.File]::WriteAllText($path, $content)`（无 BOM）；PS 7 的 `-Encoding utf8` 也不带 BOM，但项目终端默认 PS 5.1，别赌版本
+  - 遇 `SyntaxError: invalid non-printable character U+FEFF` → `uv run python tools/clean_bom.py --fix`（默认 dry-run 只扫描）
 - **Git 命令默认走 pager 会卡住终端（agent 自动执行必读！）**：`git log` / `git diff` / `git show` 等命令在 Windows 上默认使用 `less` 作为 pager，输出超过一屏时进入分页模式，等待用户按键（空格/q/回车）才显示后续或退出。在 agent 自动执行场景下命令会一直挂起，直到被用户手动跳过或 Ctrl+C，外观像"命令在运行但没输出"。**避免方法**：
   - 用 `git --no-pager log ...` / `git --no-pager diff ...` 强制单次关闭 pager（推荐，最稳）
   - 或显式重定向 pager：`git -c core.pager=cat log ...`（输出直送 cat，不暂停）
@@ -315,6 +344,15 @@ ADR 是项目架构决策的真源，位于 `docs/adr/`（索引见 `docs/adr/RE
 3. **执行**：只删除用户确认的文件，删除完成后报告释放的空间
 4. **例外**：Agent 自己临时创建的脚本文件（`temp/` 目录下的临时脚本）无需审核，可直接删除
 
+**删除执行纪律（回收站，禁止物理删除）**：任何"可恢复删除"一律走项目自带的回收站工具
+`tools/disk/recycle.py`（`uv run python tools/disk/recycle.py <path>...` 或库用法
+`from tools.disk.recycle import send_to_recycle`）。**禁止 `rm`/`del` 物理删除用户文件**。
+为什么必须用它：本机 PowerShell 的 `Add-Type` 与 `Shell.Application` COM 均被 WorkBuddy
+安全策略拦截（2026-09-03 实测，`Microsoft.VisualBasic.FileIO` SendToRecycleBin 与 COM
+两条常规路线都不可用），recycle.py 用纯 ctypes 调 Win32 `SHFileOperationW`（`FOF_ALLOWUNDO`）
+实现，是本机唯一可靠的回收站路线。**先翻 `tools/README.md` 找现成工具，不要自己 pip
+install 绕路**（2026-09-03 教训：为删测试垃圾先装 send2trash 被用户纠正）。
+
 **违反此规则可能导致用户重要数据/模型被误删，是不可接受的错误。**
 
 ### 输出截断规则
@@ -331,10 +369,10 @@ ADR 是项目架构决策的真源，位于 `docs/adr/`（索引见 `docs/adr/RE
 项目分一二级目录，**完整映射由程序维护**，避免静态文档过时：
 
 - **后端**：`server/`（FastAPI + MCP，模块详见 `_index.md` 后端模块表）
-- **GUI 客户端**：`client/`（PySide6 面板式架构：Dashboard/Tools/Keys/Accounting/Monitoring/DailySummary/Settings/Chat 8 个面板，PanelRegistry 自动发现；`client/core/agent/` 是 v6-lite 对话引擎纯 Python 核心库——SessionRunner/EventStore/Compactor/ToolRegistry/LLMPoolGateway/Reconciler/SessionFacade/DoomLoopDetector，不依赖 Qt，ChatPanel 经 SessionFacade 通过 QThread 调引擎；真 SSE 流式 + 打字机三档 toggle（close/fast/normal，默认 fast）+ thinking 显示 toggle + steer 引导 UI。**chat-panel-v2 重设计**（`temp/sdd/chat-panel-v2/`，T01-T12 全完成）：开始页 + 模板管理（全量 skill 复选框）+ 侧边栏树形（置顶/分组/未分组）+ 消息时间线块结构（6 块类：_UserBubble/_AssistantTextBlock/_ThinkingBlock/_ToolCallBlock/_SystemBlock + sticky 标题栏）+ 对话控制三模式（发送/队列/引导）+ 顶栏重设计（last_updated/title/cost/token/打字机）+ 导出（MD/JSON）+ hover 操作按钮 + closeEvent 防关机 + 启动 reconciler banner。EventStore schema v5：sessions 加 group_name/pinned 列，messages 加 model 列。详见 `docs/mcp-reference.md` "v6-lite-streaming-gui" 段 + `temp/sdd/chat-panel-v2/spec.md`）
+- **GUI 客户端**：`client/`（PySide6 面板式架构：主窗口 **17 个内置面板**——主面板 7：对话/概览/待办hub/工具/收件箱/到期任务/WIP，监控 6：状态监控/终端/Loop/模型池/记忆(内含 6 子页)/日总结，高级 4：设置/密钥/系统工具/入站管理；PanelRegistry 扫 `client/panels/` 自动发现，另加载 workspace manifest 声明的组件面板（当前：记账/股市助手）；**独立进程审批面板** `client/approval_panel/`（`python -m client.approval_panel`，托盘驻留，不在主窗口侧边栏）；`client/core/agent/` 是 v6-lite 对话引擎纯 Python 核心库——SessionRunner/EventStore/Compactor/ToolRegistry/LLMPoolGateway/Reconciler/SessionFacade/DoomLoopDetector，不依赖 Qt，ChatPanel 经 SessionFacade 通过 QThread 调引擎；真 SSE 流式 + 打字机三档 toggle（close/fast/normal，默认 fast）+ thinking 显示 toggle + steer 引导 UI。**chat-panel-v2 重设计**（`temp/sdd/chat-panel-v2/`，T01-T12 全完成）：开始页 + 模板管理（全量 skill 复选框）+ 侧边栏树形（置顶/分组/未分组）+ 消息时间线块结构（6 块类：_UserBubble/_AssistantTextBlock/_ThinkingBlock/_ToolCallBlock/_SystemBlock + sticky 标题栏）+ 对话控制三模式（发送/队列/引导）+ 顶栏重设计（last_updated/title/cost/token/打字机）+ 导出（MD/JSON）+ hover 操作按钮 + closeEvent 防关机 + 启动 reconciler banner。EventStore schema v5：sessions 加 group_name/pinned 列，messages 加 model 列。详见 `docs/mcp-reference.md` "v6-lite-streaming-gui" 段 + `temp/sdd/chat-panel-v2/spec.md`）
 - **Skill/规则/文档**：`.agents/`（`skills/` skill 定义、`wip/` 任务留档、`rules/` 规则文件；**无 <data_drive>:\Documents/ 子目录**，文档走 `docs/`）
 - **通用工具脚本**：`tools/`（browser/debug/deploy/llm/file_classifier 等，详见 `tools/README.md`；**任务专属脚本写到 `workspace/<task>/`，不写到 `tools/`**）
-- **任务工作区**：`workspace/`（按任务分目录，约 30 个子目录；新建子目录**按需**——`SKILL.md` + `manifest.toml` + `loop_actions.py` 三件套不是强制要求，临时/一次性脚本可省；常驻/loop 任务建议有 `manifest.toml` + `loop_actions.py` 让 agent_guide 路由）。**特殊子目录**：`dev_toolkit/`（独立 dev toolkit 项目，有自己的 `.agents/` `specs/` `wip/`，写入前看其 `AGENTS.md`）、`maa-patch/`（仅 4 个自写文件 `MAINTENANCE.md`/`LESSONS.md`/`mumu-keepalive.patch`/`sync-maa-patch.ps1` 进仓库，`maa-upstream/` 是上游 MAA 仓库副本不碰）
+- **任务工作区**：`workspace/`（按任务分目录，约 30 个子目录；新建子目录**按需**——`SKILL.md` + `manifest.toml` + `loop_actions.py` 三件套不是强制要求，临时/一次性脚本可省；常驻/loop 任务建议有 `manifest.toml` + `loop_actions.py` 让 agent_guide 路由）。**特殊子目录**：`dev_toolkit/`（独立 dev toolkit 项目，有自己的 `.agents/` `specs/` `wip/`，写入前看其 `AGENTS.md`）、`maa-patch/`（自写文件 `MAINTENANCE.md`/`LESSONS.md`/`mumu-keepalive.patch`/`sync-maa-patch.ps1`/`UPSTREAM_ISSUE_RECORD.md` 进仓库（白名单见 .gitignore），`maa-upstream/` 是上游 MAA 仓库副本不碰）
 - **二级文档**：`docs/`（mcp-reference/tools-guide/memory-system/llm-pool/environment-constraints/operations-manual/dev-workflow + `adr/` 架构决策记录 + `ui/` UI 设计系统文档）
 - **运行时数据**：`data/`（LLM池/记忆DB/活动追踪/inbox，整体 gitignore，仅 `project_structure.json` 进仓库）
 - **测试**：`tests/`（`fixtures/` 测试夹具；危险操作测试必须 mock，详见 `project_rules.md` 测试铁律）
@@ -355,6 +393,9 @@ ADR 是项目架构决策的真源，位于 `docs/adr/`（索引见 `docs/adr/RE
 - `lib/recorder/` — 与项目共用的核心代码（sensors/processor/timeline/editor）
 - `tools/recorder/` — 历史遗留入口（见 `tools/README.md`），新功能不写这里
 - `workspace/recorder/` — 任务相关的录制器入口/工具/录制包（`recordings/` 大体积本地数据 gitignore；`consumer/` agent 公用库；`tools/` 任务专属工具）
+
+**ZCode 插件**：
+- `zcode_plugins/` — ZCode CLI 插件的本地安装源（Settings → Plugin Management 从本地目录安装）。现有 `watchdog/`：挂机看门狗（任务跑完自动关机 / 截止时间软中止后关机；Stop hook + MCP server，详见其 `README.md`）。写 ZCode 插件前先 `memory_get("reference_zcode_plugin_dev")` 避坑
 
 **发布 / 分发**：
 - `release/` — 源码分发。`profiles/`（发布配置 toml）、`audience/`（受众定义）、`plans/` `dist/` `staging/`（构建产物，gitignore 仅留 .gitkeep）+ `policy.toml` + `dependency_map.toml` + `dependency_audit.json`；通过 `tools/release/cli.py prepare/compute-digest/build` 操作，不手动改 `dist/` `staging/`
@@ -392,7 +433,7 @@ ADR 是项目架构决策的真源，位于 `docs/adr/`（索引见 `docs/adr/RE
 
 - **会话开始需要目录布局**：调 `agent_guide(task='...', include_structure=true)`，响应中 `project_structure` 字段含当前扫描 + baseline 描述
 - **task_closure 自动检测漂移**：调 `agent_guide(task_type='system.task_closure')` 时响应自动含 `structure_diff` 字段（unknown_paths / missing_paths），agent 在收尾报告中提示用户并按需补全 baseline
-- **手动补全 baseline**：`exec_python` 调 `server.project_structure.update_baseline_descriptions({"新路径/": "描述"})`
+- **手动补全 baseline**：`exec_python` 调 `server.project_structure.sync_baseline(add_descriptions={"新路径/": "描述"})`（幂等，一级/二级目录与已失效路径一次归位）。⚠️ `update_baseline_descriptions()` 只写 `top_level`，用它补二级目录**静默无效**
 - **/health 查看状态**：`project_structure.baseline_exists` / `baseline_entries` / `baseline_updated`
 
 ## Skill 编写

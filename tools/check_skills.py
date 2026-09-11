@@ -23,10 +23,10 @@
 """
 from __future__ import annotations
 
+import argparse
+import json
 import re
 import sys
-import json
-import argparse
 from pathlib import Path
 
 # 项目根目录（脚本位于 tools/check_skills.py）
@@ -389,7 +389,7 @@ def main():
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         s = report["summary"]
-        print(f"Skill 一致性校验报告")
+        print("Skill 一致性校验报告")
         print(f"  核心 skill 文件:        {s['skill_files']}")
         print(f"  组件化 skill 文件:      {s['component_skill_files']}")
         print(f"  _index.md 核心段条目:   {s['index_entries']}")

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from client.core.http_client import HttpClient
 from client.core.panel_base import PanelBase, PanelMeta
-from lib.ui import tokens
+from lib.ui import icon_pixmap, tokens
 from lib.ui.theme import set_kind, set_text_role
 
 
@@ -54,9 +54,14 @@ class _SubEntryCard(QFrame):
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(12)
 
-        # 图标
-        icon_label = QLabel(icon)
+        # 图标（优先 SVG 图标名，未命中回退 emoji 文本——与主窗口侧边栏同规则）
+        icon_label = QLabel()
         icon_label.setFixedWidth(36)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        try:
+            icon_label.setPixmap(icon_pixmap(icon, tokens.ICON_DEFAULT, 24))
+        except KeyError:
+            icon_label.setText(icon)
         layout.addWidget(icon_label)
 
         # 标题 + 副标题
@@ -171,19 +176,19 @@ class TasksPanel(PanelBase):
 
         # 三个二级入口
         self._inbox_card = _SubEntryCard(
-            "📥", "收件箱", "Loop 推送的待审查条目", "inbox"
+            "inbox", "收件箱", "Loop 推送的待审查条目", "inbox"
         )
         self._inbox_card.clicked.connect(self._on_sub_entry_clicked)
         layout.addWidget(self._inbox_card)
 
         self._due_card = _SubEntryCard(
-            "⏰", "到期任务", "到期的周期待办", "due_todos"
+            "clock", "到期任务", "到期的周期待办", "due_todos"
         )
         self._due_card.clicked.connect(self._on_sub_entry_clicked)
         layout.addWidget(self._due_card)
 
         self._wip_card = _SubEntryCard(
-            "🔧", "WIP 任务", "进行中的工作", "wip_tasks"
+            "wrench", "WIP 任务", "进行中的工作", "wip_tasks"
         )
         self._wip_card.clicked.connect(self._on_sub_entry_clicked)
         layout.addWidget(self._wip_card)

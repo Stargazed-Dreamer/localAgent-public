@@ -119,7 +119,7 @@ def match_app_for_process(process_name: str) -> list[dict]:
         aliases = [a.lower() for a in _extract_aliases(raw)]
 
         # 匹配：文件名或 aliases 与 query/query_base 子串匹配
-        patterns = [name, *[a for a in aliases]]
+        patterns = [name, *aliases]
         pattern = "|".join(re.escape(t) for t in patterns if t)
         if not pattern:
             continue
@@ -148,15 +148,15 @@ def build_app_lessons_hint(lessons: list[dict]) -> str | None:
     """
     if not lessons:
         return None
-    names = [l["process_name"] for l in lessons]
-    total_chars = sum(len(l["body"]) for l in lessons)
+    names = [les["process_name"] for les in lessons]
+    total_chars = sum(len(les["body"]) for les in lessons)
     staleness_parts = []
-    for l in lessons:
-        if l["staleness_level"] == "critical":
-            staleness_parts.append(f"{l['process_name']}(已 {l['staleness_days']} 天未更新，高度可能过时)")
-        elif l["staleness_level"] == "warn":
-            days_str = f"{l['staleness_days']} 天" if l["staleness_days"] is not None else "未知时间"
-            staleness_parts.append(f"{l['process_name']}({days_str} 未更新，请验证)")
+    for les in lessons:
+        if les["staleness_level"] == "critical":
+            staleness_parts.append(f"{les['process_name']}(已 {les["staleness_days"]} 天未更新，高度可能过时)")
+        elif les["staleness_level"] == "warn":
+            days_str = f"{les["staleness_days"]} 天" if les["staleness_days"] is not None else "未知时间"
+            staleness_parts.append(f"{les['process_name']}({days_str} 未更新，请验证)")
     staleness_note = ""
     if staleness_parts:
         staleness_note = f" ⚠️ 部分经验可能过时: {', '.join(staleness_parts)}"
@@ -236,12 +236,12 @@ async def screen_match_app(req: MatchAppRequest):
         ]
 
     staleness_parts = []
-    for l in lessons:
-        if l["staleness_level"] == "critical":
-            staleness_parts.append(f"{l['process_name']}(已 {l['staleness_days']} 天未更新，高度可能过时)")
-        elif l["staleness_level"] == "warn":
-            days_str = f"{l['staleness_days']} 天" if l["staleness_days"] is not None else "未知时间"
-            staleness_parts.append(f"{l['process_name']}({days_str} 未更新，请验证)")
+    for les in lessons:
+        if les["staleness_level"] == "critical":
+            staleness_parts.append(f"{les['process_name']}(已 {les["staleness_days"]} 天未更新，高度可能过时)")
+        elif les["staleness_level"] == "warn":
+            days_str = f"{les["staleness_days"]} 天" if les["staleness_days"] is not None else "未知时间"
+            staleness_parts.append(f"{les['process_name']}({days_str} 未更新，请验证)")
     staleness_note = "; ".join(staleness_parts) if staleness_parts else None
 
     return MatchAppResponse(
@@ -356,10 +356,7 @@ def _insert_section_content(body: str, section: str, content: str) -> tuple[str,
         return body, False
     section_start = m.end()
     next_section = re.search(r"^##\s+", body[section_start:], re.MULTILINE)
-    if next_section:
-        section_end = section_start + next_section.start()
-    else:
-        section_end = len(body)
+    section_end = section_start + next_section.start() if next_section else len(body)
     insert_point = section_end
     while insert_point > section_start and body[insert_point - 1] in "\r\n":
         insert_point -= 1
@@ -547,7 +544,8 @@ async def screen_write_lesson(req: WriteLessonRequest):
 
     # 4. 文件不存在 → 按 _template 创建
     if not file_path.exists():
-        all_aliases = list({pn_safe, name, *(req.aliases or [])})
+        alias_items: list[str] = list(req.aliases or [])
+        all_aliases = list({pn_safe, name, *alias_items})
         all_aliases = [a for a in all_aliases if a != name]
         initial = _build_initial_file(pn_safe, all_aliases, today)
         new_body, found = _insert_section_content(initial, req.section, req.content)

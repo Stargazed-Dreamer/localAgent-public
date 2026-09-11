@@ -9,7 +9,8 @@ enabled = true
 files = ["workspace/modelscope_model_update/**"]
 
 [exports.source]
-files = ["workspace/modelscope_model_update/**", "tests/test_modelscope_model_update*.py"]
+# f10-b：删除 tests/test_modelscope_model_update*.py glob（测试文件未创建，glob 永远不命中 → drift_detector G 节 MEDIUM）
+files = ["workspace/modelscope_model_update/**"]
 
 [release_facts]
 contains_personal_data = false
@@ -24,3 +25,8 @@ entries_var = "GUIDE_REGISTRY_ENTRIES"
 file = "SKILL.md"
 task_type = "adhoc.modelscope_model_update"
 index_section = "components"
+
+[tests]
+# 自动化测试声明：当前无自动化测试
+enabled = false
+paths = []

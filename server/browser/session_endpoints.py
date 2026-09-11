@@ -34,7 +34,8 @@ class BrowserSessionCreateRequest(BaseSchema):
 
     - url_pattern: 复用现有 page（url 包含 pattern）
     - url: 新建 page 并 goto url（优先级低于 url_pattern）
-    - 都不传：复用 contexts[0].pages[0] 或新建空白 page
+    - 都不传：新建专用空白 tab（不复用已有页面，避免误绑用户真实 tab/扩展窗口页；
+      2026-09-03 修复，详见 session/manager.py create_session 注释）
 
     返回 session_id（调用方持有）+ tab_id（CDP target id）+ url + title。
     session idle 超时（默认 900s = 15min，见 [browser].session_idle_timeout_secs）
@@ -48,6 +49,9 @@ class BrowserSessionCreateResponse(BaseSchema):
     success: bool
     session_id: str
     tab_id: str
+    # 修复问题①：create_session 返回 dict 含 tab_id_resolved，但本模型原缺该字段，
+    # 因 BaseSchema extra="forbid" 触发 ValidationError → 端点 500。补齐字段即可。
+    tab_id_resolved: bool = False  # tab_id 是否经 CDP /json/list 反查成功（跨调用定位可靠性）
     url: str
     title: str
     created: bool

@@ -335,7 +335,7 @@ def get_browser_config() -> dict:
     配置格式（config.toml）:
         [browser]
         debug_port = 9222
-        user_data_dir = "F:\\project_temp\\localAgent\\chrome_debug"
+        user_data_dir = "<project_root>\\chrome_debug"
         feedback_vl_enabled = true
         session_idle_timeout_secs = 900   # 持久 session idle 超时（15min，留足 agent 多步操作余量）
         session_max_count = 20            # 持久 session 数量上限（防内存泄漏）
@@ -429,6 +429,10 @@ def get_screen_config() -> dict:
         "allow_unfocused_input_default": screen.get("allow_unfocused_input_default", False),
         # 接管确认（takeover confirm）：顶栏未显示时，键鼠/focus 等争夺输入的操作前弹窗询问用户
         "takeover_confirm_enabled": screen.get("takeover_confirm_enabled", True),
+        # 坐标点击 UIA 融合总闸（ZCode computer-use 风格）：click 默认先 UIA hit-test，
+        # 命中可点击元素直接后台 invoke（不抢焦点），未命中回退原始键鼠。
+        # false 时 strategy 参数被忽略、全部走原始键鼠（旧行为）
+        "coordinate_uia_fusion": screen.get("coordinate_uia_fusion", True),
         # 弹窗超时秒数（默认 30s，与 overlay_auto_hide_seconds 对称）
         "takeover_confirm_timeout_seconds": screen.get("takeover_confirm_timeout_seconds", 30),
         # 超时行为：cancel（超时取消，默认）| proceed（兼容旧配置，不推荐）
@@ -498,10 +502,10 @@ def get_command_guard_config() -> dict:
 
 
 def get_vision_config() -> dict:
-    """获取视觉AI配置（v9 schema）
+    """获取视觉AI配置
 
-    v9 变更：VL provider 配置迁移到 keys.json 的 key.vision 段（按 base_url 匹配）。
-    config.toml [vision] 段只保留全局参数（编码/重试/开关），不再含 provider 配置。
+    config.toml [vision] 段只保留全局参数（编码/重试/开关）；VL provider 配置
+    统一存 keys.json 的 key.vision 段（按 base_url 匹配），由 use_case 驱动选 key。
 
     保留字段：
         [vision]
@@ -510,13 +514,7 @@ def get_vision_config() -> dict:
         vl_jpeg_quality = 85
         vl_retry_backoffs = [2, 4, 8, 16, 32, 60]
 
-    已移除字段：
-        omniparser_enabled / keep_models / icon_detect_confidence
-            → OmniParser 模块已于 2026-07-31 整体移除（MCP 调用 0 次）
-        vl_default_provider  → 改由 use_case 驱动选 key（v9 删除）
-        [vision.vl_providers.*]  → 迁移到 keys.json key.vision 段（v9 删除）
-
-    新增字段（provider 级额度耗尽追踪，server/vl/remote_vl.py 消费）：
+    provider 级额度耗尽追踪（server/vl/remote_vl.py 消费）：
         vl_provider_exhausted_cooldown_seconds = 3600  # 单 provider 耗尽冷却时长（秒）
         vl_provider_exhausted_max_consecutive = 3      # 连续耗尽上限，达此值当日不再试
     """
@@ -667,6 +665,11 @@ def get_models_config() -> dict:
     配置格式（config.toml）:
         [models]
         external_dir = "<data_drive>:\\ai_models"   # 个人部署；发布时留空
+        paddle_device = "gpu"   # PaddleOCR 推理设备: gpu（默认）| cpu | auto
+        # GPU→CPU 条件降级（GPU 压力拒绝态且条件达标时降到 CPU 继续服务）
+        gpu_fallback_min_avail_gb = 2.0   # 降级所需最小可用内存（GB）
+        gpu_fallback_max_cpu_pct = 70.0   # 降级允许的最大 CPU 占用（%）
+        gpu_fallback_hold_sec = 300.0     # 降级后最短保持时间（秒，迟滞防抖）
 
     子目录映射（external_dir 非空时）:
         paddleocr/      - PaddleOCR 模型
@@ -685,6 +688,18 @@ def get_models_config() -> dict:
     if not isinstance(models_cfg, dict):
         models_cfg = {}
     external_dir = str(models_cfg.get("external_dir", "")).strip()
+    # PaddleOCR 推理设备：gpu（默认）| cpu | auto（自动检测后回落 cpu）
+    # 历史：2026-08-26 曾因「GPU 首次推理挂死」把默认值降为 cpu；该结论已于 2026-08-31
+    # 实机复测推翻（三档各 3 轮共 9 次全部正常返回，零挂死），故默认值改回 gpu。
+    # 完整经过见 server/ocr.py 的 _detect_paddle_device() 注释。
+    paddle_device = str(models_cfg.get("paddle_device", "gpu")).strip().lower() or "gpu"
+
+    # GPU→CPU 条件降级（2026-08-31）：GPU 压力拒绝态时若主机内存/CPU 达标，
+    # OCR 降级到 CPU 继续服务而非直接不可用。阈值依据 2026-08-31 游戏满载实测
+    # （可用内存最低 0.46GB 不可降级 / 常态 14.5GB 充裕；CPU 峰值 47.7%）
+    gpu_fallback_min_avail_gb = float(models_cfg.get("gpu_fallback_min_avail_gb", 2.0))
+    gpu_fallback_max_cpu_pct = float(models_cfg.get("gpu_fallback_max_cpu_pct", 70.0))
+    gpu_fallback_hold_sec = float(models_cfg.get("gpu_fallback_hold_sec", 300.0))
 
     project_weights = Path(__file__).resolve().parent.parent / "weights"
 
@@ -692,6 +707,10 @@ def get_models_config() -> dict:
         base = Path(external_dir)
         return {
             "external_dir": external_dir,
+            "paddle_device": paddle_device,
+            "gpu_fallback_min_avail_gb": gpu_fallback_min_avail_gb,
+            "gpu_fallback_max_cpu_pct": gpu_fallback_max_cpu_pct,
+            "gpu_fallback_hold_sec": gpu_fallback_hold_sec,
             "paddleocr_dir": str(base / "paddleocr"),
             "embeddings_dir": str(base / "embeddings"),
             "faster_whisper_dir": str(base / "faster_whisper"),
@@ -701,6 +720,10 @@ def get_models_config() -> dict:
         # 发布模式：回退到项目内 weights/ 目录
         return {
             "external_dir": "",
+            "paddle_device": paddle_device,
+            "gpu_fallback_min_avail_gb": gpu_fallback_min_avail_gb,
+            "gpu_fallback_max_cpu_pct": gpu_fallback_max_cpu_pct,
+            "gpu_fallback_hold_sec": gpu_fallback_hold_sec,
             "paddleocr_dir": str(project_weights / "paddlex"),
             "embeddings_dir": str(project_weights / "embeddings"),
             "faster_whisper_dir": str(project_weights / "faster_whisper"),
@@ -800,15 +823,51 @@ class CommandGuardConfigSchema(BaseSchema):
 
 
 class OcrConfigSchema(BaseSchema):
+    """[ocr] 段 schema（T5 顺手补 preload_on_startup 字段，与 get_ocr_config() 对齐）"""
     kx: float = 1.0
     ky: float = 1.0
     bx_ratio: float = 0.0
     by_ratio: float = 0.0
+    # P1-A：启动后后台预热 PaddleOCR（不阻塞 startup）。get_ocr_config() 早已消费此字段，
+    # 此前 schema 未声明导致 validate_config() 静默忽略类型错误。
+    preload_on_startup: bool = False
 
 
 class InboxConfigSchema(BaseSchema):
     db_path: str = "data/inbox.db"
     auto_cleanup_days: int = Field(default=10, ge=0)
+
+
+class ModelManagerResourceSchema(BaseSchema):
+    """[model_manager.gpu] / [model_manager.cpu] 子段 schema（design §9）
+
+    enabled=True 表示该资源压力监控启用；min_loaded_seconds/unload_timeout_sec
+    为顶层字段（_min_loaded/_unload_timeout 在 config.py 中按子段读取，
+    schema 中也声明以便 validate_config 早发现错误）。
+    """
+    enabled: bool | None = None  # None=继承默认（gpu=True / cpu=False，由 get_model_manager_config 兜底）
+    poll_interval_sec: float = Field(default=5.0, gt=0)
+    high_watermark: float = Field(default=0.90, ge=0.0, le=1.0)
+    high_sustain: int = Field(default=3, ge=1)
+    critical_watermark: float = Field(default=0.97, ge=0.0, le=1.0)
+    low_watermark: float = Field(default=0.70, ge=0.0, le=1.0)
+    low_sustain: int = Field(default=6, ge=1)
+    min_loaded_seconds: float = Field(default=60.0, ge=0.0)
+    unload_timeout_sec: float = Field(default=15.0, ge=0.0)
+
+
+class ModelManagerConfigSchema(BaseSchema):
+    """[model_manager] 段 schema（design §9，T5 接入）
+
+    覆盖 get_model_manager_config() 读取的顶层字段 + gpu/cpu 子段。
+    [model_manager.models.<id>] 动态子段由 get_model_manager_config() 运行时兜底
+    （schema 不做静态校验，避免新增模型 id 时需同步改 schema）。
+    """
+    enabled: bool = True
+    poll_interval_sec: float = Field(default=5.0, gt=0)
+    reload_fail_cooldown_sec: float = Field(default=30.0, gt=0)
+    gpu: ModelManagerResourceSchema = Field(default_factory=ModelManagerResourceSchema)
+    cpu: ModelManagerResourceSchema = Field(default_factory=ModelManagerResourceSchema)
 
 
 _CONFIG_SCHEMAS: dict[str, type[BaseSchema]] = {
@@ -821,6 +880,7 @@ _CONFIG_SCHEMAS: dict[str, type[BaseSchema]] = {
     "command_guard": CommandGuardConfigSchema,
     "ocr": OcrConfigSchema,
     "inbox": InboxConfigSchema,
+    "model_manager": ModelManagerConfigSchema,
 }
 
 

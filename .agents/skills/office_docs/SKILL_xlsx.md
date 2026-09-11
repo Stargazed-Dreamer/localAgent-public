@@ -29,10 +29,10 @@ task_type: adhoc.office_xlsx
    - 文件名规范：`{内容描述}_{YYYYMMDD}.xlsx`
 
 2. **读对应 references**
-   - 基础元素 → [references/xlsx_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_basic.md)
-   - 条件格式 → [references/xlsx_conditional_formatting.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_conditional_formatting.md)
-   - 财务模型 → [references/xlsx_financial_model.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_financial_model.md)
-   - 数据仪表盘 → [references/xlsx_data_dashboard.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_data_dashboard.md)
+   - 基础元素 → [references/xlsx_basic.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_basic.md)
+   - 条件格式 → [references/xlsx_conditional_formatting.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_conditional_formatting.md)
+   - 财务模型 → [references/xlsx_financial_model.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_financial_model.md)
+   - 数据仪表盘 → [references/xlsx_data_dashboard.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_data_dashboard.md)
    - **不要一次读所有 references**——按用户场景读对应的一个
 
 3. **增量构建（结构 → 公式 → 格式）**
@@ -139,10 +139,10 @@ for sheet in wb.sheetnames:
 ## 详细参考
 
 每种场景的详细工作流、设计规范、反模式见 `references/`：
-- [references/xlsx_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_basic.md) - 基础元素参考（sheets/cells/ranges/formulas/styles/columns/merges/freeze-panes/named-ranges/pivot-tables/comments）
-- [references/xlsx_conditional_formatting.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_conditional_formatting.md) - 条件格式 3 flavors（color scale / data bar / formula rule）+ icon set
-- [references/xlsx_financial_model.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_financial_model.md) - 财务模型场景（3-statement / DCF / LBO）+ CFO 4-color + Three-zone
-- [references/xlsx_data_dashboard.md](file:///f:/<project_root>/.agents/skills/office_docs/references/xlsx_data_dashboard.md) - 数据仪表盘场景（KPI 卡 + chart + sparkline + CF）
+- [references/xlsx_basic.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_basic.md) - 基础元素参考（sheets/cells/ranges/formulas/styles/columns/merges/freeze-panes/named-ranges/pivot-tables/comments）
+- [references/xlsx_conditional_formatting.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_conditional_formatting.md) - 条件格式 3 flavors（color scale / data bar / formula rule）+ icon set
+- [references/xlsx_financial_model.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_financial_model.md) - 财务模型场景（3-statement / DCF / LBO）+ CFO 4-color + Three-zone
+- [references/xlsx_data_dashboard.md](file:///<project_root>/.agents/skills/office_docs/references/xlsx_data_dashboard.md) - 数据仪表盘场景（KPI 卡 + chart + sparkline + CF）
 
 ## 与现有 skill 的集成
 

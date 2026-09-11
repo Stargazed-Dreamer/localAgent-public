@@ -9,7 +9,7 @@ state.json schema:
     "/path/to/file.jpg": {"category": "图片", "timestamp": "2026-07-22T22:50:00"}
   },
   "column_widths": {"col_0": 40, "col_1": 350, ...},
-  "last_source_dir": "E:/<data_drive>:\<system_data_root>/<data_drive>:/Downloads",
+  "last_source_dir": "<data_drive>:\<system_data_root>/<data_drive>:/Downloads",
   "loaded_categories_config": "tools/file_classifier/categories.json"
 }
 """
@@ -17,7 +17,6 @@ state.json schema:
 import json
 import os
 from datetime import datetime
-from typing import Optional
 
 
 class StateManager:
@@ -40,7 +39,7 @@ class StateManager:
         """从磁盘加载状态，文件不存在时返回默认 schema"""
         if os.path.exists(self.state_path):
             try:
-                with open(self.state_path, "r", encoding="utf-8") as f:
+                with open(self.state_path, encoding="utf-8") as f:
                     return json.load(f)
             except (json.JSONDecodeError, OSError):
                 # 损坏的 state.json 回退到默认，避免阻塞启动
@@ -118,7 +117,7 @@ class StateManager:
         """
         return path in self._state["classified_files"]
 
-    def get_classification(self, path: str) -> Optional[dict]:
+    def get_classification(self, path: str) -> dict | None:
         """获取文件/文件夹的分类元数据
 
         Args:

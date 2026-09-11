@@ -20,3 +20,8 @@ requires_external_credentials = false
 # 2026-08-10 T-v4: 升级为 apache-2.0（含 hallmark=MIT, impeccable=Apache-2.0, ui-ux-pro-max=MIT, leader=Apache-2.0 第三方 skill，upstream/LICENSE 保留）
 # 审查记录：temp/sdd/release-engine/license-review-v4/dev_toolkit.md
 license_class = "apache-2.0"
+
+[tests]
+# 自动化测试声明：当前无自动化测试
+enabled = false
+paths = []

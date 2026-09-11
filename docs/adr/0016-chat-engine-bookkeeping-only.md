@@ -80,6 +80,6 @@ class RunOutcome:
 
 - SDD 来源：`temp/sdd/chat-engine-safety-fixes/design-decisions.md` D2（不算 cost_usd 只记 token）+ D3（只记账不控制，废弃 cost 字段全删）+ D8（不加 max_total_tokens）+ D5（wall_clock 默认 0）+ D21（wall_clock SSE 优雅停止）
 - 关键代码：
-  - [client/core/agent/types.py](file:///f:/<project_root>/client/core/agent/types.py)（`RunnerConfig.wall_clock_budget_secs: int = 0` L444；`RunOutcome.total_tokens: int = 0` L484；`LLMResponse.usage` dict L181；max_budget_usd / total_cost_usd / cost_usd 已删，注释 L438/L483）
-  - [client/core/agent/runner.py](file:///f:/<project_root>/client/core/agent/runner.py)（`total_tokens` 累计 L488 / L752-L753；"删 cost_usd 累积"注释 L1172 / L1243）
+  - [client/core/agent/types.py](file:///<project_root>/client/core/agent/types.py)（`RunnerConfig.wall_clock_budget_secs: int = 0` L444；`RunOutcome.total_tokens: int = 0` L484；`LLMResponse.usage` dict L181；max_budget_usd / total_cost_usd / cost_usd 已删，注释 L438/L483）
+  - [client/core/agent/runner.py](file:///<project_root>/client/core/agent/runner.py)（`total_tokens` 累计 L488 / L752-L753；"删 cost_usd 累积"注释 L1172 / L1243）
 - 相关 ADR：无直接关联 ADR，但与 chat-engine-safety-fixes spec 的 D5（wall_clock 默认 0）/ D10（DoomLoop 停止）/ D20（usage 表）/ D21（wall_clock 优雅停止）共同构成 chat 引擎预算与安全模型

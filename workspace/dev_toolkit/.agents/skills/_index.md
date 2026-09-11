@@ -3,7 +3,7 @@
 > 本文件是所有 skill 的唯一索引。agent 每次会话都会看到本文件的清单（占 context 的 1%）。
 > 新增/修改/删除 skill 后必须同步本文件。
 
-## Skill 清单（23 个）
+## Skill 清单（34 个）
 
 ### SDD 链（规约驱动开发）
 
@@ -82,8 +82,8 @@ grill-me → spec → plan → tasks → (analyze) → implement → verify
 
 ## 使用统计
 
-- 总计 23 个 skill
-- SDD 链 6 个 / 日常编码安全网 1 个 / 验证调试 2 个 / 元 skill 3 个 / 工程化开发 7 个 / UI/UX 设计 1 个 / 前端设计工艺 2 个
+- 总计 34 个 skill
+- SDD 链 6 个 / 日常编码安全网 1 个 / 验证调试 2 个 / 元 skill 3 个 / 工程化开发 7 个 / UI/UX 设计 1 个 / 前端设计工艺 2 个 / 思维工具集 11 个
 - 按 Anthropic 9 类分类：代码脚手架 10 / 产品验证 1 / 代码质量审查 5 / Runbook 排障 1 / 业务自动化 2 / 需求澄清 3 / 库和 API 参考 1
 
 ## 维护规则
@@ -93,8 +93,33 @@ grill-me → spec → plan → tasks → (analyze) → implement → verify
 3. 删除 skill 后**必须**从此移除条目
 4. description 保持 ≤250 字符
 
+### 思维工具集（daily/，11 个通用思维 Prompt）
+
+来源：文章[《都 Agent 时代了，我还是想分享给你这 12 个我最常用的 Prompt》](https://mp.weixin.qq.com/s/NAdhdFrUq9-BKelqzqpwBQ)（作者：数字生命卡兹克）。12 个 Prompt 中 2 个已整合到现有 skill（横纵分析法→`deep_research`、人生设计术→`life_design`），其余 10 个+用户自定义组合版共 11 个独立 skill。
+
+**组合哲学**：这些 skill 是积木不是流水线，发散优先、举例非穷尽、agent 自行判断组合方式、拿不准列给用户选。详见 [daily/README.md](daily/README.md) 组合哲学段。
+
+| name | description（≤250字符） | 场景 |
+|------|-------------------------|------|
+| **daily/socratic_questioning** | 当用户困惑模糊、嘴上问的和心里想的不一致时使用。最多 6 个逐个追问找到真正值得回答的问题。每次只问一个，信息足够时立即停止。关键词：苏格拉底提问、澄清困惑、问清问题。 | 问清问题 |
+| **daily/dual_layer_explanation** | 当用户想学陌生概念时使用。分别从小白和专家两个角度解释一遍，避免"好像懂了"的错觉。关键词：双层解释、学一个概念、听不懂的概念。 | 学习 |
+| **daily/reverse_decomposition** | 当用户看到优秀作品想学习它好在哪时使用。先说它解决了什么问题，再反向拆解为什么有效，最后给可复用规律+操作清单+小练习。关键词：反向拆解、拆解优秀作品、拆解范例。 | 学习 |
+| **daily/fact_checking** | 当用户要对任何说法做核查时使用。拆三层（事实/结论/价值判断）+联网核查 5 档可信度+推理链 5 项漏洞+补强版本。关键词：事实核查、核查说法、笛卡尔怀疑。 | 学习 |
+| **daily/expert_consultation** | 当问题需要多视角输入时使用。选 3 种真正互补的专业视角，各自重新定义问题+推荐路径，然后互相质疑找出真正分歧，最后综合输出推荐方案。关键词：专家会诊、多专家视角、三视角分析。 | 解决问题 |
+| **daily/first_principles** | 当方案上各种打补丁、需要回到本质时使用。把问题拆回最底层（基本事实/习惯性假设/真正目标/现实约束），暂时放下现成方案，只从基本事实重新推导可行路径。关键词：第一性原理、拆到本质、回到本质。 | 解决问题 |
+| **daily/cross_domain_borrowing** | 当本行业第一性原理后仍无好解时使用。把问题剥掉行业术语抽象成底层结构，从历史案例和至少 3 个距离较远的领域寻找相似解法，翻译成适合当前处境的方案。关键词：跨领域借解、跨领域类比、跨界借解。 | 解决问题 |
+| **daily/steel_man_decision** | 当用户在两个选项间犹豫不决时使用。分别构造双方最强论证（不是稻草人），找出真正分歧，只问一个最关键的问题，再给判断。与 grill-me 区别：grill-me 决策前拷问计划，钢人决策中二选一。关键词：钢人论证、双向钢人、犹豫不决、两个选项选哪个。 | 决策 |
+| **daily/minimal_experiment** | 当纸上谈兵无法更清晰时使用。找出最需要验证的 3 个假设，选最可能改变结论的，设计一个低成本、可逆、7 天内能完成的最小实验。关键词：最小实验、用实验替代空想、低成本验证。 | 决策 |
+| **daily/talent_mining** | 当用户怀疑自己没天赋或想找人生方向时使用。agent 扮演资深生涯咨询师，通过多轮深度对话（最多 10 个主问题），在怪癖/缺点/嫉妒/无意识胜任区/能量模式里找到被压抑的天赋，最终产出万字《个人天赋使用说明书》。关键词：挖掘天赋、隐藏天赋、找天赋。 | 认识自己 |
+| **daily/decision_protocol** | 当用户面临重大人生抉择（职业转型/关系抉择/价值观冲突）时使用。预烘焙组合套餐：启动前对齐（目标/成功标准/资源/限制/协作对象）+最强论证（双向钢人）+执行纪律。简单二选一不走本 skill 走 steel_man_decision。关键词：重大决策、人生抉择、决策协议。 | 决策 |
+
+**与 dev/grill-me 的关系**：grill-me 是决策前拷问计划（dev/），steel_man_decision 是决策中二选一（daily/），decision_protocol 是重大决策走完整协议（daily/）。三者可串联：grill-me 澄清→steel-man 决策，或直接走 decision_protocol。
+
+---
+
 ## 变更记录
 
 - 2026-07-20：从 13 个 skill 扩展到 19 个。新增 5 个 dev/* 工程化 skill（prototype/tdd/codebase-design/domain-modeling/resolving-merge-conflicts）。修复幻觉：原 `systematic-debugging` skill 名是错误的（既不存在于上游 mattpocock 也不存在于本项目），实际应为 `diagnosing-bugs`（6 阶段 feedback loop 流程，比原 4 阶段更系统）。anti-hallucination 升级为 folder 结构 + references/diagnosing-bugs.md 衔接路径。
 - 2026-07-21：从 19 个 skill 扩展到 21 个。新增 2 个 vendor 融合的前端设计工艺 skill（dev/impeccable + dev/hallmark），来源 pbakaus/impeccable (Apache-2.0) + nutlope/hallmark (MIT)，按 "Vendor 克隆 + 适配 wrapper" 模式融合到 dev/ 桶。每个 skill 含完整 upstream/ 子目录（原版档案）+ wrapper SKILL.md（路径适配）。详见 [ADR-0003](../../../../docs/adr/0003-vendor-skill-absorption-criteria.md)。
 - 2026-07-27：从 21 个 skill 扩展到 23 个。新增 2 个目标工程 skill（dev/leader + dev/goal_engineering），来源 KKKKhazix/khazix-skills/leader (Apache-2.0)。dev/leader 是方法论源（七问 + 五种死法 + Harness 心法），dev/goal_engineering 是开发任务统一编排入口（三阶段闸门流程）。spec skill 模板融合 Harness 六节（完成态/证据/反作弊/边界/取舍/我替领导拍的板）。SDD 流程图更新：goal_engineering 作为入口点。
+- 2026-08-21：从 23 个 skill 扩展到 34 个。新增 daily/ 桶（11 个思维工具 skill），来源文章《都 Agent 时代了，我还是想分享给你这 12 个我最常用的 Prompt》（数字生命卡兹克）。10 个文章原版 Prompt + 1 个用户自定义组合版（decision_protocol = 对齐+钢人+执行纪律）。每个 skill 含 SKILL.md + prompt.md（原文逐字保存）。组合哲学：发散优先、举例非穷尽、agent 自行判断组合、拿不准列给用户选。详见 daily/README.md。

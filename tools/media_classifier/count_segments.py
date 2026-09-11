@@ -1,9 +1,7 @@
 """统计所有文件的文段数量（按空行/空段落分割）"""
 import os
-import sys
-import json
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 ROOT = Path(r"E:\<data_drive>:\<articles_root>")
 import docx
@@ -125,8 +123,8 @@ for path, n, t in all_segments_info[:10]:
 
 # 估算 LLM 调用
 total = stats['txt']['segments'] + stats['docx']['segments']
-print(f"\n=== LLM 调用估算 ===")
+print("\n=== LLM 调用估算 ===")
 print(f"文段总数: {total}")
-print(f"并发数: 60 (池上限), 实际可用 key 20 个 × 3 = 60")
+print("并发数: 60 (池上限), 实际可用 key 20 个 × 3 = 60")
 print(f"假设每次调用 3 秒: {total / 60 * 3 / 60:.1f} 分钟")
 print(f"假设每次调用 5 秒: {total / 60 * 5 / 60:.1f} 分钟")

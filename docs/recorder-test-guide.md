@@ -67,42 +67,42 @@ base_dir = "workspace/recorder/recordings"
 
 ```bash
 # 运行所有 recorder 测试（25 个文件）
-uv run python -m pytest tests/test_recorder_*.py -v --tb=short
+uv run python -m pytest workspace/recorder/tests/test_recorder_*.py -v --tb=short
 
 # 运行并输出覆盖率
-uv run python -m pytest tests/test_recorder_*.py -v --tb=short --cov=lib/recorder --cov=workspace/recorder
+uv run python -m pytest workspace/recorder/tests/test_recorder_*.py -v --tb=short --cov=lib/recorder --cov=workspace/recorder
 ```
 
 ### 2.2 按层运行
 
 ```bash
 # L0 采集层
-uv run python -m pytest tests/test_recorder_controller.py tests/test_recorder_e2e.py tests/test_recorder_smoke.py tests/test_recorder_gui.py tests/test_recorder_monitor.py tests/test_recorder_audio.py tests/test_recorder_keyboard.py tests/test_recorder_mouse.py tests/test_recorder_screen.py tests/test_recorder_window.py tests/test_recorder_audio_trimmer.py -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_controller.py workspace/recorder/tests/test_recorder_e2e.py workspace/recorder/tests/test_recorder_smoke.py workspace/recorder/tests/test_recorder_gui.py workspace/recorder/tests/test_recorder_monitor.py workspace/recorder/tests/test_recorder_audio.py workspace/recorder/tests/test_recorder_keyboard.py workspace/recorder/tests/test_recorder_mouse.py workspace/recorder/tests/test_recorder_screen.py workspace/recorder/tests/test_recorder_window.py workspace/recorder/tests/test_recorder_audio_trimmer.py -v
 
 # L1 处理层
-uv run python -m pytest tests/test_recorder_processor_*.py -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_processor_*.py -v
 
 # L2 时间轴层
-uv run python -m pytest tests/test_recorder_timeline_*.py -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_timeline_*.py -v
 
 # L3 编辑层
-uv run python -m pytest tests/test_recorder_editor_*.py -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_editor_*.py -v
 
 # L4 消费层
-uv run python -m pytest tests/test_recorder_consumer*.py -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_consumer*.py -v
 ```
 
 ### 2.3 单文件运行
 
 ```bash
 # 单个测试文件
-uv run python -m pytest tests/test_recorder_controller.py -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_controller.py -v
 
 # 单个测试类
-uv run python -m pytest tests/test_recorder_controller.py::TestRecordingStateMachine -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_controller.py::TestRecordingStateMachine -v
 
 # 单个测试函数
-uv run python -m pytest tests/test_recorder_e2e.py::TestEndToEndFullFlow::test_start_pause_resume_pause_save_produces_full_package -v
+uv run python -m pytest workspace/recorder/tests/test_recorder_e2e.py::TestEndToEndFullFlow::test_start_pause_resume_pause_save_produces_full_package -v
 ```
 
 ### 2.4 GUI 测试注意事项
@@ -127,7 +127,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.1 控制器状态机测试
 
-**测试文件**：`tests/test_recorder_controller.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_controller.py`
 
 #### 3.1.1 状态机合法转换
 
@@ -182,7 +182,7 @@ dir workspace\recorder\recordings\rec_*
 
 #### 3.2.1 音频传感器
 
-**测试文件**：`tests/test_recorder_audio.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_audio.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -193,7 +193,7 @@ dir workspace\recorder\recordings\rec_*
 
 #### 3.2.2 键盘传感器
 
-**测试文件**：`tests/test_recorder_keyboard.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_keyboard.py`
 
 | 验证点 | 预期结果 |
 |--------|----------|
@@ -204,7 +204,7 @@ dir workspace\recorder\recordings\rec_*
 
 #### 3.2.3 鼠标传感器
 
-**测试文件**：`tests/test_recorder_mouse.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_mouse.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -218,7 +218,7 @@ dir workspace\recorder\recordings\rec_*
 
 #### 3.2.4 截图传感器
 
-**测试文件**：`tests/test_recorder_screen.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_screen.py`
 
 | 验证点 | 预期结果 |
 |--------|----------|
@@ -231,7 +231,7 @@ dir workspace\recorder\recordings\rec_*
 
 #### 3.2.5 窗口焦点传感器
 
-**测试文件**：`tests/test_recorder_window.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_window.py`
 
 | 验证点 | 预期结果 |
 |--------|----------|
@@ -250,7 +250,7 @@ dir workspace\recorder\recordings\rec_*
 
 #### 3.2.7 音频裁剪器
 
-**测试文件**：`tests/test_recorder_audio_trimmer.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_audio_trimmer.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -263,7 +263,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.3 录制包结构测试
 
-**测试文件**：`tests/test_recorder_controller.py::TestRecordingPackage`
+**测试文件**：`workspace/recorder/tests/test_recorder_controller.py::TestRecordingPackage`
 
 | 验证点 | 预期结果 |
 |--------|----------|
@@ -276,7 +276,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.4 GUI 小模式测试（FloatingBar）
 
-**测试文件**：`tests/test_recorder_gui.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_gui.py`
 
 #### 3.4.1 功能测试
 
@@ -310,7 +310,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.5 GUI 大模式测试（MonitorWindow）
 
-**测试文件**：`tests/test_recorder_monitor.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_monitor.py`
 
 #### 3.5.1 功能测试
 
@@ -349,7 +349,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.6 配置对话框测试
 
-**测试文件**：`tests/test_recorder_gui.py::TestConfigDialog`
+**测试文件**：`workspace/recorder/tests/test_recorder_gui.py::TestConfigDialog`
 
 | 验收项 | 标准 |
 |--------|------|
@@ -363,7 +363,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.7 CLI 参数测试
 
-**测试文件**：`tests/test_recorder_smoke.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_smoke.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -388,7 +388,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.8 端到端录制流程测试
 
-**测试文件**：`tests/test_recorder_e2e.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_e2e.py`
 
 | 测试类 | 测试函数 | 验证点 |
 |--------|----------|--------|
@@ -404,7 +404,7 @@ dir workspace\recorder\recordings\rec_*
 
 ### 3.9 冒烟测试
 
-**测试文件**：`tests/test_recorder_smoke.py::TestSmokeRecording`
+**测试文件**：`workspace/recorder/tests/test_recorder_smoke.py::TestSmokeRecording`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -435,7 +435,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 4.1 P1 STT 测试
 
-**测试文件**：`tests/test_recorder_processor_p1.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_processor_p1.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -452,7 +452,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 4.2 P4 事件聚合测试
 
-**测试文件**：`tests/test_recorder_processor_p4.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_processor_p4.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -464,7 +464,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 4.3 P5 关键帧抽取测试
 
-**测试文件**：`tests/test_recorder_processor_p5.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_processor_p5.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -475,7 +475,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 4.4 P2/P3 接口测试
 
-**测试文件**：`tests/test_recorder_processor_e2e.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_processor_e2e.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -492,7 +492,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 4.5 完整流水线测试
 
-**测试文件**：`tests/test_recorder_processor_e2e.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_processor_e2e.py`
 
 | 测试类 | 测试函数 | 验证点 |
 |--------|----------|--------|
@@ -532,7 +532,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 5.1 时间轴构建测试
 
-**测试文件**：`tests/test_recorder_timeline_builder.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_timeline_builder.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -563,7 +563,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 5.3 annotations 初始化测试
 
-**测试文件**：`tests/test_recorder_timeline_annotator.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_timeline_annotator.py`
 
 | 测试类 | 验证点 | 预期结果 |
 |--------|--------|----------|
@@ -574,7 +574,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 5.4 端到端测试
 
-**测试文件**：`tests/test_recorder_timeline_e2e.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_timeline_e2e.py`
 
 | 测试类 | 测试函数 | 验证点 |
 |--------|----------|--------|
@@ -620,7 +620,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 6.1 13 个 Action 测试
 
-**测试文件**：`tests/test_recorder_editor_apply.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_editor_apply.py`
 
 | 测试函数 | Action | 验证点 |
 |----------|--------|--------|
@@ -646,7 +646,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 6.2 AnnotationStore 测试
 
-**测试文件**：`tests/test_recorder_editor_store.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_editor_store.py`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -666,7 +666,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 6.3 merge 测试
 
-**测试文件**：`tests/test_recorder_editor_merge.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_editor_merge.py`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -685,7 +685,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 6.4 音频调参测试
 
-**测试文件**：`tests/test_recorder_editor_audio.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_editor_audio.py`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -703,7 +703,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 6.5 编辑器 GUI 测试
 
-**测试文件**：`tests/test_recorder_editor_gui.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_editor_gui.py`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -736,7 +736,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 6.6 端到端流程测试
 
-**测试文件**：`tests/test_recorder_editor_e2e.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_editor_e2e.py`
 
 | 测试类 | 测试函数 | 验证点 |
 |--------|----------|--------|
@@ -770,7 +770,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 7.2 读取录制包测试
 
-**测试文件**：`tests/test_recorder_consumer_e2e.py::TestConsumerE2EFlow`
+**测试文件**：`workspace/recorder/tests/test_recorder_consumer_e2e.py::TestConsumerE2EFlow`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -783,7 +783,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 7.3 VL 候选选择测试
 
-**测试文件**：`tests/test_recorder_consumer.py` + `test_recorder_consumer_e2e.py`
+**测试文件**：`workspace/recorder/tests/test_recorder_consumer.py` + `test_recorder_consumer_e2e.py`
 
 | 验证点 | 预期结果 |
 |--------|----------|
@@ -812,7 +812,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 7.5 消费日志测试
 
-**测试文件**：`tests/test_recorder_consumer_e2e.py::TestConsumptionLogFormat`
+**测试文件**：`workspace/recorder/tests/test_recorder_consumer_e2e.py::TestConsumptionLogFormat`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -823,7 +823,7 @@ print(f'时长: {m[\"effective_duration\"]:.1f}s')
 
 ### 7.6 多轮 VL 协议测试
 
-**测试文件**：`tests/test_recorder_consumer_e2e.py::TestMultiRoundVLProtocol`
+**测试文件**：`workspace/recorder/tests/test_recorder_consumer_e2e.py::TestMultiRoundVLProtocol`
 
 | 测试函数 | 验证点 | 预期结果 |
 |----------|--------|----------|
@@ -1117,52 +1117,52 @@ for t in tools:
 
 | 文件 | 测试类数 | 覆盖范围 |
 |------|----------|----------|
-| `tests/test_recorder_controller.py` | 11 | 状态机/包/事件/段/meta/hook |
-| `tests/test_recorder_e2e.py` | 3 | 完整流程/时间轴延续/非法转换 |
-| `tests/test_recorder_smoke.py` | 5 | 冒烟/配置加载/CLI/参数合并 |
-| `tests/test_recorder_gui.py` | 7 | Config/Dialog/Hotkey/FloatingBar/RecorderApp |
-| `tests/test_recorder_monitor.py` | 17 | 大模式全部面板/信号/轮询/三按钮 |
-| `tests/test_recorder_audio.py` | 2 | 音频传感器/集成 |
-| `tests/test_recorder_keyboard.py` | 多 | 键盘传感器 |
-| `tests/test_recorder_mouse.py` | 7 | 鼠标全场景 |
-| `tests/test_recorder_screen.py` | 多 | 截图传感器 |
-| `tests/test_recorder_window.py` | 多 | 窗口焦点传感器 |
-| `tests/test_recorder_audio_trimmer.py` | 6 | RMS/裁剪/映射/保护/可读/边界 |
+| `workspace/recorder/tests/test_recorder_controller.py` | 11 | 状态机/包/事件/段/meta/hook |
+| `workspace/recorder/tests/test_recorder_e2e.py` | 3 | 完整流程/时间轴延续/非法转换 |
+| `workspace/recorder/tests/test_recorder_smoke.py` | 5 | 冒烟/配置加载/CLI/参数合并 |
+| `workspace/recorder/tests/test_recorder_gui.py` | 7 | Config/Dialog/Hotkey/FloatingBar/RecorderApp |
+| `workspace/recorder/tests/test_recorder_monitor.py` | 17 | 大模式全部面板/信号/轮询/三按钮 |
+| `workspace/recorder/tests/test_recorder_audio.py` | 2 | 音频传感器/集成 |
+| `workspace/recorder/tests/test_recorder_keyboard.py` | 多 | 键盘传感器 |
+| `workspace/recorder/tests/test_recorder_mouse.py` | 7 | 鼠标全场景 |
+| `workspace/recorder/tests/test_recorder_screen.py` | 多 | 截图传感器 |
+| `workspace/recorder/tests/test_recorder_window.py` | 多 | 窗口焦点传感器 |
+| `workspace/recorder/tests/test_recorder_audio_trimmer.py` | 6 | RMS/裁剪/映射/保护/可读/边界 |
 
 ### L1 处理层（4 个文件）
 
 | 文件 | 测试类数 | 覆盖范围 |
 |------|----------|----------|
-| `tests/test_recorder_processor_e2e.py` | 6 | P4P5/P1/时间戳/P2接口/P3接口/全流水线 |
-| `tests/test_recorder_processor_p1.py` | 10 | STT 全流程 |
-| `tests/test_recorder_processor_p4.py` | 5 | 事件聚合 |
-| `tests/test_recorder_processor_p5.py` | 4 | 关键帧抽取 |
+| `workspace/recorder/tests/test_recorder_processor_e2e.py` | 6 | P4P5/P1/时间戳/P2接口/P3接口/全流水线 |
+| `workspace/recorder/tests/test_recorder_processor_p1.py` | 10 | STT 全流程 |
+| `workspace/recorder/tests/test_recorder_processor_p4.py` | 5 | 事件聚合 |
+| `workspace/recorder/tests/test_recorder_processor_p5.py` | 4 | 关键帧抽取 |
 
 ### L2 时间轴层（3 个文件）
 
 | 文件 | 测试类数 | 覆盖范围 |
 |------|----------|----------|
-| `tests/test_recorder_timeline_builder.py` | 12 | 构建/合并/排序/格式/降级/章节 |
-| `tests/test_recorder_timeline_annotator.py` | 3 | 初始化/预览/CLI |
-| `tests/test_recorder_timeline_e2e.py` | 4 | V1/V2/章节切分/跨包对比 |
+| `workspace/recorder/tests/test_recorder_timeline_builder.py` | 12 | 构建/合并/排序/格式/降级/章节 |
+| `workspace/recorder/tests/test_recorder_timeline_annotator.py` | 3 | 初始化/预览/CLI |
+| `workspace/recorder/tests/test_recorder_timeline_e2e.py` | 4 | V1/V2/章节切分/跨包对比 |
 
 ### L3 编辑层（6 个文件）
 
 | 文件 | 测试类数 | 覆盖范围 |
 |------|----------|----------|
-| `tests/test_recorder_editor_apply.py` | 20 | 13 个 Action + 边界 |
-| `tests/test_recorder_editor_store.py` | 13 | undo/redo/finalize/保存加载/统计 |
-| `tests/test_recorder_editor_merge.py` | 16 | merge 全场景 + 真实包 |
-| `tests/test_recorder_editor_audio.py` | 11 | 切片预览/波形/AudioPanel/STTRunner |
-| `tests/test_recorder_editor_e2e.py` | 2 | 完整流程/决策覆盖 |
-| `tests/test_recorder_editor_gui.py` | 26 | 章节列表/时间轴/详情/状态叠加/编辑器窗口 |
+| `workspace/recorder/tests/test_recorder_editor_apply.py` | 20 | 13 个 Action + 边界 |
+| `workspace/recorder/tests/test_recorder_editor_store.py` | 13 | undo/redo/finalize/保存加载/统计 |
+| `workspace/recorder/tests/test_recorder_editor_merge.py` | 16 | merge 全场景 + 真实包 |
+| `workspace/recorder/tests/test_recorder_editor_audio.py` | 11 | 切片预览/波形/AudioPanel/STTRunner |
+| `workspace/recorder/tests/test_recorder_editor_e2e.py` | 2 | 完整流程/决策覆盖 |
+| `workspace/recorder/tests/test_recorder_editor_gui.py` | 26 | 章节列表/时间轴/详情/状态叠加/编辑器窗口 |
 
 ### L4 消费层（2 个文件）
 
 | 文件 | 测试类数 | 覆盖范围 |
 |------|----------|----------|
-| `tests/test_recorder_consumer.py` | 多 | VL候选/问题构建/日志/各focus模式 |
-| `tests/test_recorder_consumer_e2e.py` | 3 | 端到端/多轮VL/日志格式 |
+| `workspace/recorder/tests/test_recorder_consumer.py` | 多 | VL候选/问题构建/日志/各focus模式 |
+| `workspace/recorder/tests/test_recorder_consumer_e2e.py` | 3 | 端到端/多轮VL/日志格式 |
 
 ---
 

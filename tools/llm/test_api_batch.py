@@ -17,14 +17,14 @@
   现改为从环境变量或 data/llm/keys/extra_llm_keys.json 读取，DEFAULT_ENDPOINTS
   只保留 base_url 和 models 模板，api_key 字段留空，运行时按 name 匹配注入。
 """
+import argparse
 import json
 import os
-import time
-import argparse
 import threading
-from pathlib import Path
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import requests
 
@@ -190,7 +190,7 @@ def main():
     else:
         endpoints = DEFAULT_ENDPOINTS
 
-    print(f"=== 批量 API 可用性测试 ===")
+    print("=== 批量 API 可用性测试 ===")
     print(f"端点数: {len(endpoints)}")
     print(f"时间: {now_iso()}\n")
 
@@ -264,7 +264,7 @@ def main():
     print(f"=== 最新结果副本: {latest_file} ===")
 
     # 汇总
-    print(f"\n=== 汇总 ===")
+    print("\n=== 汇总 ===")
     for ep in report["endpoints"]:
         name = ep["name"]
         lm_ok = ep["list_models"]["ok"]

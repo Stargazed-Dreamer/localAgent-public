@@ -87,12 +87,36 @@ POST /screen/ocr {mode:"window", hwnd:123, engine:"ocr"}
 
 | 路径 | 方法 | 说明 |
 |------|------|------|
-| `/ocr/status` | GET | 查询模型加载状态 |
-| `/ocr/models/keep` | POST | 设置模型常驻内存（`keep: true/false`） |
-| `/ocr/models/unload` | POST | 卸载模型（`engine: "vl"/"ocr"/null`，null 卸载全部） |
+| `/ocr/status` | GET | 查询模型加载状态（含 `mlm_state` ModelLifecycleManager 状态摘要） |
+| `/ocr/models/keep` | POST | 设置模型常驻内存（`keep: true/false`）—— 写回 ModelLifecycleManager per-model `restore_preload` 配置 |
+| `/ocr/models/unload` | POST | 卸载模型（`engine: "vl"/"ocr"/null`，null 卸载全部）—— 委托 `manager.manual_unload("ocr")`（增强卸载：排空 in_flight + del + gc + empty_cache + 延迟补释放） |
 | `/ocr/models/preload` | POST | 预加载模型（`engine: "vl"/"ocr"`） |
 
 > 模型管理接口同样有 `/json` 后缀版本，MCP 兼容。
+
+### Model Lifecycle Manager 统一控制面（推荐）
+
+OCR 作为 ModelLifecycleManager 注册的 4 个驱动之一（其余：memory_embedding / guide_embedding / mindforge_searcher），可通过统一 `/models/*` 端点手动控制：
+
+| 路径 | 方法 | 说明 | 审批级别 |
+|------|------|------|----------|
+| `GET /models` | GET | 列出全部注册模型状态（model_id/resource/loaded/footprint_mb/priority/evictable/in_flight/loaded_at/last_load_ms） | read_only（免审批） |
+| `POST /models/ocr/load` | POST | 手动加载 OCR 模型（豁免冷却与降级，但仍受压力态约束） | approval_required |
+| `POST /models/ocr/unload` | POST | 手动卸载 OCR 模型（与 `/ocr/models/unload` 等效） | approval_required |
+| `POST /models/pause` | POST | 暂停 GPU/CPU 压力监控（手动超驰通道，PAUSED 期间准入放行且暂停逐出） | approval_required |
+| `POST /models/resume` | POST | 恢复压力监控 | approval_required |
+| `GET /models/pressure` | GET | 各资源压力态 + used/total + 最近迁移事件 | read_only（免审批） |
+
+**准入门控语义**：OCR 加载前内部调 `manager.admit("ocr")`，按 GPU 压力态放行/拒绝——
+- `NORMAL`/`ARMED`/`PAUSED`：放行
+- `REFUSING`：拒绝（抛 `ModelUnavailableError` → 503，调用方降级处理，不重试）
+- `PROBE_DEGRADED`：拒绝（探测失败保持保护姿态）
+- OCR 模型重载冷却期：拒绝（手动 load 端点豁免冷却）
+- 连续 ≥3 次加载失败标记 `reload_degraded`：拒绝（提示重启后端）
+
+**自动逐出语义**：GPU 进入 `REFUSING` 期间每采样周期持续评估候选（已加载 + `evictable=True` + 过 `min_loaded_seconds=60s` 保护），按 `(priority, -footprint_mb, reload_cost_sec)` 选 victim 串行卸载。OCR 是当前唯一 GPU 模型，所以 GPU 逐出实际就是逐 OCR；算法通用，为未来本地模型（本地 VL/图标检测）准备。
+
+**keep_models 语义**：原 OCR `/ocr/models/keep` 的死旋钮已迁移到 ModelLifecycleManager per-model `restore_preload` 配置（语义所有权迁移，单例所有权不变）。写入口 `manager.set_keep_models("ocr", True/False)`；读出口 `manager.keep_models("ocr")` 供 `/health.ocr`、`/ocr/status`、GUI 回读生效值。配置位置：`[model_manager.models.ocr]` 段。
 
 ## 关键规则
 

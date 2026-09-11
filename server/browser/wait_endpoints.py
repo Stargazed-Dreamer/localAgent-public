@@ -17,6 +17,7 @@
 
 import asyncio
 import json
+from typing import Literal
 
 from lib.schema import BaseSchema
 
@@ -44,6 +45,7 @@ class BrowserWaitRequest(BaseSchema):
     """
     session_id: str | None = None
     url_pattern: str | None = None
+    tab_id: str | None = None  # 无会话模式：CDP target id 精确消歧
     wait_type: str  # selector/text/url/load_state/popup/filechooser/dialog/download
     # 按 wait_type 使用
     selector: str | None = None
@@ -52,7 +54,7 @@ class BrowserWaitRequest(BaseSchema):
     text_contains: bool = True
     url_match: str | None = None  # url 用：子串或 regex
     url_regex: bool = False
-    load_state: str = "networkidle"  # load_state 用：load/domcontentloaded/networkidle
+    load_state: Literal["load", "domcontentloaded", "networkidle"] = "networkidle"  # load_state 用：load/domcontentloaded/networkidle
     timeout: float = 30.0
     # P2-1: filechooser/dialog 用
     file_paths: list[str] | None = None  # filechooser 触发后自动 set_files（可选）
@@ -163,11 +165,11 @@ async def browser_wait_for(req: BrowserWaitRequest):
         try:
             timeout_ms = int(req.timeout * 1000)
             matched = False
-            data = None
+            data: dict[str, object] | None = None
             wt = req.wait_type
             if wt == "selector":
                 try:
-                    await page.wait_for_selector(req.selector or "", state=req.state, timeout=timeout_ms)
+                    await page.wait_for_selector(req.selector or "", state=req.state, timeout=timeout_ms)  # type: ignore[arg-type]
                     matched = True
                 except Exception:
                     matched = False
@@ -204,13 +206,14 @@ async def browser_wait_for(req: BrowserWaitRequest):
                 # P0-1 修复：优先消费 session 持久监听器队列中的 popup 事件
                 # 这样 agent 顺序调用 click → wait_for(popup) 也能命中
                 if sess is not None:
+                    # 2026-09-03 竞态闭合：先 clear 再查队列再等待（与 dialog 分支同模式）
+                    sess.popup_event.clear()
                     pending = sess.pop_pending_popup()
                     if pending:
                         data = {"url": pending.get("url"), "title": pending.get("title")}
                         matched = True
                     else:
                         # 等待新 popup 事件（持久监听器 set Event）
-                        sess.popup_event.clear()
                         try:
                             await asyncio.wait_for(sess.popup_event.wait(), timeout=req.timeout)
                             pending = sess.pop_pending_popup()
@@ -233,6 +236,8 @@ async def browser_wait_for(req: BrowserWaitRequest):
                 # P0-1 修复：优先消费 session 持久监听器队列中的 filechooser 事件
                 # 同时尝试在 wait_for 内通过 expect_file_chooser 等待新事件
                 if sess is not None:
+                    # 2026-09-03 竞态闭合：先 clear 再查队列再等待（与 dialog 分支同模式）
+                    sess.filechooser_event.clear()
                     pending = sess.pop_pending_filechooser()
                     if pending:
                         # 已有未消费的 filechooser，尝试 set_files（last_filechooser_obj 可能仍有效）
@@ -247,7 +252,7 @@ async def browser_wait_for(req: BrowserWaitRequest):
                         matched = True
                     else:
                         # 双保险：同时挂 expect_file_chooser 和等待 Event
-                        sess.filechooser_event.clear()
+                        # （event 已在上方提前 clear，此处直接等）
                         try:
                             async with page.expect_file_chooser(timeout=timeout_ms) as fc_info:
                                 # 等待 Event 触发（expect_file_chooser 也会触发 page.on('filechooser')）
@@ -281,13 +286,17 @@ async def browser_wait_for(req: BrowserWaitRequest):
                     except Exception:
                         matched = False
             elif wt == "dialog":
-                # P0-1 修复 + 2026-08-06 改造：优先消费 session 持久监听器队列中的 dialog 事件。
-                # 2026-08-06 改造：_on_dialog 不再立即 dismiss，dialog 触发后仍存在（阻塞 page）。
-                # wait_for 只返回 dialog 信息，不处理 dialog（dialog_action 仅声明意图）。
-                # agent 需调 /browser/handle_dialog 主动 accept/dismiss，否则 page 阻塞直到
-                # 5 分钟超时兜底自动 dismiss。
+                # 契约：wait_for 只读（peek）消费持久监听器队列中的 dialog 事件，
+                # 只返回 dialog 信息、不处理 dialog——必须由 agent 调 /browser/handle_dialog
+                # 主动 accept/dismiss，否则 page 阻塞直到 5 分钟超时兜底自动 dismiss。
+                # peek 而非 pop 是硬约束：pop 会把 handle_dialog 要消费的队列事件提前弹掉
+                # （必然 DIALOG_NOT_FOUND）。
                 if sess is not None:
-                    pending = sess.pop_pending_dialog()
+                    # 2026-09-03 竞态闭合：先 clear 再查队列再等待。事件若在 clear 前到达，
+                    # 队列已有数据（peek 命中）；若在 clear 后到达，event 必被 wait 捕获——
+                    # 不存在「已入队但 event 被 clear 吞掉」的白等窗口。
+                    sess.dialog_event.clear()
+                    pending = sess.peek_pending_dialog()
                     if pending:
                         data = {
                             "type": pending.get("type"),
@@ -299,10 +308,9 @@ async def browser_wait_for(req: BrowserWaitRequest):
                         matched = True
                     else:
                         # 等待新 dialog 事件（持久监听器 set Event）
-                        sess.dialog_event.clear()
                         try:
                             await asyncio.wait_for(sess.dialog_event.wait(), timeout=req.timeout)
-                            pending = sess.pop_pending_dialog()
+                            pending = sess.peek_pending_dialog()
                             if pending:
                                 data = {
                                     "type": pending.get("type"),
@@ -316,8 +324,10 @@ async def browser_wait_for(req: BrowserWaitRequest):
                             matched = False
                 else:
                     # P2-1: 等待 JS 对话框（alert/confirm/prompt），自动 accept/dismiss
+                    # Playwright 1.36+ 已移除 page.expect_dialog（非会话模式此路径必然
+                    # 失败被 except 捕获返回 matched=False；会话模式走持久监听器队列）。
                     try:
-                        async with page.expect_dialog(timeout=timeout_ms) as dlg_info:
+                        async with page.expect_dialog(timeout=timeout_ms) as dlg_info:  # type: ignore[attr-defined]
                             pass
                         dlg = await dlg_info.value
                         data = {"type": dlg.type, "message": dlg.message, "page_url": page.url}
@@ -337,10 +347,11 @@ async def browser_wait_for(req: BrowserWaitRequest):
                 # 在 manager.create_session 时挂载，触发时存入 pending_<data_drive>:/Downloads 队列）
                 # 若 download_dir 提供，则用 last_download_obj.save_as() 保存到指定目录
                 if sess is not None:
+                    # 2026-09-03 竞态闭合：先 clear 再查队列再等待（与 dialog 分支同模式）
+                    sess.download_event.clear()
                     pending = sess.pop_pending_download()
                     if not pending:
                         # 等待新 download 事件（持久监听器 set Event）
-                        sess.download_event.clear()
                         try:
                             await asyncio.wait_for(sess.download_event.wait(), timeout=req.timeout)
                             pending = sess.pop_pending_download()
@@ -352,7 +363,10 @@ async def browser_wait_for(req: BrowserWaitRequest):
                             "suggested_filename": pending.get("suggested_filename"),
                             "page_url": pending.get("page_url"),
                         }
-                        # 尝试 save_as（last_download_obj 可能仍有效）
+                        # 若 download_dir 提供则 save_as 到指定目录；否则 cancel 掉——
+                        # 2026-09-03 防泄漏：CDP 连真实 Chrome 时 download 事件触发后
+                        # 若既不 save_as 也不 cancel，浏览器会落盘到默认下载目录
+                        # （实测泄漏 9 个 test_download*.txt 到用户 <data_drive>:/Downloads）
                         if req.download_dir:
                             dl_obj = sess.last_download_obj
                             if dl_obj is not None:
@@ -370,6 +384,13 @@ async def browser_wait_for(req: BrowserWaitRequest):
                             else:
                                 data["saved"] = False
                                 data["save_error"] = "download object no longer available (auto-cleaned by listener)"
+                        else:
+                            dl_obj = sess.last_download_obj
+                            if dl_obj is not None:
+                                try:
+                                    await dl_obj.cancel()
+                                except Exception:
+                                    pass  # 下载已完成/已被保存，cancel 失败属正常
                         sess.last_download_obj = None
                         matched = True
                     else:
@@ -393,6 +414,12 @@ async def browser_wait_for(req: BrowserWaitRequest):
                             await dl.save_as(save_path)
                             data["saved_to"] = save_path
                             data["saved"] = True
+                        else:
+                            # 2026-09-03 防泄漏：cancel 避免落盘浏览器默认下载目录
+                            try:
+                                await dl.cancel()
+                            except Exception:
+                                pass  # 下载已完成，cancel 失败属正常
                         matched = True
                     except Exception:
                         matched = False
@@ -410,8 +437,26 @@ async def browser_wait_for(req: BrowserWaitRequest):
             )
 
     # 无 session：走 exec_python 子进程模型（冷启动）
+    # 修复幽灵参数：无会话模式支持 tab_id 精确消歧。
+    _tab_id_url = None
+    if req.tab_id:
+        from .routes import _resolve_tab_id_to_url
+        _tab_id_url = await asyncio.to_thread(_resolve_tab_id_to_url, req.tab_id)
+        if _tab_id_url is None:
+            _elapsed = int((_time.perf_counter() - start) * 1000)
+            return BrowserWaitResponse(
+                success=False, wait_type=req.wait_type, elapsed_ms=_elapsed,
+                matched=False, error=BrowserErrorResponse(
+                    error_code="TAB_NOT_FOUND",
+                    error_message=BROWSER_ERROR_CODES["TAB_NOT_FOUND"],
+                    phase="locate",
+                    debug_detail=f"tab_id {req.tab_id} 无法解析为 URL（可能已关闭或调试浏览器未运行）",
+                    elapsed_ms=_elapsed,
+                ),
+            )
     params = {
         "url_pattern": req.url_pattern,
+        "tab_id": _tab_id_url,
         "wait_type": req.wait_type,
         "selector": req.selector,
         "state": req.state,
@@ -441,7 +486,6 @@ async def main():
         if not page:
             print('ERROR:TAB_NOT_FOUND')
             return
-        await Stealth().apply_stealth_async(page)
         try:
             wt = _PARAMS["wait_type"]
             timeout_ms = int(_PARAMS["timeout"] * 1000)
@@ -927,12 +971,10 @@ async def browser_wait_and_action(req: BrowserWaitAndActionRequest):
                     raise e
 
         elif req.wait_type == "dialog":
-            # P0-2 修复 + 2026-08-06 改造：page.expect_dialog() 已移除，
-            # 改用 persistent listener + dialog_event 模式。
-            # 2026-08-06 改造：_on_dialog 不再立即 dismiss，dialog 触发后 page 操作会阻塞，
-            # 所以 click 必须异步触发（asyncio.create_task），dialog_event set 后用
-            # last_dialog_obj 主动 accept/dismiss，dialog 处理后 click task 才能完成。
-            # dialog_action 现在真正生效（accept/prompt 输入），不再是意图声明。
+            # 模式：persistent listener + dialog_event。dialog 触发后 page 操作会阻塞，
+            # 所以 trigger 动作必须异步触发（asyncio.create_task）；dialog_event set 后用
+            # last_dialog_obj 主动 accept/dismiss，dialog 处理后 trigger task 才能完成。
+            # dialog_action（accept/dismiss/prompt 输入）由本端点执行。
             try:
                 if sess is not None:
                     # session 模式：用持久监听器 + 异步触发 + 主动处理 dialog

@@ -1,17 +1,17 @@
 # PDF 研究报告样式参考
 
-本文件是 [deep_research skill](file:///f:/<project_root>/.agents/skills/deep_research/SKILL.md) 的子参考，仅当 `office_pdf` skill 默认能力不满足研究报告需求时参考。
+本文件是 [deep_research skill](file:///<project_root>/.agents/skills/deep_research/SKILL.md) 的子参考，仅当 `office_pdf` skill 默认能力不满足研究报告需求时参考。
 
 ## 何时读本文件
 
-- 默认情况：**不需要读本文件**，参考 [.agents/skills/office_pdf/references/basic.md](file:///f:/<project_root>/.agents/skills/office_pdf/references/basic.md) 用 reportlab 现场实现即可
+- 默认情况：**不需要读本文件**，参考 [.agents/skills/office_pdf/references/basic.md](file:///<project_root>/.agents/skills/office_pdf/references/basic.md) 用 reportlab 现场实现即可
 - 需要封面页、特定配色、研究报告专用排版时：读本文件，用 `exec_python` 调 reportlab 现场实现
 
 ## office_pdf skill 默认能力（优先用这个）
 
-参考 [.agents/skills/office_pdf/references/basic.md](file:///f:/<project_root>/.agents/skills/office_pdf/references/basic.md) 用 `exec_python` 调 reportlab 现场实现，输入 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.md`，输出 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.pdf`。
+参考 [.agents/skills/office_pdf/references/basic.md](file:///<project_root>/.agents/skills/office_pdf/references/basic.md) 用 `exec_python` 调 reportlab 现场实现，输入 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.md`，输出 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.pdf`。
 
-详见 [office_pdf references/basic.md](file:///f:/<project_root>/.agents/skills/office_pdf/references/basic.md)。
+详见 [office_pdf references/basic.md](file:///<project_root>/.agents/skills/office_pdf/references/basic.md)。
 
 ## 研究报告专用样式（需要封面页时）
 

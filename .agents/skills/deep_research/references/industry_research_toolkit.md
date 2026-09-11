@@ -1,6 +1,6 @@
 # 行业研究实战范式工具箱
 
-本文件是 [deep_research skill](file:///f:/<project_root>/.agents/skills/deep_research/SKILL.md) 的子参考，专注**商业对象**（行业/公司/商业产品）研究的强化工具箱。源自小黑盒文章《以机场行业为例：教大家如何从零研究一个新行业》的方法论提炼，适配本项目的深度研究流程。
+本文件是 [deep_research skill](file:///<project_root>/.agents/skills/deep_research/SKILL.md) 的子参考，专注**商业对象**（行业/公司/商业产品）研究的强化工具箱。源自小黑盒文章《以机场行业为例：教大家如何从零研究一个新行业》的方法论提炼，适配本项目的深度研究流程。
 
 ## 何时读本文件
 

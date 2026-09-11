@@ -101,6 +101,42 @@ def register_lifecycle(app):
         except Exception as e:
             logger.warning(f"LLM 并发池自动初始化失败（可手动调用 /llm/pool/init）: {e}")
 
+        # keys.json 热重载守护：改完 keys.json（如给 key 补 allowed_uses）不再需要
+        # 手动 POST /llm/pool/init；顺带做一次 use_case 覆盖自检，把「无 key 授权
+        # inbound_gateway」这类配置错在启动/重载时直接告警出来。
+        try:
+            import asyncio as _asyncio
+
+            from server.core.keys_watch import (
+                warn_use_case_coverage,
+                watch_keys_json_loop,
+            )
+            warn_use_case_coverage()
+            # 保存 task 引用防 GC，并供 shutdown 取消
+            app.state.keys_watch_task = _asyncio.create_task(watch_keys_json_loop())
+        except Exception as e:
+            logger.warning(f"keys.json 热重载守护启动失败（改 keys.json 需手动 /llm/pool/init）: {e}")
+
+        # T5-1：注册模型存活管理器驱动并启动监控（design §11 步骤 5）
+        # 先注册后监控（design §13）：全部驱动注册完成才启动监控循环，
+        # 避免逐出逻辑遇到未知模型。start() 内部会先采首样本堵失明窗口。
+        try:
+            from server.model_manager import get_model_manager
+            from server.model_manager.drivers import (
+                GuideEmbeddingDriver,
+                MemoryEmbeddingDriver,
+                MindForgeSearcherDriver,
+                OcrDriver,
+            )
+            manager = get_model_manager()
+            manager.registry.register(OcrDriver())
+            manager.registry.register(MemoryEmbeddingDriver())
+            manager.registry.register(GuideEmbeddingDriver())
+            manager.registry.register(MindForgeSearcherDriver())
+            await manager.start()
+        except Exception as e:
+            logger.warning(f"ModelLifecycleManager 启动失败（管理器降级为透传）: {e}", exc_info=True)
+
         # 迁移待办数据（从 memory task_reminders/wip_index → todos 表，幂等）
         try:
             from server.memory.manager import get_memory_manager
@@ -160,6 +196,13 @@ def register_lifecycle(app):
     @app.on_event("shutdown")
     async def _on_shutdown():
         """应用关闭：清理屏幕、系统、LLM 池统计、记忆、GUI、Loop、浏览器 session。"""
+        # 停止 keys.json 热重载守护（先停，避免关闭过程中又被 mtime 变化触发重建）
+        try:
+            _kw = getattr(app.state, "keys_watch_task", None)
+            if _kw is not None:
+                _kw.cancel()
+        except Exception:
+            pass
         # T18：先撤销 SessionManager 授权 + 停止 worker，再清理 GUI 子进程
         # （避免 worker 在 GUI 已关闭后仍 publish 事件到无人订阅的总线）
         try:
@@ -167,6 +210,12 @@ def register_lifecycle(app):
             get_session_manager().shutdown()
         except Exception:
             pass
+        # T5-1：停止模型存活管理器监控循环（design §11 步骤 5）
+        try:
+            from server.model_manager import get_model_manager
+            await get_model_manager().stop()
+        except Exception as e:
+            logger.warning(f"ModelLifecycleManager 停止失败: {e}")
         screen_on_shutdown()
         system_on_shutdown()
         # 批量保存模式下 shutdown 时强制落盘

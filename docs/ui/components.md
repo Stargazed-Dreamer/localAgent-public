@@ -239,3 +239,14 @@ lay.addWidget(hint); lay.addStretch(1)
 ```
 
 三要素：**图标 + 一句话现状 + 下一步指引**（或主行动按钮）。
+
+> 2026-09 起有组件化实现，优先直接用：
+>
+> ```python
+> from lib.ui import EmptyState
+> empty = EmptyState("clock", "没有到期任务", hint="到期任务由 Loop 周期推送")
+> layout.addWidget(empty)   # 与列表区域互斥 setVisible
+> ```
+>
+> 内部已按本节配方组装（objectName="EmptyState" + icon_pixmap 48px tertiary + 居中排版）。
+> 列表区与空状态互斥显示时，同时切换 `list.setVisible(not empty_flag)`。

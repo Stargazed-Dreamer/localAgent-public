@@ -36,11 +36,12 @@ def _create_start_confirm_dialog():
     - normal 模式：只有 task_label + hotkey_label + feedback + 拒绝/允许
     - watchdog 模式：额外显示 QSpinBox(1-999h, 默认10) + 允许关机 QCheckBox(默认勾选)
     """
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import Qt, QTimer
     from PySide6.QtWidgets import (
         QCheckBox,
         QHBoxLayout,
         QLabel,
+        QProgressBar,
         QPushButton,
         QSpinBox,
         QTextEdit,
@@ -52,6 +53,8 @@ def _create_start_confirm_dialog():
     from lib.ui.theme import set_kind, set_text_role
 
     class StartConfirmDialog(QWidget):
+        result_data: dict | None = None  # 启动确认结果（发送后置 None）
+
         def __init__(self):
             super().__init__()
             self.setWindowFlags(
@@ -67,6 +70,11 @@ def _create_start_confirm_dialog():
                 "max_duration_hours": None,
                 "shutdown_permitted": False,
             }
+            # 倒计时状态（参考 client/approval_panel/card.py 的 ApprovalCard 设计）
+            self._total = 30
+            self._remaining = 30
+            self._expired = False            # 本地倒计时归零 → 只读超时态
+            self._timeout_reported = False   # 超时结果待上报标记（供 process_messages 消费）
 
             layout = QVBoxLayout(self)
 
@@ -118,6 +126,13 @@ def _create_start_confirm_dialog():
             self.watchdog_group.setVisible(False)
             layout.addWidget(self.watchdog_group)
 
+            # 倒计时进度条（超时后转只读态，参考 ApprovalCard）
+            self.progress = QProgressBar()
+            self.progress.setMaximum(self._total)
+            self.progress.setValue(self._remaining)
+            self.progress.setFormat("剩余 %v 秒后自动拒绝")
+            layout.addWidget(self.progress)
+
             feedback_label = QLabel("反馈(可选):")
             set_text_role(feedback_label, "secondary")
             layout.addWidget(feedback_label)
@@ -142,7 +157,25 @@ def _create_start_confirm_dialog():
             confirm_btn.setDefault(True)
             confirm_btn.clicked.connect(lambda: self._finish("confirmed"))
             btn_layout.addWidget(confirm_btn)
+
+            # 超时态专用按钮（默认隐藏，倒计时归零后替换决策按钮）
+            self.ack_btn = QPushButton("收到")
+            set_kind(self.ack_btn, "ghost")
+            self.ack_btn.setToolTip("已超时，点击关闭本窗口")
+            self.ack_btn.clicked.connect(self.hide)
+            self.ack_btn.setVisible(False)
+            btn_layout.addWidget(self.ack_btn)
             layout.addLayout(btn_layout)
+
+            # 决策按钮引用（超时态切换可见性用）
+            self.cancel_btn = cancel_btn
+            self.confirm_btn = confirm_btn
+
+            # 倒计时定时器：1s tick；比 server 端 deadline 略早归零，
+            # 归零即本地转超时只读态并标记待上报，避免竞态孤儿点击
+            self._timer = QTimer(self)
+            self._timer.setInterval(1000)
+            self._timer.timeout.connect(self._on_tick)
 
         def setup(
             self,
@@ -150,6 +183,7 @@ def _create_start_confirm_dialog():
             hotkey_hint: str,
             allow_task_authorization: bool = True,
             requested_mode: str = "normal",
+            timeout_seconds: int = 30,
         ):
             """初始化弹窗并显示。
 
@@ -157,6 +191,7 @@ def _create_start_confirm_dialog():
                 requested_mode: agent 请求的模式（"normal" | "watchdog"）。
                     用户只能允许/拒绝，不能改模式（spec 决策 17）。
                 allow_task_authorization: 兼容旧签名，新设计忽略（授权总由 SessionManager 管）
+                timeout_seconds: 倒计时秒数（与 server 端 takeover_confirm_timeout_seconds 一致）
             """
             self.result_data = {
                 "status": "cancelled",
@@ -173,8 +208,97 @@ def _create_start_confirm_dialog():
             self.task_label.setText(f"任务: {task_description}")
             self.hotkey_label.setText(f"过程中可按 {hotkey_hint} 紧急停止")
 
+            # 重置倒计时与控件状态（单例复用安全：上次可能是超时残留）
+            self._total = max(1, int(timeout_seconds))
+            self._remaining = self._total
+            self._expired = False
+            self._timeout_reported = False
+            self.progress.setMaximum(self._total)
+            self.progress.setValue(self._remaining)
+            self.progress.setFormat("剩余 %v 秒后自动拒绝")
+            self.progress.setStyleSheet("")
+            self._update_timeout_widgets()
+            self._timer.start()
+
+        # ========== 倒计时（参考 client/approval_panel/card.py ApprovalCard） ==========
+
+        def _on_tick(self) -> None:
+            if self._expired:
+                return
+            self._remaining -= 1
+            if self._remaining <= 0:
+                self._remaining = 0
+                self.progress.setValue(0)
+                self._timer.stop()
+                self._enter_timeout_state()
+                return
+            self.progress.setValue(self._remaining)
+            if self._remaining <= 10:
+                self.progress.setStyleSheet(
+                    "QProgressBar::chunk { background-color: #c0392b; }"
+                )
+
+        def _enter_timeout_state(self) -> None:
+            """倒计时归零：本地转只读超时态，并标记结果待上报。
+
+            上报走 process_messages 的统一出口（isVisible 检查），保证 server 端
+            _pop_result 提前拿到 cancelled 而不是傻等满 timeout。
+            """
+            self._expired = True
+            self._timeout_reported = False
+            self.result_data = {
+                "status": "cancelled",
+                "reason": "timeout_auto_cancel",
+                "task_authorization": False,
+                "requested_mode": (self.result_data or {}).get("requested_mode", "normal"),
+                "max_duration_hours": None,
+                "shutdown_permitted": False,
+            }
+            self._update_timeout_widgets()
+
+        def _update_timeout_widgets(self) -> None:
+            """根据是否超时切换按钮/输入框状态。"""
+            if self._expired:
+                self.confirm_btn.setVisible(False)
+                self.cancel_btn.setVisible(False)
+                self.ack_btn.setVisible(True)
+                self.feedback_edit.setReadOnly(True)
+                self.feedback_edit.setPlaceholderText("（已超时，不可操作）")
+                self.duration_spinbox.setEnabled(False)
+                self.shutdown_checkbox.setEnabled(False)
+                self.progress.setFormat("已超时")
+                self.progress.setStyleSheet(
+                    "QProgressBar::chunk { background-color: #c0392b; }"
+                )
+            else:
+                self.confirm_btn.setVisible(True)
+                self.cancel_btn.setVisible(True)
+                self.ack_btn.setVisible(False)
+                self.feedback_edit.setReadOnly(False)
+                self.feedback_edit.setPlaceholderText(
+                    "如:同意，但请小心操作 / 拒绝，我现在在用电脑..."
+                )
+                self.duration_spinbox.setEnabled(True)
+                self.shutdown_checkbox.setEnabled(True)
+
+        @property
+        def has_unreported_result(self) -> bool:
+            """有未上报的结果（用户决策或本地超时）。"""
+            return not self.isVisible() and bool(self.result_data)
+
+        @property
+        def timeout_reported(self) -> bool:
+            return self._timeout_reported
+
+        @timeout_reported.setter
+        def timeout_reported(self, value: bool) -> None:
+            self._timeout_reported = value
+
         def _finish(self, status: str):
-            requested_mode = self.result_data.get("requested_mode", "normal")
+            if self._expired:
+                return  # 超时态下决策按钮已隐藏，兜底防孤儿点击
+            self._timer.stop()  # 用户已决策，停止倒计时
+            requested_mode = (self.result_data or {}).get("requested_mode", "normal")
             is_watchdog = requested_mode == "watchdog"
             confirmed = status == "confirmed"
             self.result_data = {
@@ -209,7 +333,7 @@ def _gui_subprocess(recv_queue: multiprocessing.Queue,
     import sys
     try:
         from PySide6.QtCore import Qt, QTimer
-        from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
+        from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPen, QPixmap
         from PySide6.QtWidgets import (
             QApplication,
             QCheckBox,
@@ -354,7 +478,7 @@ def _gui_subprocess(recv_queue: multiprocessing.Queue,
                 self.countdown_label.setText(f"剩余 {m:02d}:{s:02d}")
 
         def show_at_top(self):
-            screen = app.primaryScreen()
+            screen = app.primaryScreen() if isinstance(app, QGuiApplication) else None
             if screen:
                 geo = screen.geometry()
                 self.resize(geo.width() - 20, 40)
@@ -362,7 +486,7 @@ def _gui_subprocess(recv_queue: multiprocessing.Queue,
             self.show()
 
         def show_at_bottom(self):
-            screen = app.primaryScreen()
+            screen = app.primaryScreen() if isinstance(app, QGuiApplication) else None
             if screen:
                 geo = screen.geometry()
                 self.resize(geo.width() - 20, 40)
@@ -373,6 +497,8 @@ def _gui_subprocess(recv_queue: multiprocessing.Queue,
 
     # ---- 确认窗口 ----
     class ConfirmDialog(QWidget):
+        result_data: dict | None = None  # 确认结果（发送后置 None）
+
         def __init__(self):
             super().__init__()
             self.setWindowFlags(
@@ -586,6 +712,7 @@ def _gui_subprocess(recv_queue: multiprocessing.Queue,
                         hotkey_hint=msg.get("hotkey_hint", "Ctrl+`"),
                         allow_task_authorization=msg.get("allow_task_authorization", True),
                         requested_mode=msg.get("requested_mode", "normal"),
+                        timeout_seconds=msg.get("timeout_seconds", 30),
                     )
                     start_confirm.show()
                     start_confirm.raise_()
@@ -601,6 +728,15 @@ def _gui_subprocess(recv_queue: multiprocessing.Queue,
         if confirm_dialog.isVisible() is False and confirm_dialog.result_data:
             send_queue.put({"type": "confirm_action_result", **confirm_dialog.result_data})
             confirm_dialog.result_data = None
+
+        # 本地倒计时超时：立即上报 cancelled，让 server 提前结束等待；
+        # 窗口保持显示为只读态，等用户点"收到"关闭（只关窗，不再上报）
+        if (start_confirm._expired
+                and not start_confirm.timeout_reported
+                and start_confirm.result_data):
+            send_queue.put({"type": "confirm_start_result", **start_confirm.result_data})
+            start_confirm.timeout_reported = True
+            start_confirm.result_data = None
 
         if start_confirm.isVisible() is False and start_confirm.result_data:
             send_queue.put({"type": "confirm_start_result", **start_confirm.result_data})
@@ -978,17 +1114,20 @@ class OverlayClient:
             self._pending_results.pop("confirm_start_result", None)
             self._pending_results.pop("import_error", None)
 
-        # 3. 发送弹窗命令
+        # 3. 发送弹窗命令（timeout_seconds 同步给子进程端倒计时条）
+        confirm_timeout = int(timeout)
         self._recv_queue.put({
             "cmd": "confirm_start",
             "task_description": task_description,
             "hotkey_hint": hotkey_hint,
             "allow_task_authorization": allow_task_authorization,
             "requested_mode": requested_mode,
+            "timeout_seconds": confirm_timeout,
         })
 
-        # 4. 等待响应（timeout 秒）
-        result = self._pop_result("confirm_start_result", timeout)
+        # 4. 等待响应：本地倒计时归零时子进程会提前上报 cancelled，
+        #    此处等待略长于 timeout 作为兜底（应对 GUI 子进程假死）
+        result = self._pop_result("confirm_start_result", confirm_timeout + 5)
         if result is None:
             # 5. 超时——按 timeout_action 决定
             if timeout_action == "proceed":

@@ -414,7 +414,7 @@ WEAK_MATCH_THRESHOLD = 15
 
 # ========== 上下文增强（C 改进） ==========
 # 用户给 agent_guide 的查询常附带文件路径或 URL，例如：
-#   task="爬一下文章", context="F:\\project_temp\\localAgent\\temp\\tabs_current-window_all_...json"
+#   task="爬一下文章", context="<project_root>\\temp\\tabs_current-window_all_...json"
 # 这些上下文含强信号（文件内是 xiaoheihe.cn 链接 → 几乎必中 web_archive），
 # 但原算法只看 task 字符串，丢弃了上下文。本节实现上下文提取与加分。
 
@@ -660,8 +660,8 @@ def match_task_candidates(task: str, top_n: int = 5, context: str | None = None)
                 except (ValueError, IndexError):
                     pass
         # 强匹配判定（保守）：只有 kw_exact 或 kw_fuzzy ≥ 80% 才算强匹配。
-        # 曾经的"中文 bigram_overlap ≥ 3"判定已移除——中文 2-gram 字符级重叠太易偶然
-        # （"内容/工具/agent"等高频字会跟任何描述性 skill 撞上 3+ bigram），导致大量误匹配。
+        # 刻意不用中文 2-gram 重叠计数做强匹配判据：字符级 bigram 太易偶然命中
+        # （"内容/工具/agent"等高频字会跟任何描述性 skill 撞上 3+ bigram），误匹配率高。
         # 纯 bigram 重叠的弱匹配走 low_confidence 路径，agent 仍能看到候选清单并精确重调。
         strong_match = has_kw_exact or has_strong_fuzzy
         result.append({
@@ -706,9 +706,7 @@ def match_task_candidates(task: str, top_n: int = 5, context: str | None = None)
                             #   （向量化补强后分数达标 + 语义相关，如"我今天都干了啥"cosine=0.51）
                             # 0.4 是语义相关下限（无关查询 cosine 通常 <0.4），
                             # 0.6 是语义强相关（同义改写、同主题同意图）
-                            if cosine >= SEMANTIC_STRONG_THRESHOLD:
-                                r["strong_match"] = True
-                            elif r["score"] >= WEAK_MATCH_THRESHOLD and cosine >= 0.4:
+                            if cosine >= SEMANTIC_STRONG_THRESHOLD or r["score"] >= WEAK_MATCH_THRESHOLD and cosine >= 0.4:
                                 r["strong_match"] = True
                     # 重新按 score 降序排序（向量化加分可能改变 top-1）
                     result.sort(key=lambda x: -x["score"])
@@ -828,9 +826,8 @@ def _build_task_guide(task_type: str, candidates: list[dict] | None = None, incl
     # workflow_summary / mcp_tools_priority / key_pitfalls 按需返回：
     # 默认不返（避免匹配错误时白返 skill 概要污染上下文）。
     # agent 确认 task_type 对了之后传 include_workflow=true 获取详情。
-    # general_guide_compact（global_pitfalls/environment_notes/file_locations）已移除——
-    # 这些全局信息在 AGENTS.md 已有，mode=general 也返一次，TaskGuide 不再重复。
-    # next_step_hint（固定提示文字）已移除——每次都一样，浪费 token。
+    # TaskGuide 刻意只返回任务级信息：全局信息（global_pitfalls/environment_notes/
+    # file_locations）以 AGENTS.md 为单一来源，固定提示语一律不加，控制 token 开销。
     if include_workflow:
         result["workflow_summary"] = entry.get("workflow_summary", "")
         result["mcp_tools_priority"] = entry.get("mcp_tools_priority", [])
@@ -1074,6 +1071,7 @@ def _build_structure_payload() -> dict | None:
             "subdirs": current["subdirs"],
             "baseline_updated": (baseline or {}).get("last_updated"),
             "note": "include_structure=true 提供。未在 baseline 的路径 in_baseline=false，可考虑补全描述。task_closure 时自动提供 diff。",
+            "feature_map_hint": "改 client GUI 前后读 data/feature_map.json（面板→入口/控件/验证方式地图，由 tools/gen_feature_map.py 生成，手写字段勿覆盖）",
         }
     except Exception as e:
         logger.debug(f"构建 project_structure 载荷失败: {e}")

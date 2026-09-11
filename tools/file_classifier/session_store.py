@@ -108,7 +108,7 @@ def save_session(state: SessionState) -> str:
 
 def load_session(path: str) -> SessionState:
     """从文件加载会话"""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return SessionState.from_dict(json.load(f))
 
 

@@ -8,9 +8,8 @@
 import os
 import shutil
 
+from predictor import classify_folder, predict_categories
 from PySide6.QtCore import QThread, Signal
-
-from predictor import predict_categories, classify_folder
 
 
 class FileScanThread(QThread):
@@ -124,11 +123,12 @@ class PredictThread(QThread):
                 self.progress.emit(i, total_folders,
                                    f"文件夹分类 {i+1}/{total_folders}: {folder['filename']}")
                 try:
+                    # B023 修复：用默认参数立即绑定 i/folder，避免回调异步触发时读到循环末值
                     result = classify_folder(
                         folder["path"], self.categories,
-                        progress_callback=lambda cc, mc, m: self.progress.emit(
-                            i, total_folders,
-                            f"文件夹 {folder['filename']} - {m}（第 {cc}/{mc} 轮）"),
+                        progress_callback=lambda cc, mc, m, _i=i, _f=folder: self.progress.emit(
+                            _i, total_folders,
+                            f"文件夹 {_f['filename']} - {m}（第 {cc}/{mc} 轮）"),
                     )
                     pred = {
                         "filename": folder["filename"],

@@ -17,11 +17,11 @@
 
 ## References
 
-- [lib/secret/__init__.py](file:///f:/<project_root>/lib/secret/__init__.py)
-- [lib/secret/paths.py](file:///f:/<project_root>/lib/secret/paths.py)
-- [lib/secret/reader.py](file:///f:/<project_root>/lib/secret/reader.py)
-- [server/llm_pool/key_store.py](file:///f:/<project_root>/server/llm_pool/key_store.py)（`_get_unified_keys_path` 委托 `lib.secret.get_llm_keys_path`）
-- [tools/migrate_secrets.py](file:///f:/<project_root>/tools/migrate_secrets.py)
-- [SECURITY-RISKS.md](file:///f:/<project_root>/SECURITY-RISKS.md)（第 7-13 项：lib/secret 相关风险）
-- [temp/sdd/lib-secret/spec.md](file:///f:/<project_root>/temp/sdd/lib-secret/spec.md)（SDD 流程产物，gitignored）
-- [.agents/rules/project_rules.md](file:///f:/<project_root>/.agents/rules/project_rules.md) "密钥统一管理"段
+- [lib/secret/__init__.py](file:///<project_root>/lib/secret/__init__.py)
+- [lib/secret/paths.py](file:///<project_root>/lib/secret/paths.py)
+- [lib/secret/reader.py](file:///<project_root>/lib/secret/reader.py)
+- [server/llm_pool/key_store.py](file:///<project_root>/server/llm_pool/key_store.py)（`_get_unified_keys_path` 委托 `lib.secret.get_llm_keys_path`）
+- [tools/migrate_secrets.py](file:///<project_root>/tools/migrate_secrets.py)
+- [SECURITY-RISKS.md](file:///<project_root>/SECURITY-RISKS.md)（第 7-13 项：lib/secret 相关风险）
+- [temp/sdd/lib-secret/spec.md](file:///<project_root>/temp/sdd/lib-secret/spec.md)（SDD 流程产物，gitignored）
+- [.agents/rules/project_rules.md](file:///<project_root>/.agents/rules/project_rules.md) "密钥统一管理"段

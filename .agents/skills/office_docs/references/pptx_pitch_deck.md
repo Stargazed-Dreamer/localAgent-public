@@ -1,6 +1,6 @@
 # 融资路演参考 (pitch_deck.md)
 
-本文件是 [office_pptx skill](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注融资路演（pitch deck）场景。
+本文件是 [office_pptx skill](file:///<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注融资路演（pitch deck）场景。
 
 ## 目录
 
@@ -24,13 +24,13 @@
 - VC meeting 上下文（investor deck / fundraising）
 - ≥4 项 {problem, traction, team with credentials, Use-of-Funds, stage-appropriate unit econ, financial projections}
 
-**不满足以上条件**：路由到 [basic.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/basic.md) 或 [recipes.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/recipes.md)。
+**不满足以上条件**：路由到 [basic.md](file:///<project_root>/.agents/skills/office_pptx/references/basic.md) 或 [recipes.md](file:///<project_root>/.agents/skills/office_pptx/references/recipes.md)。
 
 ---
 
 ## 2. 何时回退到 basic.md
 
-下列场景**不是** pitch deck，应该用 [basic.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/basic.md) 基础元素 + [recipes.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/recipes.md) 通用配方：
+下列场景**不是** pitch deck，应该用 [basic.md](file:///<project_root>/.agents/skills/office_pptx/references/basic.md) 基础元素 + [recipes.md](file:///<project_root>/.agents/skills/office_pptx/references/recipes.md) 通用配方：
 
 - **Board review**：内部董事会，无 round + ask
 - **Sales deck**：销售演示，无 financial projection
@@ -728,7 +728,7 @@ def check_6_3_traction_y_axis(prs):
 
 ## 9. 典型 recipe — Seed round pitch deck
 
-完整示例约 500 行 python-pptx 代码，覆盖 10 slides。本节给出骨架，详细 shape 代码见 [recipes.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/recipes.md)。
+完整示例约 500 行 python-pptx 代码，覆盖 10 slides。本节给出骨架，详细 shape 代码见 [recipes.md](file:///<project_root>/.agents/skills/office_pptx/references/recipes.md)。
 
 ```python
 """Seed round pitch deck generator (skeleton).
@@ -836,8 +836,8 @@ def build_seed_pitch_deck(output_path):
 
 ## 参考
 
-- [office_pptx SKILL.md](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md)
-- [references/basic.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/basic.md)
-- [references/design_principles.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/design_principles.md)
-- [references/recipes.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/recipes.md)
+- [office_pptx SKILL.md](file:///<project_root>/.agents/skills/office_pptx/SKILL.md)
+- [references/basic.md](file:///<project_root>/.agents/skills/office_pptx/references/basic.md)
+- [references/design_principles.md](file:///<project_root>/.agents/skills/office_pptx/references/design_principles.md)
+- [references/recipes.md](file:///<project_root>/.agents/skills/office_pptx/references/recipes.md)
 - [python-pptx 官方文档](https://python-pptx.readthedocs.io/)

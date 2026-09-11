@@ -49,6 +49,22 @@ curl http://127.0.0.1:8766/health
 
 返回 `"status": "ok"` 即启动成功。
 
+### 4. 从 WorkBuddy 沙箱 shell 内启动后端的陷阱（2026-09-03 实测）
+
+**症状**：从 WorkBuddy（CodeBuddy）的沙箱 bash 里启动后端，进程会在**运行一段时间后或启动瞬间被 `SystemExit(1)` 击杀**——日志末尾是 `sitecustomize.py` 的批量删除守卫报错，不是后端自己的异常。2026-09-03 实测：v2 跑了 ~10 分钟后暴毙，v3 启动即失败。
+
+**根因**：WorkBuddy 沙箱经 `PYTHONPATH` 注入了一个 `sitecustomize.py` shim（内含批量删除文件守卫）。后端自己的 `_terminal_ttl_cleanup_loop`（终端 TTL 过期清理）会对临时文件执行 `path.unlink()`，该调用被 shim 的删除守卫误判为"批量删除"，直接 `SystemExit(1)` 把后端进程杀掉。
+
+**解法**：启动命令必须**剥掉 PYTHONPATH**，且在**非沙箱 shell**（沙箱外执行）里运行：
+
+```bash
+env -u PYTHONPATH PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe -m server.main
+```
+
+- `env -u PYTHONPATH` 是关键——去掉沙箱注入的 sitecustomize 钩子
+- 不要用沙箱化的后台任务方式拉后端；`start.bat` 双击/命令行直启不受此问题影响
+- 排查辅助：`ps -W | grep python` 看进程存活时长；后端日志写 `temp/backend_restart_*.log` 可定位死亡时刻
+
 ### 常见问题
 
 | 问题 | 原因 | 解决 |
@@ -56,6 +72,7 @@ curl http://127.0.0.1:8766/health
 | 端口 8766 被占用 | 旧进程未完全退出 | 等 2-3 秒，或手动 `netstat -ano \| findstr :8766` 找 PID 杀掉 |
 | `start.bat` 闪退 | UAC 被拒绝 | 右键 → 以管理员身份运行 |
 | MCP 工具不可用 | 后端未启动 | 先运行 `start.bat` |
+| 沙箱里起的后端莫名暴毙（`SystemExit(1)`） | PYTHONPATH 里沙箱注入的 sitecustomize 删除守卫击杀 | 见上文「第 4 节」：`env -u PYTHONPATH` 非沙箱启动 |
 
 ## API 常见陷阱
 
@@ -79,6 +96,18 @@ Windows PowerShell 5.1 不支持 `&&`（管道链运算符），用 `cmd1 && cmd
 - 用 `$LASTEXITCODE` 显式判断：`cmd1 ; if ($LASTEXITCODE -eq 0) { cmd2 }`
 - 或改用 PowerShell 7（`pwsh.exe`，支持 `&&` 和 `||`）
 - **Shell 工具链式命令时不要用 `&&`**，用 `;` 或拆成多次调用
+
+### PowerShell 5.1 写 UTF-8 文件必带 BOM（跨平台坑，agent 写文件必读！）
+
+Windows PowerShell 5.1 的 `Set-Content -Encoding UTF8` / `Out-File -Encoding utf8` 写出的文件**必带 BOM**（U+FEFF，字节 `EF BB BF`），且多次写会**累积**。2026-08-26 实测：yihuan_clean.py 曾堆 3 个 BOM、SKILL.md 2 个、`__init__.py` 3 个，Python 脚本直接 `SyntaxError: invalid non-printable character U+FEFF`。
+
+agent 为写中文不乱码常恰好选中 `-Encoding UTF8` 这种写法，是本项目 BOM 的**唯一来源**——IDE 的 Write/Edit 工具不加 BOM（Trae 已对照实验验证；早期归因"harness 平台写入叠加"已被推翻，详见 `tools/clean_bom.py` 文件头注释）。
+
+**避免方法**：
+- agent 写/改文件**优先用 IDE 的 Write/Edit 工具**，不走 shell 重定向（跨平台通用：凡在 shell 里用重定向/`Set-Content` 写 UTF-8 都可能踩 BOM）
+- 必须 PowerShell 写 UTF-8 时用 .NET API：`[IO.File]::WriteAllText($path, $content)`（UTF-8 无 BOM）
+- PS 7（`pwsh`）的 `-Encoding utf8` 不带 BOM，但项目终端默认 PS 5.1，不要赌版本
+- 遇 `SyntaxError: invalid non-printable character U+FEFF` → `uv run python tools/clean_bom.py --fix`（默认 dry-run 只扫描报告，`--fix` 清头部 BOM，`--fix-all` 连中部零宽字符一起清，慎用）
 
 ### Git 命令默认走 pager 会卡住终端（agent 自动执行必读！）
 
@@ -179,7 +208,7 @@ Pydantic 验证失败时返回 422，响应体包含 `detail` 数组，每项有
 
 **数据源优先级（必读）**：用户说"总结今日工作" / "今日做了什么" / "总结一下" 时，按以下顺序收集信息：
 
-1. **首选：[data/activity/hourly/](file:///f:/<project_root>/data/activity/hourly) 目录下的 `YYYYMMDD_HH.md` 文件** — 这是本功能的本源数据，由 `hourly_summarize` loop 任务每整点自动生成。**先读这些文件，不要先查 git log**。
+1. **首选：[data/activity/hourly/](file:///<project_root>/data/activity/hourly) 目录下的 `YYYYMMDD_HH.md` 文件** — 这是本功能的本源数据，由 `hourly_summarize` loop 任务每整点自动生成。**先读这些文件，不要先查 git log**。
 2. **补全缺失时段**：用 `git log --since="YYYY-MM-DD 05:00" --until="now"` 补全 hourly summary 缺失或失败的时段（注意 since 用 05:00 不是 00:00，与日期划分规则一致）。
 3. **memory 仅作参考**：`c:\<user_home>\.trae-cn\memory\projects\-f-project-temp-localAgent\YYYYMMDD\topics.md` 提供会话级上下文，但**不是主要数据源**。
 
@@ -263,7 +292,7 @@ localagent_advanced_tool(
 
 ### 示例检测脚本（agent 自行编写，仅供参考）
 
-完整示例见 [.agents/skills/auto_shutdown.md](file:///f:/<project_root>/.agents/skills/auto_shutdown.md)，含 3 种场景：
+完整示例见 [.agents/skills/auto_shutdown.md](file:///<project_root>/.agents/skills/auto_shutdown.md)，含 3 种场景：
 - 游戏 AFK 识图检测（capture_screen + screen_ocr）
 - 定时关机（处理跨日边界：23:35 启动 target="23:30" → 明天 23:30）
 - 文件出现检测（标记文件协调跨 agent 任务）
@@ -276,7 +305,196 @@ localagent_advanced_tool(
 - 用户 AFK 时若遇到无法通过已授权、安全路径解决的问题 → agent 必须 fail-closed，立即停止，不得绕过确认、切换未授权通道或无限重试
 - agent 触发关机时，看门狗授权自然失效（系统关机），无需显式撤销
 
-> 相关文件：[server/auto_shutdown.py](file:///f:/<project_root>/server/auto_shutdown.py) + [tests/test_auto_shutdown.py](file:///f:/<project_root>/tests/test_auto_shutdown.py) + [.agents/skills/auto_shutdown.md](file:///f:/<project_root>/.agents/skills/auto_shutdown.md)
+> 相关文件：[server/auto_shutdown.py](file:///<project_root>/server/auto_shutdown.py) + [tests/approval_screen/test_auto_shutdown.py](file:///<project_root>/tests/approval_screen/test_auto_shutdown.py) + [.agents/skills/auto_shutdown.md](file:///<project_root>/.agents/skills/auto_shutdown.md)
+
+## command_guard 双开关语义（审批排查必读）
+
+`config.toml [command_guard]` 段有**两个独立开关**，语义不同，排查"为什么被拦/没被拦"时必须分清：
+
+| 开关 | 控制范围 | 当前默认 |
+|------|----------|----------|
+| `enabled = false` | **仅 dcg 二进制预检查**（shell 命令拦截）。关掉后 dcg 不生效 | false |
+| `approval_level = "none"` | **HTTP 中间件 + MCP 网关的端点审批拦截**（strict/moderate/loose/none 四级） | none |
+
+常见误区：
+- "我把 `enabled` 关了怎么还弹审批？" → 端点审批由 `approval_level` 控制，两者独立。
+- "GUI 点按钮也被拦？" → GUI 直连请求不带 `X-Agent-Caller` 头，天然放行；被拦的是 agent 链路（chat 引擎直连 REST / MCP 网关调用）。
+
+### 审批清单（2026-08-25 调整）
+
+- `/loop/tasks*` 的 POST（pause/resume/run）**已从审批清单移除**——低风险运维操作，有 fail_threshold 自动熔断 + auto_failed 自动恢复兜底。任何 approval_level 下均 safe。
+- strict 仍拦：exec 类（python/cmd/apply-patch/terminal spawn）、shutdown/config、模型管理、activity/daily、browser/close、PUT/DELETE 默认等。真源见 `server/route_tags.py`。
+
+### loop 手动触发语义
+
+- 手动触发（面板按钮 / `loop_run_task`）**不推进 last_run_at**，不影响正常调度周期。
+- 任务正在执行中再手动触发 → 返回 409 task_busy（不是错误，提示"稍后再试"即可）。
+- MCP 网关人审批准后的 token 用 `_approval_body(arguments)` 指纹验证（签发/验证一致），批准即可重试成功。
+
+> 相关文件：[server/route_tags.py](file:///<project_root>/server/route_tags.py) + [server/core/mcp_gateway.py](file:///<project_root>/server/core/mcp_gateway.py) + [server/http_guard.py](file:///<project_root>/server/http_guard.py) + 回归测试 tests/approval_screen/test_mcp_gateway_approval_fingerprint.py
+
+## 模型生命周期管理（Model Lifecycle Manager）
+
+**Model Lifecycle Manager（`server/model_manager/`）** 统一管理后端进程内 4 个本地模型的生命周期——PaddleOCR（GPU，可逐出）/ 记忆 embedding（CPU，默认钉住）/ guide embedding（CPU，默认钉住）/ MindForge 搜索引擎（CPU，可逐出）。
+
+设计原则：**管理器是决策权威、模块是执行者**（薄编排不做所有权重构）。框架通用、策略分资源（GPU 主动逐出 + CPU 框架预留默认关闭）。环境约束与显存释放实测详见 `docs/environment-constraints.md` 的 "Model Lifecycle Manager 显存释放实测" 段；端点审批级别与 MCP 调用方式详见 `docs/mcp-reference.md` 的 "Model Lifecycle Manager 统一控制面" 段。
+
+### 何时需要手动操作
+
+正常情况下 ModelLifecycleManager 自动运行——按 GPU 压力态自动逐出 OCR（VRAM 高压时）+ OCR 懒恢复（下次真实请求自愈）。**只在以下场景需要手动操作**：
+
+| 场景 | 操作 | 端点 |
+|------|------|------|
+| 显存异常高 + 怀疑 OCR 占用 → 手动卸载释放 | 卸载 OCR | `POST /models/ocr/unload`（approval_required） |
+| 调试时需要预加载 OCR 模型 | 加载 OCR | `POST /models/ocr/load`（approval_required） |
+| 排查问题时绕过压力态约束（仅手动超驰） | 暂停压力监控 | `POST /models/pause`（approval_required） |
+| 调试完恢复自动监控 | 恢复压力监控 | `POST /models/resume`（approval_required） |
+| 排查 MindForge 状态（1-2GB 大对象） | 卸载 MindForge 搜索引擎 | `POST /models/mindforge_searcher/unload`（approval_required） |
+| 调试记忆 embedding 卸载后果（**高风险**） | 卸载 memory_embedding | `POST /models/memory_embedding/unload`（approval_required） |
+| 查询当前所有模型状态 + 压力态 | 列模型 + 查压力 | `GET /models` + `GET /models/pressure`（read_only，免审批） |
+
+### 手动卸载记忆 embedding 的恢复步骤（高风险，必读）
+
+**默认 `evictable=False`（钉住）规避此场景**：记忆 embedding 在每个 MCP 请求路径上（`/mcp` tools/call → recorder.record_tool_call → semantic.index_message → embed），逐出后必然立即被下一请求拉回形成"逐出→拉回→60s 后再逐出"的慢循环，且**卸载窗口内写入的消息永久缺失向量索引**——逐出收益为负。
+
+如果确实需要手动卸载调试（已通过审批），**必须按以下步骤恢复**：
+
+1. `POST /models/memory_embedding/load` — 重新加载 embedding engine
+2. `POST /memory/rebuild_vector_index` — 补卸载窗口内缺失的向量索引（关键，否则语义检索永久降级）
+
+**卸载后果（静默降级）**：记忆语义检索自动降级为 BM25-only（无 503，消费者都先查 `ready`，不会写入零向量）。不调 `rebuild_vector_index` 会导致卸载窗口内写入的消息永久缺失向量索引。
+
+### MindForge 搜索引擎卸载已知局限
+
+- 搜索端点持局部引用（mindforge.py），`unload()` 只删属性，**1-2GB 实际要等在途搜索结束才释放**
+- 无 OCR 那样的 `forced` + 延迟补释放语义
+- `load()` 无参协议与 `get_searcher(index_dir)` 必填参数冲突的解决：`unload()` 前自留 `last_index_dir` 快照；`load()` 优先用快照，从未加载过则复刻 `/mindforge/preload` 解析逻辑
+
+### 状态查询
+
+**`GET /models`**（read_only，免审批）— 列出全部注册模型状态：
+
+```json
+{
+  "models": [
+    {
+      "model_id": "ocr",
+      "resource": "gpu",
+      "loaded": true,
+      "footprint_mb": 600,
+      "priority": 80,
+      "evictable": true,
+      "in_flight": 0,
+      "loaded_at": 1234567890.0,
+      "last_load_ms": 1850
+    },
+    {
+      "model_id": "memory_embedding",
+      "resource": "cpu",
+      "loaded": true,
+      "footprint_mb": 90,
+      "priority": 80,
+      "evictable": false,
+      "in_flight": 0,
+      "loaded_at": null,
+      "last_load_ms": null
+    }
+  ]
+}
+```
+
+**`GET /models/pressure`**（read_only，免审批）— 各资源压力态：
+
+```json
+{
+  "gpu": {
+    "state": "NORMAL",
+    "used_mb": 1234,
+    "total_mb": 8192,
+    "ratio": 0.15,
+    "last_transition_ts": 1234567890.0
+  },
+  "cpu": {
+    "state": "disabled",
+    "used_mb": null,
+    "total_mb": null
+  }
+}
+```
+
+**`/health.model_manager`** — 聚合到 `/health` 端点（低频枚举）：
+
+```json
+{
+  "enabled": true,
+  "gpu_state": "NORMAL",
+  "cpu_state": "disabled",
+  "loaded_ids": ["memory_embedding", "ocr"],
+  "reload_degraded_ids": [],
+  "last_transition_ts": 1234567890.0
+}
+```
+
+`reload_degraded_ids` 非空时提示该模型连续 ≥3 次加载失败，建议重启后端。
+
+### keep_models 写回链（OCR + MindForge）
+
+原 OCR 与 MindForge 的 `keep_models` 死旋钮已统一迁移到 ModelLifecycleManager per-model `restore_preload` 配置（语义所有权迁移，单例所有权不变）：
+
+- **写入口**：`POST /ocr/models/keep`（OCR）/ MindForge 同款旋钮 → 写入 `[model_manager.models.<id>].restore_preload`
+- **读出口**：`/health.ocr`、`/ocr/status`、`/mindforge/status`、GUI `client/panels/llm_pool.py` → 全部回读管理器生效值
+- 配置位置：`[model_manager.models.ocr]` 段（覆盖默认值）
+
+向后兼容：调用方零改动，`keep_models=true` 等价于 `restore_preload=true`（默认值已开启）。
+
+### 配置参考
+
+`config.example.toml` 的 `[model_manager]` 段（详见 `temp/sdd/model-lifecycle-manager/design.md` §9）：
+
+```toml
+[model_manager]
+enabled = true                    # 总开关（false=纯透传，各模块行为回退现状）
+poll_interval_sec = 5.0           # 采样周期
+reload_fail_cooldown_sec = 30      # per-model 加载失败冷却默认值（秒）
+
+[model_manager.gpu]
+# GPU 显存压力监控（主动逐出唯一资源维度，design D2）
+enabled = true
+high_watermark = 0.90              # 高压阈值（触发 REFUSING）
+high_sustain = 3                  # 高压持续周期数
+critical_watermark = 0.97         # 逃生门单样本阈值
+low_watermark = 0.70              # 低压阈值（触发 ARMED）
+low_sustain = 6                   # 低压持续周期数
+min_loaded_seconds = 60           # 加载保护期（秒）
+unload_timeout_sec = 15           # 卸载超时（秒，含排空 in_flight）
+
+[model_manager.cpu]
+# CPU 内存压力监控（默认关闭：8GB+ 主机内存下 ~2GB 搜索引擎不构成压力）
+enabled = false
+# 字段同 [model_manager.gpu]，启用时同款状态机生效
+
+# [model_manager.models.<id>]：每模型覆盖
+# 字段：evictable / priority / reload_fail_cooldown_sec / restore_preload
+# 示例：
+#   [model_manager.models.ocr]
+#   evictable = true
+#   priority = 80
+#   reload_fail_cooldown_sec = 30
+#
+#   [model_manager.models.memory_embedding]
+#   evictable = false   # 默认钉住（热路径，每个 MCP 请求都会用）
+```
+
+### 故障排查
+
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| `POST /models/ocr/load` 返回 503 | GPU 压力态 REFUSING/PROBE_DEGRADED | 等压力下降到 ARMED/NORMAL 后重试；或调 `/models/pause` 手动超驰（注意：PAUSED 期间逐出也暂停） |
+| `POST /models/ocr/load` 返回 503 reason="reload_degraded" | OCR 连续 ≥3 次加载失败 | 重启后端（`POST /shutdown` + `start.bat`） |
+| `GET /models` 返回空 models 列表 | ModelLifecycleManager 启动失败 | 查后端日志 "ModelLifecycleManager 启动失败"；管理器降级为透传模式（模块行为回退现状，无自动监控） |
+| `/health.model_manager` 字段缺失 | HealthResponse schema 漏声明 | 已修复（design §10 v2 修订），如仍缺失查 `server/core/health.py` 是否含 `model_manager: dict = {}` 字段 |
+| MindForge 卸载后内存未释放 | 在途搜索持局部引用 | 等在途搜索结束自动释放；无 forced + 延迟补释放语义（已知局限） |
+| 记忆语义检索突然变差（仅 BM25 命中） | memory_embedding 被手动卸载 | 调 `POST /models/memory_embedding/load` + `POST /memory/rebuild_vector_index` 补缺口 |
 
 ## 浏览器操作经验记录（强制）
 
@@ -312,7 +530,7 @@ localagent_advanced_tool(
 | skill 特定踩坑（换网站就不适用的） | `agent_guide.py` 的 `key_pitfalls` |
 | 跨网站通用浏览器踩坑（Playwright/CDP 通用问题） | AGENTS.md "API 常见陷阱" + `browser_lessons/SKILL.md` 末尾 |
 
-> 详见 [`.agents/skills/browser_lessons/SKILL.md`](file:///f:/<project_root>/.agents/skills/browser_lessons/SKILL.md)。
+> 详见 [`.agents/skills/browser_lessons/SKILL.md`](file:///<project_root>/.agents/skills/browser_lessons/SKILL.md)。
 
 ### 知识老化规则（防陈旧经验腐化任务）
 
@@ -367,7 +585,7 @@ localagent_advanced_tool(
 | skill 特定踩坑（换软件就不适用的） | `agent_guide.py` 的 `key_pitfalls` |
 | 通用桌面操作踩坑（DPI/焦点安全/坐标绑定） | `docs/computer-use-reference.md` + AGENTS.md |
 
-> 详见 [`.agents/skills/computer_use/SKILL.md`](file:///f:/<project_root>/.agents/skills/computer_use/SKILL.md)。
+> 详见 [`.agents/skills/computer_use/SKILL.md`](file:///<project_root>/.agents/skills/computer_use/SKILL.md)。
 
 ## PySide6 GUI 性能踩坑（client/ 开发必读）
 
@@ -375,7 +593,7 @@ localagent_advanced_tool(
 
 | 踩坑 | 后果 | 正确做法 |
 |------|------|---------|
-| `on_show()` 每次都重新读文件 + 销毁重建所有 widget | 工具面板每次切换卡 200-500ms（29 个 ToolDetailWidget 重建） | 用 mtime 检测：文件没变就不重建（[tools.py](file:///f:/<project_root>/client/panels/tools.py) 的 `_read_manifest_mtime`） |
+| `on_show()` 每次都重新读文件 + 销毁重建所有 widget | 工具面板每次切换卡 200-500ms（29 个 ToolDetailWidget 重建） | 用 mtime 检测：文件没变就不重建（[tools.py](file:///<project_root>/client/panels/tools.py) 的 `_read_manifest_mtime`） |
 | `on_show()` 每次都重新查 DB + 填充表格 | 记账面板每次切换卡 300-800ms | 加首次加载标志：`_data_loaded` 为 True 后跳过，用户点刷新按钮才重新加载 |
 | 循环中每行创建多个 `QComboBox` 作为 `setCellWidget` | 512 行 × 3 个 QComboBox = 1536 个控件，主线程卡 500ms+ | 懒加载（双击才创建）或分页（只加载前 N 条） |
 | N+1 查询：循环中每行单独查 DB | 512 次 SQLite 查询（虽然每次快，但累积开销大） | 一次性预取：`{cat: descriptions for cat in all_categories}` |

@@ -63,10 +63,10 @@ class AgentGuideEmbedder:
         # 失败时 results == []，调用方走关键词匹配
     """
 
-    _instance: "AgentGuideEmbedder | None" = None
+    _instance: AgentGuideEmbedder | None = None
     _instance_lock = threading.Lock()
 
-    def __new__(cls) -> "AgentGuideEmbedder":
+    def __new__(cls) -> AgentGuideEmbedder:
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
@@ -250,7 +250,7 @@ class AgentGuideEmbedder:
         if not CACHE_PATH.exists():
             return None
         try:
-            with open(CACHE_PATH, "r", encoding="utf-8") as f:
+            with open(CACHE_PATH, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             logger.warning("AgentGuideEmbedder: 读 cache 失败: %s", e)

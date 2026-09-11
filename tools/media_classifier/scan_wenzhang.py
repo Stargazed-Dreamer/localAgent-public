@@ -1,8 +1,8 @@
 """扫描 文字篇章 文件夹，统计文件类型、数量，并读取 docx 样本"""
 import os
 import sys
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 ROOT = Path(r"E:\<data_drive>:\<articles_root>")
 

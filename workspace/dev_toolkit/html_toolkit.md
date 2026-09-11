@@ -734,5 +734,5 @@ if (savedTheme === 'auto') {
   - `https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md`
   - `https://github.com/anthropics/skills/blob/main/skills/web-artifacts-builder/SKILL.md`
   - `https://github.com/anthropics/skills/blob/main/skills/theme-factory/SKILL.md`
-- 本项目 html-dev-debug skill（已强化，含 Reconnaissance-Then-Action + anti-AI-slop 设计规范）：`f:\<project_root>\.agents\skills\html-dev-debug.md`
+- 本项目 html-dev-debug skill（已强化，含 Reconnaissance-Then-Action + anti-AI-slop 设计规范）：`<project_root>\.agents\skills\html-dev-debug.md`
 - 本项目 webapp_testing 工具包：`workspace/dev_toolkit/webapp_testing.md`

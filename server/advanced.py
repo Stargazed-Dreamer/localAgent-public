@@ -392,16 +392,18 @@ def _load_tool_specs() -> dict:
     if _tool_specs_cache is not None:
         return _tool_specs_cache
     try:
-        import yaml
         from pathlib import Path
+
+        import yaml
         specs_path = Path(__file__).resolve().parents[1] / "data" / "client" / "tool_specs.yaml"
-        with open(specs_path, "r", encoding="utf-8") as f:
-            _tool_specs_cache = yaml.safe_load(f) or {}
+        with open(specs_path, encoding="utf-8") as f:
+            _specs_loaded: dict = yaml.safe_load(f) or {}
+        _tool_specs_cache = _specs_loaded
         logger.info(
             "tool_specs.yaml loaded: builtin=%d, core_mcp=%d, rest=%d",
-            len(_tool_specs_cache.get("builtin", {})),
-            len(_tool_specs_cache.get("core_mcp", {})),
-            len(_tool_specs_cache.get("rest", {})),
+            len(_specs_loaded.get("builtin", {})),
+            len(_specs_loaded.get("core_mcp", {})),
+            len(_specs_loaded.get("rest", {})),
         )
     except ImportError:
         logger.warning("yaml not available, tool_specs.yaml not loaded")

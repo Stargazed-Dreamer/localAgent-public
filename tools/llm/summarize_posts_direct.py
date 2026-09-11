@@ -15,29 +15,31 @@
   uv run python tools/llm/summarize_posts_direct.py --board 自主发展 --limit 50  # 测试50篇
   uv run python tools/llm/summarize_posts_direct.py --concurrency 30          # 指定并发
 """
+import argparse
 import json
 import re
 import sys
-import time
-import argparse
 import threading
-from pathlib import Path
-from datetime import datetime
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
 
 # 让脚本能导入 server.llm_pool（脚本位于 tools/llm/，需向上两级到项目根）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from server.llm_pool import (
-    call_via_backend_full, check_backend_pool, get_backend_pool_status,
+    call_via_backend_full,
+    check_backend_pool,
+    get_backend_pool_status,
 )
 
 # ========== 配置 ==========
 
-OUTPUT_BASE = Path(r"F:\<project_root>\output\社群")
-REPORT_DIR = Path(r"F:\<project_root>\output\社群\reports")
-SUMMARIES_DIR = Path(r"F:\<project_root>\output\社群\summaries")  # 单篇总结文件目录
+OUTPUT_BASE = Path(r"<project_root>\output\社群")
+REPORT_DIR = Path(r"<project_root>\output\社群\reports")
+SUMMARIES_DIR = Path(r"<project_root>\output\社群\summaries")  # 单篇总结文件目录
 
 KEYS_FILE = PROJECT_ROOT / "temp" / "mimo_keys_tested.json"
 SAVE_INTERVAL = 100
@@ -311,7 +313,7 @@ def load_posts(board: str, limit: int = None) -> list:
     skipped_empty = 0
     for f in post_files:
         try:
-            d = json.load(open(f, "r", encoding="utf-8"))
+            d = json.load(open(f, encoding="utf-8"))
             content = d.get("content_text", "")
             if not content or len(content.strip()) < 20:
                 # 内容太短，跳过（纯图片帖等）
@@ -381,8 +383,8 @@ def save_summary_file(post: dict, result: dict) -> str:
     # 构建带元信息的 markdown
     lines = [
         f"# {post.get('title', '无标题')}",
-        f"",
-        f"> **映射信息**",
+        "",
+        "> **映射信息**",
         f"> - 原始文件: `{post.get('file', '')}`",
         f"> - feeds_id: `{post.get('feeds_id', '')}`",
         f"> - 板块: {board}",
@@ -394,11 +396,11 @@ def save_summary_file(post: dict, result: dict) -> str:
         f"> - 点赞: {post.get('likes_count', 0)} | 评论: {post.get('comments_count', 0)}",
         f"> - 加权评分: **{result.get('weighted_score', 0)}**",
         f"> - 评分端点: {result.get('endpoint', '')}",
-        f"",
-        f"---",
-        f"",
+        "",
+        "---",
+        "",
         result.get("summary", "[无总结]"),
-        f"",
+        "",
     ]
     md_file.write_text("\n".join(lines), encoding="utf-8")
     return f"{board}/{file_stem}.md"
@@ -442,7 +444,7 @@ def main():
     completed = {}
     if checkpoint_file.exists():
         try:
-            checkpoint = json.load(open(checkpoint_file, "r", encoding="utf-8"))
+            checkpoint = json.load(open(checkpoint_file, encoding="utf-8"))
             for item in checkpoint.get("results", []):
                 completed[item["index"]] = item
             print(f"发现断点：已处理 {len(completed)} 篇")
@@ -545,7 +547,7 @@ def main():
 
     # 生成报告
     print(f"\n{'='*80}")
-    print(f"生成报告")
+    print("生成报告")
     print(f"{'='*80}")
 
     report = []
@@ -630,14 +632,14 @@ def main():
     md_file = REPORT_DIR / f"report_direct_{board_tag}{limit_tag}_{ts}.md"
     md_lines = [
         f"# 社群帖子筛选报告 - {board_tag}",
-        f"",
+        "",
         f"生成时间: {report_data['generated_at']}",
         f"总计: {len(report)} 篇",
         f"展示前 {args.report_top} 篇",
         f"权重: {', '.join(f'{k}={v}' for k, v in SCORE_WEIGHTS.items())}",
-        f"",
-        f"---",
-        f"",
+        "",
+        "---",
+        "",
     ]
 
     # 统计
@@ -652,12 +654,12 @@ def main():
             score_dist["4-6分"] += 1
         else:
             score_dist["7-10分"] += 1
-    md_lines.append(f"## 分数分布")
+    md_lines.append("## 分数分布")
     for k, v in score_dist.items():
         md_lines.append(f"- {k}: {v} 篇 ({v*100//max(len(report),1)}%)")
-    md_lines.append(f"")
-    md_lines.append(f"---")
-    md_lines.append(f"")
+    md_lines.append("")
+    md_lines.append("---")
+    md_lines.append("")
 
     for r in report[:args.report_top]:
         sel = " [精选]" if r["is_selected"] else ""
@@ -669,11 +671,11 @@ def main():
         md_lines.append(f"- 加权分: {r['weighted_score']} | 维度: {scores_str}")
         md_lines.append(f"- 点赞: {r.get('likes_count',0)} | 评论: {r.get('comments_count',0)} | 内容长度: {r.get('content_length',0)}")
         md_lines.append(f"- [打开原文]({r['url']})")
-        md_lines.append(f"")
+        md_lines.append("")
         md_lines.append(r["summary"])
-        md_lines.append(f"")
-        md_lines.append(f"---")
-        md_lines.append(f"")
+        md_lines.append("")
+        md_lines.append("---")
+        md_lines.append("")
 
     md_file.write_text("\n".join(md_lines), encoding="utf-8")
     print(f"Markdown报告: {md_file}")

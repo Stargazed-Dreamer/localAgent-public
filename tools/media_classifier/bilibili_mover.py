@@ -1,6 +1,6 @@
 """<data_drive>:\<bilibili_videos>视频分类移动脚本 Phase 2
 - 读取 classification_results.jsonl
-- 按分类+置信度分层 move 到 I:\\<data_drive>:\<bilibili_organized_output>\\
+- 按分类+置信度分层 move 到 <media_root>视频整理\\
 - 高置信(>=0.8) 和 待确认(<0.8) 分开存放
 - 重复文件(同名同大小)跳过，优先保留I盘
 - 生成 move_mapping.json 支持回滚
@@ -9,21 +9,21 @@ import json
 import os
 import shutil
 import time
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 # ============ 配置 ============
-JSONL = Path(r'f:\<project_root>\output\<data_drive>:\<bilibili_organized_output>\classification_results.jsonl')
-OUTPUT = Path(r'f:\<project_root>\output\<data_drive>:\<bilibili_organized_output>')
+JSONL = Path(r'<project_root>\output\<data_drive>:\<bilibili_organized_output>\classification_results.jsonl')
+OUTPUT = Path(r'<project_root>\output\<data_drive>:\<bilibili_organized_output>')
 MAPPING_FILE = OUTPUT / 'move_mapping.json'
-DEST_ROOT = Path(r'I:\<data_drive>:\<bilibili_organized_output>')
+DEST_ROOT = Path(r'<media_root>视频整理')
 CONFIDENCE_THRESHOLD = 0.8
 
 # ============ 主流程 ============
 def main():
     # 读取分类结果
     items = []
-    with open(JSONL, 'r', encoding='utf-8') as f:
+    with open(JSONL, encoding='utf-8') as f:
         for line in f:
             items.append(json.loads(line))
     print(f'读取分类结果: {len(items)} 条')
@@ -208,7 +208,7 @@ def main():
     tier_cat = defaultdict(lambda: defaultdict(int))
     for m in moves:
         tier_cat[m['confidence_tier']][m['category']] += 1
-    print(f'\n=== 移动统计 ===')
+    print('\n=== 移动统计 ===')
     for tier in ['高置信', '待确认']:
         if tier in tier_cat:
             print(f'\n{tier}:')

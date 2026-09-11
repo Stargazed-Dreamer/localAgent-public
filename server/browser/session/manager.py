@@ -14,11 +14,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
+from typing import TYPE_CHECKING
 
 from ..site_lessons import build_site_lessons_hint, match_site_for_url
 from .state import TabSession
+
+if TYPE_CHECKING:
+    from playwright.async_api import Browser, BrowserContext, Page, Playwright
 
 logger = logging.getLogger("localagent.browser_session")
 
@@ -35,11 +40,13 @@ class SessionManager:
     """
 
     def __init__(self) -> None:
-        self._browser: object | None = None  # Playwright Browser
-        self._playwright: object | None = None  # Playwright 进程
+        self._browser: Browser | None = None  # Playwright Browser
+        self._playwright: Playwright | None = None  # Playwright 进程
         self._sessions: dict[str, TabSession] = {}
         self._cleanup_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        # 2026-09-03 防泄漏：是否已把 Chrome 下载落盘指到项目临时目录（browser 级，幂等）
+        self._download_behavior_configured = False
 
     @property
     def is_connected(self) -> bool:
@@ -77,7 +84,7 @@ class SessionManager:
             await self._cleanup_dead_browser()
             await self._ensure_connected(cdp_url)
 
-    async def _new_page_with_retry(self, context, max_retries: int = 3) -> object:
+    async def _new_page_with_retry(self, context: BrowserContext, max_retries: int = 3) -> Page:
         """创建新 page，带重试机制处理 CDP "Failed to open a new tab" 竞态。
 
         根因：page.close() 后立即 context.new_page() 时，Chrome CDP 内部
@@ -113,6 +120,53 @@ class SessionManager:
         if self._sessions:
             logger.info("BrowserSession: 清理 %d 个失效 session", len(self._sessions))
         self._sessions.clear()
+        self._download_behavior_configured = False
+
+    @staticmethod
+    def _get_download_dir() -> str:
+        """下载沙箱目录：<项目根>/temp/browser_<data_drive>:/Downloads（避免污染用户 <data_drive>:/Downloads）。"""
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[3]  # server/browser/session/ -> 仓库根
+        return str(repo_root / "temp" / "browser_<data_drive>:/Downloads")
+
+    async def _configure_download_behavior(self, page: Page | None = None) -> None:
+        """把 CDP 浏览器的下载落盘指到项目临时目录（每次 create_session 强制配置）。
+
+        2026-09-03 防泄漏根因：connect_over_cdp 连真实 Chrome 后若不设置下载行为，
+        Chrome 一切下载默认落盘浏览器默认下载目录（用户 <data_drive>:/Downloads）——e2e download
+        测试每轮泄漏 1 个 test_download*.txt 到用户下载夹，save_as 只是另存一份、
+        拦不住 Chrome 先落盘。cancel 路径虽能拦住，但 save_as 路径拦不住。
+
+        注意：不能加"已配置就跳过"的幂等短路——实测 Playwright 的 Download.save_as
+        在 CDP 模式下会自己重设 Browser.setDownloadBehavior 的 downloadPath，首次
+        配置只对第一次下载生效，之后下载又回落到默认目录。故每次 create_session
+        都强制重发一次（单次 CDP send 开销可忽略）。
+        """
+        try:
+            browser = self._browser
+            ctx = browser.contexts[0] if browser is not None and browser.contexts else None
+            if ctx is None:
+                return
+            target = page if page is not None and not page.is_closed() else None
+            if target is None:
+                for p in ctx.pages:
+                    if not p.is_closed():
+                        target = p
+                        break
+            if target is None:
+                return  # 暂无可发 CDP 的 page，留待下次 create_session
+            dl_dir = self._get_download_dir()
+            os.makedirs(dl_dir, exist_ok=True)
+            cdp = await ctx.new_cdp_session(target)
+            await cdp.send("Browser.setDownloadBehavior", {
+                "behavior": "allow",
+                "downloadPath": dl_dir,
+                "eventsEnabled": True,
+            })
+            self._download_behavior_configured = True
+            logger.debug("BrowserSession: 下载落盘已指向沙箱目录 %s", dl_dir)
+        except Exception as e:
+            logger.warning("BrowserSession: 配置下载行为失败（不影响使用，仅可能泄漏到默认目录）%s", e)
 
     async def create_session(
         self,
@@ -123,9 +177,10 @@ class SessionManager:
         """创建或复用一个 TabSession。
 
         优先级：
-        1. url_pattern：找现有 page（url 包含 pattern），命中则复用
+        1. url_pattern：找现有 page（url 包含 pattern），命中则复用（显式接管已有 tab）
         2. url：新建 page 并 goto url
-        3. 都不传：复用 contexts[0].pages[0] 或新建空白 page
+        3. 都不传：新建专用空白 tab（2026-09-03 起不复用 pages[0]，避免
+           session 意外绑定用户真实 tab/扩展窗口页）
 
         Returns: {session_id, tab_id, url, title, created}
         """
@@ -136,10 +191,12 @@ class SessionManager:
 
         await self._reconnect_if_needed(cdp_url)
         # _reconnect_if_needed 已确保 _browser 非 None
-        context = self._browser.contexts[0] if self._browser.contexts else None
+        browser = self._browser
+        assert browser is not None
+        context = browser.contexts[0] if browser.contexts else None
         if context is None:
             # 极端情况：browser 已连接但还没有 context
-            context = await self._browser.new_context()
+            context = await browser.new_context()
 
         page = None
         # 1) url_pattern 匹配（跳过已关闭的 page）
@@ -152,17 +209,16 @@ class SessionManager:
         if page is None and url:
             page = await self._new_page_with_retry(context)
             await page.goto(url, wait_until="domcontentloaded")
-        # 3) 复用第一个未关闭的 page 或新建空白
+        # 3) 都不传：一律新建专用空白 tab。
+        # 禁止改为复用已有 page（如 contexts[0].pages[0]）：那会抓到用户真实 tab 或
+        # 扩展窗口页，配合 browser_session_close 的 close_page=True 默认值，可能把
+        # 用户最后一个真实窗口关掉，导致整个调试浏览器退出、9222 消失。
         if page is None:
-            open_pages = [p for p in context.pages if not p.is_closed()]
-            page = open_pages[0] if open_pages else await self._new_page_with_retry(context)
+            page = await self._new_page_with_retry(context)
 
-        # 应用 stealth
-        try:
-            from playwright_stealth import Stealth
-            await Stealth().apply_stealth_async(page)
-        except Exception as e:
-            logger.debug("BrowserSession: stealth 应用失败 %s", e)
+        # assert 仅为类型窄化——上面三个分支均已赋值非 None page，
+        # pyright 需要这句才能放行后续的 page 调用。
+        assert page is not None
 
         # 拿 CDP target id（page 的内部 _impl 对象上有 target_id）
         tab_id = ""
@@ -184,6 +240,9 @@ class SessionManager:
         except Exception:
             # 反查失败时保持 tab_id_resolved=False，让调用方知道 tab_id 不可用于跨调用定位
             pass
+
+        # 2026-09-03 防泄漏：把浏览器下载落盘指到项目临时目录（browser 级幂等，page 已就绪可发 CDP）
+        await self._configure_download_behavior(page)
 
         session_id = uuid.uuid4().hex
         try:
@@ -251,25 +310,26 @@ class SessionManager:
         page.on("pageerror", _on_pageerror)
 
         # 监听 page close，自动清理 session
-        def _on_close():
+        # pyright stub 将 "close" 事件 handler 标注为 (Page) -> Awaitable[None] | None，
+        # 用 *args 兼容（运行时无论传不传参都不会 TypeError）。
+        def _on_close(*_args: object) -> None:
             self._sessions.pop(session_id, None)
             logger.debug("BrowserSession: page 关闭，session %s 已清理", session_id)
         page.on("close", _on_close)
 
-        # P0-1 修复：挂持久 dialog/popup/filechooser 监听器
+        # 持久 dialog/popup/filechooser 监听器：
         # expect_* context manager 跨 HTTP 请求时序不可靠（agent 顺序调用模式下
         # wait_for 返回后才会调用 click，dialog 此时还没产生），所以改为持久监听器
         # + 队列模式。wait_for 优先消费队列，再等待新事件。
         #
-        # 2026-08-06 改造（spec: browser-dialog-handling）：
-        # _on_dialog 不再立即 dismiss，改为存引用 + 启动 5 分钟超时兜底 task。
+        # dialog 生命周期：_on_dialog 不自动 dismiss——存引用 + 启动 5 分钟超时兜底 task。
         # 在超时前 handle_dialog 可调 dlg.accept(prompt_text)/dlg.dismiss()；
         # 超时后兜底 task 自动 dismiss 并清空 last_dialog_obj，避免 dialog 永久阻塞 page。
         # 超时秒数 DIALOG_AUTO_DISMISS_TIMEOUT = 300（5 分钟，兼顾 LLM 推理时间）。
         async def _on_dialog(dlg):
             # 必须是 async handler：Playwright Python async API 下 dlg.dismiss()
             # 返回 coroutine，sync 调用不会真正 dismiss，dialog 会一直阻塞 click 等动作
-            # 直到超时（2026-08-03 E2E 测试发现此 bug）。
+            # 直到超时。
             try:
                 session._append_pending("pending_dialogs", {
                     "type": dlg.type,
@@ -324,6 +384,12 @@ class SessionManager:
 
         def _on_popup(new_page):
             try:
+                # 2026-09-03 归属修复：监听器从 context 级（page.context.on("page")）
+                # 改为 page 级——只收本 session 页面 spawn 的 popup（window.open /
+                # target=_blank），不再串扰其他 session 新建页污染 pending_popups；
+                # 同时持有 popup Page 引用，供 close_session 连坐关闭（孤儿 tab 修复）。
+                session.popup_pages.add(new_page)
+                new_page.once("close", lambda: session.popup_pages.discard(new_page))
                 # 异步收集 popup 信息（new_page.title() 是 async）
                 async def _collect():
                     try:
@@ -344,7 +410,7 @@ class SessionManager:
                 task.add_done_callback(session._popup_tasks.discard)
             except Exception:
                 pass
-        page.context.on("page", _on_popup)
+        page.on("popup", _on_popup)
 
         def _on_filechooser(fc):
             try:
@@ -391,7 +457,7 @@ class SessionManager:
         """同步获取 session（不 touch，不重连）。"""
         return self._sessions.get(session_id)
 
-    async def get_page(self, session_id: str) -> object | None:
+    async def get_page(self, session_id: str) -> Page | None:
         """获取 page 句柄并 touch。session 不存在返回 None。"""
         s = self._sessions.get(session_id)
         if s is None:
@@ -429,7 +495,7 @@ class SessionManager:
         """
         return list(self._sessions.values())
 
-    async def get_context(self):
+    async def get_context(self) -> BrowserContext | None:
         """获取 BrowserContext（contexts[0]），用于 context 级操作
         （set_http_credentials / grant_permissions 等）。
 
@@ -465,11 +531,30 @@ class SessionManager:
         for task in list(s._dialog_timeout_tasks):
             task.cancel()
         s._dialog_timeout_tasks.clear()
+        # 2026-09-03 防泄漏兜底：关 page 前 cancel 未消费的 download 对象
+        # （download 事件触发后若既未 save_as 也未 cancel，CDP 连真实 Chrome 会把
+        # 下载落盘到浏览器默认下载目录——实测泄漏 test_download*.txt 到用户 <data_drive>:/Downloads）
+        if s.last_download_obj is not None:
+            try:
+                await s.last_download_obj.cancel()
+            except Exception:
+                pass  # 下载已完成/已被保存，cancel 失败属正常
+            s.last_download_obj = None
         if close_page and not s.page.is_closed():
             try:
                 await s.page.close()
             except Exception as e:
                 logger.debug("BrowserSession: 关闭 page 失败 %s", e)
+        # 2026-09-03 popup 归属修复：连坐关闭本 session 页面 spawn 的 popup
+        # （window.open 的子页若不关会成为孤儿 tab，每轮 e2e 泄漏 4-5 个）
+        if close_page:
+            for popup_page in list(s.popup_pages):
+                try:
+                    if not popup_page.is_closed():
+                        await popup_page.close()
+                except Exception as e:
+                    logger.debug("BrowserSession: 关闭 popup page 失败 %s", e)
+            s.popup_pages.clear()
         return True
 
     async def close_all(self) -> None:

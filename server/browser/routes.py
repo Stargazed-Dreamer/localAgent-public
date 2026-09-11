@@ -395,7 +395,7 @@ async def main():
 asyncio.run(main())
 """
     from ..exec import ExecRequest, exec_python
-    result = await exec_python(ExecRequest(code=code, timeout=20))
+    result = await exec_python(ExecRequest(code=code))
     if result.success:
         # 解析关闭详情，附带在 message 中
         out = (result.stdout or "").strip()
@@ -439,6 +439,7 @@ class BrowserConsoleLogsRequest(BaseSchema):
     """
     session_id: str | None = None
     url_pattern: str | None = None
+    tab_id: str | None = None  # 无会话模式：CDP target id 精确消歧
     level: str = "all"  # all/log/info/warning/error/debug
     filter: str | None = None
     capture_ms: int = 1000
@@ -534,8 +535,24 @@ async def browser_console_logs(req: BrowserConsoleLogsRequest):
         )
 
     # 无 session：一次性抓取模式
+    # 修复幽灵参数：无会话模式支持 tab_id 精确消歧。
+    _tab_id_url = None
+    if req.tab_id:
+        _tab_id_url = await asyncio.to_thread(_resolve_tab_id_to_url, req.tab_id)
+        if _tab_id_url is None:
+            _elapsed = int((_time.perf_counter() - start) * 1000)
+            return BrowserConsoleLogsResponse(
+                success=False, logs=[], elapsed_ms=_elapsed, error=BrowserErrorResponse(
+                    error_code="TAB_NOT_FOUND",
+                    error_message=BROWSER_ERROR_CODES["TAB_NOT_FOUND"],
+                    phase="locate",
+                    debug_detail=f"tab_id {req.tab_id} 无法解析为 URL（可能已关闭或调试浏览器未运行）",
+                    elapsed_ms=_elapsed,
+                ),
+            )
     params = {
         "url_pattern": req.url_pattern,
+        "tab_id": _tab_id_url,
         "level": req.level,
         "filter": req.filter,
         "capture_ms": req.capture_ms,
@@ -555,7 +572,6 @@ async def main():
         if not page:
             print('ERROR:TAB_NOT_FOUND')
             return
-        await Stealth().apply_stealth_async(page)
         logs = []
         def on_console(msg):
             level = msg.type  # 'log', 'info', 'warning', 'error', 'debug'
@@ -628,6 +644,7 @@ class BrowserNavigateRequest(BaseSchema):
     """
     session_id: str | None = None
     url_pattern: str | None = None
+    tab_id: str | None = None  # 无会话模式：CDP target id 精确消歧
     action: str  # back/forward/reload/goto
     url: str | None = None  # goto 用
     wait_until: str = "domcontentloaded"  # goto 用
@@ -813,7 +830,7 @@ async def browser_navigate(req: BrowserNavigateRequest):
             # 超时不视为失败（agent 可用 navigation_completed 判断）
             if navigation_completed and req.wait_until != "commit":
                 try:
-                    await page.wait_for_load_state(req.wait_until, timeout=timeout_ms)
+                    await page.wait_for_load_state(req.wait_until, timeout=timeout_ms)  # type: ignore[arg-type]
                 except Exception:
                     wait_timeout = True
             elapsed = int((_time.perf_counter() - start) * 1000)
@@ -829,8 +846,24 @@ async def browser_navigate(req: BrowserNavigateRequest):
             )
 
     # 无 session：走 exec_python 子进程模型（冷启动）
+    # 修复幽灵参数：无会话模式支持 tab_id 精确消歧。
+    _tab_id_url = None
+    if req.tab_id:
+        _tab_id_url = await asyncio.to_thread(_resolve_tab_id_to_url, req.tab_id)
+        if _tab_id_url is None:
+            _elapsed = int((_time.perf_counter() - start) * 1000)
+            return BrowserNavigateResponse(
+                success=False, action=req.action, elapsed_ms=_elapsed, error=BrowserErrorResponse(
+                    error_code="TAB_NOT_FOUND",
+                    error_message=BROWSER_ERROR_CODES["TAB_NOT_FOUND"],
+                    phase="locate",
+                    debug_detail=f"tab_id {req.tab_id} 无法解析为 URL（可能已关闭或调试浏览器未运行）",
+                    elapsed_ms=_elapsed,
+                ),
+            )
     params = {
         "url_pattern": req.url_pattern,
+        "tab_id": _tab_id_url,
         "action": req.action,
         "url": req.url,
         "wait_until": req.wait_until,
@@ -850,7 +883,6 @@ async def main():
         if not page:
             print('ERROR:TAB_NOT_FOUND')
             return
-        await Stealth().apply_stealth_async(page)
         try:
             action = _PARAMS["action"]
             timeout_ms = int(_PARAMS["timeout"] * 1000)
@@ -943,9 +975,13 @@ class BrowserScreenshotRequest(BaseSchema):
 
     - session_id: 持久 session id（推荐，热态 <250ms）。不传则走 url_pattern 子进程模型
     - url_pattern: 无 session 时匹配标签页（有 session 时忽略）
+    - tab_id: 无 session 时精确消歧用。传 browser_list_tabs 返回的 target_id，
+      会经 CDP /json/list 解析为 URL 做精确匹配，避免多同域 tab 触发 AMBIGUOUS_TAB
+      （修复问题②）。与 url_pattern 同时传时，tab_id 精确匹配优先。
     """
     session_id: str | None = None
     url_pattern: str | None = None
+    tab_id: str | None = None  # 无 session 时精确消歧（browser_list_tabs 的 target_id）
     shot_type: str = "viewport"  # viewport/full_page/element
     selector: str | None = None  # element 用
     max_size: int = 1024  # 长边像素上限（压缩）
@@ -1034,6 +1070,7 @@ async def browser_screenshot(req: BrowserScreenshotRequest):
                 png = await page.screenshot(full_page=True)
             elif req.shot_type == "element":
                 el = await page.wait_for_selector(req.selector or "", timeout=10000)
+                assert el is not None  # 契约：wait_for_selector 成功返回非 None（超时抛异常走下方 except）
                 png = await el.screenshot()
             with open(shot_path, 'wb') as f:
                 f.write(png)
@@ -1044,11 +1081,31 @@ async def browser_screenshot(req: BrowserScreenshotRequest):
         # 走与子进程模式相同的压缩 + base64 流程
         success, message, elapsed = True, shot_path, int((_time.perf_counter() - start) * 1000)
     else:
+        import time as _time
+        start = _time.perf_counter()
+        # 修复问题②：无会话模式支持 tab_id 精确消歧。先把 CDP target id 解析为 URL，
+        # 再作为精确匹配传给子进程 _find_page(tab_id=url)。
+        _tab_id_url = None
+        if req.tab_id:
+            _tab_id_url = await asyncio.to_thread(_resolve_tab_id_to_url, req.tab_id)
+            if _tab_id_url is None:
+                elapsed = int((_time.perf_counter() - start) * 1000)
+                return BrowserScreenshotResponse(
+                    success=False, elapsed_ms=elapsed,
+                    error=BrowserErrorResponse(
+                        error_code="TAB_NOT_FOUND",
+                        error_message=BROWSER_ERROR_CODES["TAB_NOT_FOUND"],
+                        phase="locate",
+                        debug_detail=f"tab_id {req.tab_id} 无法解析为 URL（可能已关闭或调试浏览器未运行）",
+                        elapsed_ms=elapsed,
+                    ),
+                )
         params = {
             "url_pattern": req.url_pattern,
             "shot_type": req.shot_type,
             "selector": req.selector,
             "shot_path": shot_path,
+            "tab_id": _tab_id_url,
         }
         body = """
 async def main():
@@ -1064,7 +1121,6 @@ async def main():
         if not page:
             print('ERROR:TAB_NOT_FOUND')
             return
-        await Stealth().apply_stealth_async(page)
         try:
             st = _PARAMS["shot_type"]
             if st == "viewport":
@@ -1103,7 +1159,7 @@ asyncio.run(main())
         orig_w, orig_h = img.size
         scale = min(1.0, req.max_size / max(orig_w, orig_h))
         if scale < 1.0:
-            img = img.resize((max(1, int(orig_w*scale)), max(1, int(orig_h*scale))), Image.LANCZOS)
+            img = img.resize((max(1, int(orig_w*scale)), max(1, int(orig_h*scale))), Image.Resampling.LANCZOS)
         has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
         buf = _io.BytesIO()
         if has_alpha:

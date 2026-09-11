@@ -2,7 +2,7 @@
 
 > 设计原则 + 全部设计 token 的数值与使用规则。
 > token 真源是 `lib/ui/tokens.py`（代码引用）；本文档解释**为什么这么定、怎么用**。
-> 改 token 必须同时改 `lib/ui/tokens.py` 和本文档，并跑 `tests/test_ui_theme.py`。
+> 改 token 必须同时改 `lib/ui/tokens.py` 和本文档，并跑 `tests/client_ui/test_ui_theme.py`。
 
 ## 一、设计原则
 

@@ -1,6 +1,6 @@
 """调试：查看OCR返回的完整数据，输出到文件"""
+
 import requests
-import json
 
 API = "http://127.0.0.1:8766"
 WINDOW = "异环  "

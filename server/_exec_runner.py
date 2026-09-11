@@ -13,6 +13,11 @@ import inspect
 import sys
 
 
+async def _await_result(awaitable):
+    """把任意 awaitable 包装成 Coroutine（asyncio.run 只接受 Coroutine）"""
+    return await awaitable
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: _exec_runner.py <code_file> [working_dir]", file=sys.stderr)
@@ -35,7 +40,7 @@ def main() -> None:
     code = compile(source, code_file, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     result = eval(code, globals_dict)
     if inspect.isawaitable(result):
-        asyncio.run(result)
+        asyncio.run(_await_result(result))
 
 
 if __name__ == "__main__":

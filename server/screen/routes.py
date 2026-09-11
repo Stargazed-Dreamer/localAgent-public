@@ -106,7 +106,8 @@ def _restore_overlay_after_capture() -> None:
 # 需要焦点校验的动作（键盘/剪贴板/快捷键类——评估文档 P0 要求"未验证焦点时不发送"）
 _KEYBOARD_ACTIONS = frozenset({"type", "type_immediate", "hotkey"})
 # 需要坐标绑定 snapshot 的动作（点击/拖拽/滚动——评估文档 P0 要求"坐标必须引用 snapshot id"）
-_COORDINATE_ACTIONS = frozenset({"click", "double_click", "right_click", "scroll", "drag"})
+_COORDINATE_ACTIONS = frozenset({"click", "double_click", "right_click", "scroll", "drag",
+                                  "mouse_down", "mouse_up", "mouse_move"})
 
 
 # ========== 接管确认（takeover confirm） ==========
@@ -273,7 +274,7 @@ def _confirm_control_operation(
     try:
         from server.overlay_client import overlay_client
         result = overlay_client.confirm_action(
-            screenshot_b64=screenshot_b64,
+            screenshot_b64=screenshot_b64 or "",
             action=action,
             text=text,
             keys=keys,
@@ -405,27 +406,11 @@ def screen_request_control(req: ControlRequest):
         )
 
     # 授权后显示顶栏（若 ensure_takeover_approved 已显示则更新文案）
+    # 新 OverlayClient 设计：overlay 持久显示，文案/颜色/倒计时由 _tick_loop
+    # 每秒读 SessionManager.status() 自动推送（task_description / mode / phase /
+    # remaining_seconds），故 show_overlay() 不再收 message/persistent 参数。
     if authorization["active"] and not overlay_client.overlay_visible:
-        if authorized_mode == "watchdog":
-            max_hours = max(1, int(round((max_duration_seconds or 36000) / 3600)))
-            overlay_client.show_overlay(
-                message=(
-                    f"看门狗模式：{task_description} · 普通操作免确认 · "
-                    f"危险操作仍拦截 · {max_hours} 小时后自动收回"
-                ),
-                persistent=True,
-            )
-        else:
-            idle_total = (authorization.get("idle_warning_seconds", 600)
-                          + authorization.get("idle_grace_seconds", 1200))
-            timeout_minutes = max(1, int(idle_total / 60))
-            overlay_client.show_overlay(
-                message=(
-                    f"Agent 正在操作：{task_description} · 普通操作免确认 · "
-                    f"危险操作仍需确认 · 空闲 {timeout_minutes} 分钟自动收回"
-                ),
-                persistent=True,
-            )
+        overlay_client.show_overlay()
 
     # 状态判定：agent 请求 watchdog 但用户未勾选 → mode_downgraded
     if req.mode == "watchdog" and authorized_mode != "watchdog":
@@ -546,6 +531,48 @@ def _verify_snapshot_freshness(snapshot_id: str | None, target_hwnd: int | None)
     return True, "", meta
 
 
+# ========== 最近截图帧缓存（ZCode 风格 zoom 复用，避免重复截图） ==========
+# snapshot_id → {"png": bytes, "captured_at": float}；LRU 上限 3 帧，TTL 与 snapshot 元数据一致。
+# 供 /screen/zoom 局部裁剪和 screen_ocr 的 snapshot_id 局部 OCR 使用。
+
+_FRAME_CACHE_MAX = 3
+_frame_cache: dict[str, dict] = {}
+_frame_cache_order: list[str] = []  # 旧 → 新
+_frame_cache_lock = __import__("threading").Lock()
+
+
+def _record_frame(snapshot_id: str, png: bytes) -> None:
+    """capture 成功后缓存原始 PNG 帧（懒清理过期 + 超 LRU 上限）。"""
+    with _frame_cache_lock:
+        now = time.time()
+        # 清理已过期帧
+        expired = [k for k in _frame_cache_order
+                   if now - _frame_cache[k]["captured_at"] > _SNAPSHOT_TTL_SECONDS]
+        for k in expired:
+            _frame_cache.pop(k, None)
+            _frame_cache_order.remove(k)
+        # 超 LRU 上限先淘汰最旧
+        while len(_frame_cache_order) >= _FRAME_CACHE_MAX:
+            old = _frame_cache_order.pop(0)
+            _frame_cache.pop(old, None)
+        _frame_cache[snapshot_id] = {"png": png, "captured_at": now}
+        _frame_cache_order.append(snapshot_id)
+
+
+def _get_cached_frame(snapshot_id: str) -> bytes | None:
+    """取缓存帧；不存在或过期返回 None（懒清理）。"""
+    with _frame_cache_lock:
+        entry = _frame_cache.get(snapshot_id)
+        if entry is None:
+            return None
+        if time.time() - entry["captured_at"] > _SNAPSHOT_TTL_SECONDS:
+            _frame_cache.pop(snapshot_id, None)
+            if snapshot_id in _frame_cache_order:
+                _frame_cache_order.remove(snapshot_id)
+            return None
+        return entry["png"]
+
+
 # ========== Pydantic 模型 ==========
 
 class CaptureRequest(BaseSchema):
@@ -658,7 +685,7 @@ def list_windows():
         # 自动注入软件经验提示（闭环：list_windows 是 agent 操作软件的入口）
         hint = None
         try:
-            from server.screen.app_lessons import match_app_for_process_names, build_app_lessons_hint
+            from server.screen.app_lessons import build_app_lessons_hint, match_app_for_process_names
             process_names = list({w.get("process_name", "") for w in windows if w.get("process_name")})
             lessons = match_app_for_process_names(process_names)
             hint = build_app_lessons_hint(lessons)
@@ -760,6 +787,8 @@ def capture_screen(req: CaptureRequest):
             "image_size": [orig_w, orig_h],
             "mode": req.mode,
         })
+        # ZCode 风格帧缓存：/screen/zoom 与 screen_ocr(snapshot_id=...) 复用本帧，免重复截图
+        _record_frame(snapshot_id, png_bytes)
 
         if req.format == "path":
             # 保存到 temp/ 目录，返回路径（不污染上下文）
@@ -788,7 +817,7 @@ def capture_screen(req: CaptureRequest):
             if max(orig_w, orig_h) > req.max_edge:
                 scale = req.max_edge / max(orig_w, orig_h)
                 new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-                img = img.resize((new_w, new_h), Image.LANCZOS)
+                img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
             else:
                 new_w, new_h = orig_w, orig_h
             # 转 JPEG
@@ -825,6 +854,121 @@ def capture_screen(req: CaptureRequest):
             _restore_overlay_after_capture()
 
 
+class ZoomRequest(BaseSchema):
+    """局部放大（ZCode 风格 zoom）：对最近一帧截图按 region 裁剪复用，不重新截图。
+
+    适合小字/图标/密集控件的近距离辨认：capture_screen 拿到 snapshot_id 后，
+    对可疑区域裁剪放大看细节，省一次全屏截图。
+    """
+    snapshot_id: str  # capture_screen 返回的截图快照 ID（引用缓存帧，过期报错提示重拍）
+    region: list[int]  # [x0, y0, x1, y1] 截图内像素坐标（原始尺寸坐标系，越界自动 clamp）
+    output: str = "inline"  # inline（JPEG + mcp_image_block，多模态 LLM 直接看图）| path（临时文件路径）
+    scale: float = 1.0  # 裁剪后再放大倍数（1-4，LANCZOS；1=只裁剪不放大）
+    max_edge: int = 1280  # inline 输出最长边限制
+    jpeg_quality: int = 90  # 放大细节场景默认比全屏截图略高
+
+
+class ZoomResponse(BaseSchema):
+    mcp_image_block: bool = False  # output=inline 时为 True，触发 mcp_gateway 的 ImageContent 转换
+    image: str = ""  # base64 JPEG（仅 output=inline 时填充）
+    path: str | None = None  # 临时文件路径（output=path 时填充），可传给 ocr_file / docviewer
+    mime_type: str = "image/jpeg"
+    width: int
+    height: int
+    region_clamped: list[int] = []  # 实际裁剪区域（clamp 后），供 agent 校准坐标
+    scaled: bool = False
+    snapshot_id: str
+    elapsed_ms: int
+    note: str = ""
+
+
+@router.post("/zoom", response_model=ZoomResponse, operation_id="screen_zoom")
+def screen_zoom(req: ZoomRequest):
+    """局部放大：复用最近一帧截图按 region 裁剪（可选放大），不重新截图。
+
+    - snapshot_id 来自 capture_screen 返回值；不存在/过期（>5min）报 404 提示重拍
+    - region 为截图内像素坐标（与 capture_screen 响应的 width/height 同坐标系），
+      越界部分自动 clamp；裁剪结果过小（<4px）报 400
+    - output=inline 走 MCP ImageContent（多模态 LLM 直接看图，不进文本上下文）；
+      output=path 返回临时 PNG 路径（可传给 ocr_file 做局部 OCR）
+    """
+    t0 = time.perf_counter()
+    png = _get_cached_frame(req.snapshot_id)
+    if png is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"snapshot_id={req.snapshot_id[:8]}… 不存在或已过期（>5min）。请重新 capture_screen 后再 zoom",
+        )
+    if not req.region or len(req.region) != 4:
+        raise HTTPException(status_code=400, detail="region 必须是 [x0, y0, x1, y1] 四元素列表")
+    if req.output not in ("inline", "path"):
+        raise HTTPException(status_code=400, detail="output 只支持 inline | path")
+    if not (0.5 <= req.scale <= 4.0):
+        raise HTTPException(status_code=400, detail="scale 支持 0.5-4.0（1=只裁剪不放大）")
+
+    from PIL import Image
+    img = Image.open(io.BytesIO(png))
+    img_w, img_h = img.size
+    x0, y0, x1, y1 = (int(v) for v in req.region)
+    cx0, cy0 = max(0, min(x0, img_w)), max(0, min(y0, img_h))
+    cx1, cy1 = max(0, min(x1, img_w)), max(0, min(y1, img_h))
+    if cx1 - cx0 < 4 or cy1 - cy0 < 4:
+        raise HTTPException(
+            status_code=400,
+            detail=f"裁剪区域过小（clamp 后 {cx1 - cx0}x{cy1 - cy0}px，至少 4x4）。检查 region 是否与截图坐标系一致",
+        )
+    crop = img.crop((cx0, cy0, cx1, cy1))
+
+    scaled = False
+    if req.scale != 1.0:
+        new_w = max(1, int(crop.width * req.scale))
+        new_h = max(1, int(crop.height * req.scale))
+        crop = crop.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        scaled = True
+
+    if crop.mode != "RGB":
+        crop = crop.convert("RGB")
+    out_w, out_h = crop.size
+
+    elapsed = int((time.perf_counter() - t0) * 1000)
+    if req.output == "path":
+        import os
+        import tempfile
+        from datetime import datetime
+        temp_dir = os.path.join(tempfile.gettempdir(), "localagent_captures")
+        os.makedirs(temp_dir, exist_ok=True)
+        filename = f"zoom_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+        file_path = os.path.join(temp_dir, filename)
+        crop.save(file_path, format="PNG")
+        return ZoomResponse(
+            path=file_path, width=out_w, height=out_h,
+            region_clamped=[cx0, cy0, cx1, cy1], scaled=scaled,
+            snapshot_id=req.snapshot_id, elapsed_ms=elapsed,
+            note=f"zoom 裁剪已保存 PNG（{out_w}x{out_h}px，region clamp 后 {cx0},{cy0},{cx1},{cy1}）。路径可传给 ocr_file / docviewer",
+        )
+
+    # inline：JPEG + mcp_image_block（与 capture_screen format=inline 同一转换机制）
+    if max(out_w, out_h) > req.max_edge:
+        s = req.max_edge / max(out_w, out_h)
+        crop = crop.resize((int(out_w * s), int(out_h * s)), Image.Resampling.LANCZOS)
+        out_w, out_h = crop.size
+    buf = io.BytesIO()
+    crop.save(buf, format="JPEG", quality=req.jpeg_quality, optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return ZoomResponse(
+        mcp_image_block=True,
+        image=b64,
+        mime_type="image/jpeg",
+        width=out_w, height=out_h,
+        region_clamped=[cx0, cy0, cx1, cy1], scaled=scaled,
+        snapshot_id=req.snapshot_id, elapsed_ms=elapsed,
+        note=(
+            f"zoom 裁剪（region clamp 后 {cx0},{cy0},{cx1},{cy1}，scale={req.scale}）"
+            f"已压缩为 JPEG q={req.jpeg_quality}，多模态 LLM 可直接看图"
+        ),
+    )
+
+
 class ScreenOcrRequest(BaseSchema):
     """截图+OCR 一体化请求（避免 base64 撑爆上下文）。
 
@@ -837,6 +981,10 @@ class ScreenOcrRequest(BaseSchema):
     engine: str = "ocr"  # ocr（经典 PaddleOCR）| vl（远程 VL）
     max_height: int = 3000  # 长图分块最大高度（仅 engine=ocr 时生效）
     force_fullscreen_crop: bool = False
+    # ZCode 风格帧复用：传入 capture_screen 的 snapshot_id 时直接用缓存帧 OCR（不重拍，免覆盖层闪动）
+    snapshot_id: str | None = None
+    # 局部 OCR：[x0,y0,x1,y1] 截图内像素坐标（与 /screen/zoom 同坐标系），只识别该区域（小字更准）
+    region: list[int] | None = None
 
 
 class ScreenOcrResponse(BaseSchema):
@@ -868,21 +1016,36 @@ def screen_ocr(req: ScreenOcrRequest):
 
     t0 = time.perf_counter()
 
-    # 截图前隐藏覆盖层
+    # 截图前隐藏覆盖层（snapshot_id 帧复用模式不重截图，不扰动覆盖层）
     overlay_was_visible = False
+    overlay_hidden = False
     try:
         from server.overlay_client import overlay_client
         overlay_was_visible = overlay_client.overlay_visible
-        if overlay_was_visible:
+        if overlay_was_visible and not req.snapshot_id:
             overlay_client.hide_overlay()
+            overlay_hidden = True
             time.sleep(_OVERLAY_HIDE_DELAY)
     except Exception:
         pass
 
     try:
-        # 1. 截图
+        # 1. 截图（snapshot_id 提供时复用缓存帧，不重拍——ZCode 风格帧复用）
         window_rect_for_response: list[int] | None = None
-        if req.mode == "window":
+        if req.snapshot_id:
+            png_bytes = _get_cached_frame(req.snapshot_id)
+            if png_bytes is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"snapshot_id={req.snapshot_id[:8]}… 不存在或已过期（>5min）。请重新 capture_screen / screen_ocr",
+                )
+            meta = {}
+            with _snapshot_metadata_lock:
+                meta = dict(_snapshot_metadata.get(req.snapshot_id, {}))
+            if meta.get("window_rect"):
+                window_rect_for_response = [int(v) for v in meta["window_rect"]]
+            captured_title = meta.get("window_title")
+        elif req.mode == "window":
             target_hwnd = req.hwnd
             if target_hwnd is None and req.window_title:
                 win = _find_window(req.window_title, req.process_name)
@@ -915,6 +1078,21 @@ def screen_ocr(req: ScreenOcrRequest):
         from PIL import Image
         image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
         orig_w, orig_h = image.size
+
+        # 1.5 局部裁剪（region 可选，与 /screen/zoom 同坐标系；小字 OCR 更准）
+        if req.region:
+            if len(req.region) != 4:
+                raise HTTPException(status_code=400, detail="region 必须是 [x0, y0, x1, y1] 四元素列表")
+            rx0, ry0, rx1, ry1 = (int(v) for v in req.region)
+            rx0, ry0 = max(0, min(rx0, orig_w)), max(0, min(ry0, orig_h))
+            rx1, ry1 = max(0, min(rx1, orig_w)), max(0, min(ry1, orig_h))
+            if rx1 - rx0 < 4 or ry1 - ry0 < 4:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"region 过小（clamp 后 {rx1 - rx0}x{ry1 - ry0}px，至少 4x4）",
+                )
+            image = image.crop((rx0, ry0, rx1, ry1))
+            orig_w, orig_h = image.size
 
         # 2. OCR 识别
         warning_msg: str | None = None
@@ -958,24 +1136,26 @@ def screen_ocr(req: ScreenOcrRequest):
         )
     finally:
         # 截图后恢复覆盖层（ISSUE-005：保留 persistent 模式语义）
-        if overlay_was_visible:
+        # snapshot_id 帧复用模式未隐藏过覆盖层，无需恢复
+        if overlay_hidden:
             _restore_overlay_after_capture()
 
 
 @router.post("/overlay", response_model=OverlayResponse, operation_id="screen_overlay")
 def screen_overlay(req: OverlayRequest):
-    """显示/隐藏屏幕操作提示覆盖层（action=show|hide）"""
+    """显示/隐藏屏幕操作提示覆盖层（action=show|hide）
+
+    注：req.message 字段在新 OverlayClient 设计下已弃用——文案由 _tick_loop 每秒
+    从 SessionManager.status() 自动推送（task_description），不再接受外部传入。
+    保留 OverlayRequest.message 字段仅为向后兼容已部署的 agent 调用。
+    """
     try:
         from server.overlay_client import overlay_client
         if req.action == "hide":
             overlay_client.hide_overlay()
             return OverlayResponse(success=True, message="覆盖层已隐藏")
-        # 显示前同步自动隐藏超时配置，确保 agent 显式调 /overlay 也能应用最新配置
-        from server.config import get_screen_config
-        overlay_client.set_overlay_auto_hide_seconds(
-            get_screen_config().get("overlay_auto_hide_seconds", 30)
-        )
-        overlay_client.show_overlay(message=req.message, position=req.position)
+        # 新设计：overlay 持久显示，无自动隐藏计时器，故不再调 set_overlay_auto_hide_seconds
+        overlay_client.show_overlay(position=req.position)
         return OverlayResponse(success=True, message="覆盖层已显示")
     except Exception as e:
         return OverlayResponse(success=False, message=f"覆盖层操作失败: {e}")
@@ -1136,6 +1316,7 @@ def screen_snapshot(req: SnapshotRequest):
 from . import action_endpoints as _action_endpoints  # noqa: E402,F401
 from . import app_lessons as _app_lessons  # noqa: E402,F401
 from . import batch_endpoints as _batch_endpoints  # noqa: E402,F401
+from . import clipboard_endpoints as _clipboard_endpoints  # noqa: E402,F401
 from . import desktop_transaction_endpoints as _desktop_transaction_endpoints  # noqa: E402,F401
 from . import lifecycle_endpoints as _lifecycle_endpoints  # noqa: E402,F401
 from . import scroll_wait_analyze_endpoints as _scroll_wait_analyze_endpoints  # noqa: E402,F401
@@ -1160,6 +1341,13 @@ from .batch_endpoints import (  # noqa: E402,F401
     PreviewPoint,
     batch_actions,
     preview_action,
+)
+from .clipboard_endpoints import (  # noqa: E402,F401
+    ClipboardReadResponse,
+    ClipboardWriteRequest,
+    ClipboardWriteResponse,
+    read_clipboard,
+    write_clipboard,
 )
 from .desktop_transaction_endpoints import (  # noqa: E402,F401
     DesktopTransactionItem,
@@ -1225,9 +1413,3 @@ def on_shutdown():
     except Exception:
         pass
     logger.info("Screen模块已关闭")
-
-
-# ========== snake_case 兼容别名（已移除） ==========
-# 主路径已统一为 kebab-case（/focus-window、/batch-actions、/scroll-capture、/wait-for）。
-# 历史 snake_case 兼容别名（focus_window_legacy 等 4 个，include_in_schema=False）
-# 已于 2026-08-01 移除：经全仓搜索无外部调用方，GATEWAY_EXCLUDE 中对应 _legacy 条目同步清理。

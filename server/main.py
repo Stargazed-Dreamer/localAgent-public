@@ -91,9 +91,12 @@ from server.docviewer import router as docviewer_router
 from server.exec import output_router as exec_output_router
 from server.exec import router as exec_router
 from server.exec import terminal_router as exec_terminal_router
+from server.inbound_gateway.router import router as inbound_gateway_router
 from server.inbox import router as inbox_router
 from server.memory.router import router as memory_router
 from server.mindforge import router as mindforge_router
+from server.model_manager.routes import router as model_manager_router
+from server.model_manager.types import ModelUnavailableError
 
 # 子路由
 from server.ocr import router as ocr_router
@@ -193,7 +196,7 @@ def _setup_logging():
 
 _setup_logging()
 
-VERSION = "0.39.0"
+VERSION = "0.46.0"
 
 app = FastAPI(title="LocalAgent API", version=VERSION)
 
@@ -219,6 +222,34 @@ async def validation_exception_handler(request, exc: RequestValidationError):
     return JSONResponse(
         status_code=422,
         content={"detail": "请求参数验证失败", "errors": errors},
+    )
+
+
+@app.exception_handler(ModelUnavailableError)
+async def model_unavailable_handler(request, exc: ModelUnavailableError):
+    """模型存活管理器准入拒绝 → 503（与现有"远程 VL 不可用"503 语义对齐）。
+
+    调用方可程序化区分"暂时不可用"（503，可重试）与"代码错误"（500）。
+    """
+    hints = {
+        "pressure_refusing": "资源压力过高，该模型已被暂停；压力回落后重试",
+        "probe_degraded": "资源探测失败，保持保护姿态；请稍后重试",
+        "cooldown": "该模型近期加载失败，处于冷却期；请稍后重试",
+        "awaiting_first_sample": "监控尚未完成首次采样；请稍后重试",
+        "reload_degraded": "该模型连续加载失败，建议重启后端",
+        "unloading_in_progress": "模型正在卸载中；请稍后重试",
+    }
+    logger.warning(
+        f"模型不可用 {request.url.path}: model={exc.model_id} reason={exc.reason}"
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "model_unavailable",
+            "model_id": exc.model_id,
+            "reason": exc.reason,
+            "hint": hints.get(exc.reason, "模型暂不可用，请稍后重试"),
+        },
     )
 
 
@@ -271,6 +302,7 @@ app.include_router(ocr_router)
 app.include_router(agent_router)
 app.include_router(auto_shutdown_router)
 app.include_router(apikey_router)
+app.include_router(inbound_gateway_router)  # 入站网关：/v1/* OpenAI 兼容 + /inbound/* 管理
 app.include_router(browser_router)
 app.include_router(exec_router)
 app.include_router(exec_terminal_router)  # 终端会话（独立 prefix /terminals）
@@ -283,6 +315,7 @@ app.include_router(memory_router)     # 三层记忆系统 v2（向后兼容旧 
 app.include_router(todos_router)       # 待办模块（周期任务）
 app.include_router(todos_wip_router)   # WIP 任务追踪（独立 prefix /wip）
 app.include_router(mindforge_router)
+app.include_router(model_manager_router)   # Model Lifecycle Manager 控制面（design §10）
 app.include_router(docviewer_router)
 app.include_router(system_router)
 app.include_router(advanced_router)

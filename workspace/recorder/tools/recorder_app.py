@@ -99,7 +99,17 @@ class RecorderApp:
         self._sensors = self._call_sensor_factory(self._controller, self.config)
         self._controller.sensors = list(self._sensors)
         # 启动 controller（会调每个 sensor.start）
-        self._controller.start()
+        try:
+            self._controller.start()
+        except Exception:
+            # 启动失败回滚：controller 已置 RECORDING、录制包已建、部分传感器已启动。
+            # 不回滚会泄漏空录制包目录 + 孤儿传感器线程（GUI 只收到异常，
+            # 不会调 stop；自动停止计时器也尚未启动）。
+            try:
+                self._controller.discard()
+            except Exception:
+                pass
+            raise
         self._start_time = time.time()
         self._is_running = True
         # 启动 30 分钟自动停止计时器

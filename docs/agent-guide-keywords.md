@@ -292,6 +292,6 @@ for q in ['用户说法1', '用户说法2', ...]:
 - [server/agent_guide.py](../server/agent_guide.py) — 匹配算法实现
 - [server/agent_guide_data.py](../server/agent_guide_data.py) — 内置 GUIDE_REGISTRY
 - `workspace/<module>/loop_actions.py` — 可选组件 GUIDE_REGISTRY_ENTRIES
-- [tests/test_agent_guide_matching.py](../tests/test_agent_guide_matching.py) — 匹配改进测试
-- [tests/test_agent_guide_recording.py](../tests/test_agent_guide_recording.py) — recording 路由测试
-- [tests/test_agent_guide_memory_index.py](../tests/test_agent_guide_memory_index.py) — memory_index 测试
+- [tests/guide_loops/test_agent_guide_matching.py](../tests/guide_loops/test_agent_guide_matching.py) — 匹配改进测试
+- [tests/guide_loops/test_agent_guide_recording.py](../tests/guide_loops/test_agent_guide_recording.py) — recording 路由测试
+- [tests/guide_loops/test_agent_guide_memory_index.py](../tests/guide_loops/test_agent_guide_memory_index.py) — memory_index 测试

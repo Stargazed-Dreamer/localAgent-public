@@ -45,6 +45,6 @@ v6-07（记忆/Skill 模块设计）规划了基于 markdown 文件系统的记�
 
 ## References
 
-- 决策来源：[`temp/sdd/memory-prompt-tool-refactor/00-decisions.md`](file:///f:/<project_root>/temp/sdd/memory-prompt-tool-refactor/00-decisions.md) D1（增量改造 SQLite 君子协议）、D4/D7（5 类 closed taxonomy）、D16（experience 类 vs WHAT_NOT_TO_SAVE）、D9/D14（staleness 警告 + TRUSTING_RECALL）、D15（不做 MEMORY.md 双 cap）
-- 关键代码路径：[server/memory/manager.py](file:///f:/<project_root>/server/memory/manager.py)、[server/memory/store.py](file:///f:/<project_root>/server/memory/store.py)、[server/memory/config.py](file:///f:/<project_root>/server/memory/config.py)（staleness 阈值常量）、[server/memory/schema.py](file:///f:/<project_root>/server/memory/schema.py)
+- 决策来源：[`temp/sdd/memory-prompt-tool-refactor/00-decisions.md`](file:///<project_root>/temp/sdd/memory-prompt-tool-refactor/00-decisions.md) D1（增量改造 SQLite 君子协议）、D4/D7（5 类 closed taxonomy）、D16（experience 类 vs WHAT_NOT_TO_SAVE）、D9/D14（staleness 警告 + TRUSTING_RECALL）、D15（不做 MEMORY.md 双 cap）
+- 关键代码路径：[server/memory/manager.py](file:///<project_root>/server/memory/manager.py)、[server/memory/store.py](file:///<project_root>/server/memory/store.py)、[server/memory/config.py](file:///<project_root>/server/memory/config.py)（staleness 阈值常量）、[server/memory/schema.py](file:///<project_root>/server/memory/schema.py)
 - 相关 ADR：无（独立模块决策）

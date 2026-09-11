@@ -1,7 +1,8 @@
 """生成不同缩放倍率的标注图片供用户选择"""
-import requests
 import base64
 import io
+
+import requests
 from PIL import Image, ImageDraw, ImageFont
 
 API = "http://127.0.0.1:8766"

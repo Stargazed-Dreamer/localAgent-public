@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """明日方舟寻访记录采集脚本 v4
 
 通过 Playwright + CDP 操控浏览器获取寻访记录。
@@ -34,9 +34,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from playwright.async_api import async_playwright
-from playwright_stealth import Stealth
 
-_stealth = Stealth()
 CDP_PORT = 9222
 
 # 项目根目录
@@ -558,7 +556,6 @@ async def main_async(force: bool = False, token: str = ""):
 
         if not page:
             page = await context.new_page()
-            await _stealth.apply_stealth_async(page)
             await page.goto(AK_HOME_URL, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(3)
 

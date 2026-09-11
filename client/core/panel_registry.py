@@ -17,6 +17,9 @@ from client.core.panel_base import PanelBase
 
 logger = logging.getLogger("localagent.panel_registry")
 
+# 侧边栏分组显示顺序（语义序，非字母序）；未知 category 排最后
+_CATEGORY_DISPLAY_ORDER = {"main": 0, "monitor": 1, "advanced": 2}
+
 
 class PanelRegistry:
     """面板注册表 + 自动发现"""
@@ -122,10 +125,14 @@ class PanelRegistry:
 
     @classmethod
     def get_all_sorted(cls) -> list[type[PanelBase]]:
-        """按 (category, order) 排序返回所有已注册面板类"""
+        """按 (category 显示序, order) 排序返回所有已注册面板类
+
+        category 用语义顺序（主面板 → 监控 → 高级），不用字母序——
+        字母序会把高频的 main 组压到 advanced 组下面。
+        """
         return sorted(
             cls._classes,
-            key=lambda c: (c.meta().category, c.meta().order),
+            key=lambda c: (_CATEGORY_DISPLAY_ORDER.get(c.meta().category, 99), c.meta().order),
         )
 
     @classmethod

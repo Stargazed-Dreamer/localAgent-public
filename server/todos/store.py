@@ -114,6 +114,7 @@ class TodosStore:
 
     def _migrate_schema(self) -> None:
         """幂等升级已有 DB：添加新列（列已存在时忽略错误）。"""
+        assert self._conn is not None  # initialize() 内调用，连接已建立
         for stmt in _ALTER_STATEMENTS:
             try:
                 self._conn.execute(stmt)
@@ -124,6 +125,7 @@ class TodosStore:
     def conn(self) -> sqlite3.Connection:
         if self._conn is None:
             self.initialize()
+        assert self._conn is not None  # initialize() 后必有连接，收窄返回类型
         return self._conn
 
     # ─── 内部工具 ─────────────────────────────────────────────
@@ -185,7 +187,9 @@ class TodosStore:
                 ),
             )
             self.conn.commit()
-        return self.get_todo(todo_id)
+        result = self.get_todo(todo_id)
+        assert result is not None  # 刚 INSERT 的行必存在，收窄返回类型
+        return result
 
     def get_todo(self, todo_id: str) -> Optional[dict]:
         cur = self.conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,))
@@ -453,7 +457,9 @@ class TodosStore:
                 ),
             )
             self.conn.commit()
-        return self.get_wip(task_id)
+        result = self.get_wip(task_id)
+        assert result is not None  # 刚 INSERT 的行必存在，收窄返回类型
+        return result
 
     def get_wip(self, task_id: str) -> Optional[dict]:
         cur = self.conn.execute("SELECT * FROM wip_tasks WHERE id = ?", (task_id,))

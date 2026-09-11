@@ -182,7 +182,7 @@ localagent_advanced_tool(tool="<operation_id>", params={...})
 **禁止**用 exec_python 发 HTTP 调本地 API（触发审批且绕过 safety 分类），详见 AGENTS.md"工具选择决策树"。
 `advanced_tool` 调 GET 类端点**免审批**（safety 绑定目标 operation，GET=read_only）；`exec_python` 是 approval_required，每次都触发审批。
 
-**Computer Use 定位优先级**：浏览器 DOM locator → UIA 语义层 → `screen_ocr`/`ocr_path` bbox → `vision_locate`。`understand_image` 默认用于布局和状态描述，`vision_locate` 仅作无文字元素坐标兜底。（OmniParser 已于 2026-07-31 移除）
+**Computer Use 定位优先级**：浏览器 DOM locator → UIA 语义层 → `screen_ocr`/`ocr_path` bbox → `vision_locate`。`understand_image` 默认用于布局和状态描述，`vision_locate` 仅作无文字元素坐标兜底。
 
 **不确定时如何查询**：
 - 查 `server/<模块>.py` 中路由的 `operation_id` 参数（最准确）
@@ -197,15 +197,58 @@ localagent_advanced_tool(tool="<operation_id>", params={...})
 
 | 排除的 MCP 工具名 | REST API | 说明 |
 |------------------|----------|------|
-| `ocr_set_keep_models` | `POST /ocr/models/keep` | 设置 OCR 模型常驻内存 |
-| `ocr_unload_models` | `POST /ocr/models/unload` | 卸载 OCR 模型 |
+| `ocr_set_keep_models` | `POST /ocr/models/keep` | 设置 OCR 模型常驻内存（写回 ModelLifecycleManager `restore_preload` 配置） |
+| `ocr_unload_models` | `POST /ocr/models/unload` | 卸载 OCR 模型（委托 `manager.manual_unload("ocr")`） |
 | `vision_set_keep_models` | `POST /vision/models/keep` | 设置视觉模型常驻内存 |
 | `vision_unload_models` | `POST /vision/models/unload` | 卸载视觉模型 |
-| `mindforge_preload` | `POST /mindforge/preload` | 预加载搜索引擎 |
-| `mindforge_unload` | `POST /mindforge/unload` | 卸载搜索引擎 |
+| `mindforge_preload` | `POST /mindforge/preload` | 预加载搜索引擎（委托 `manager.manual_load("mindforge_searcher")`） |
+| `mindforge_unload` | `POST /mindforge/unload` | 卸载搜索引擎（委托 `manager.manual_unload("mindforge_searcher")`） |
 | `mindforge_convert` | `POST /mindforge/convert` | 单文档转换（守护进程，未启动时自动拉起） |
 | `mindforge_daemon_stop` | `POST /mindforge/daemon/stop` | 停止守护进程 |
 | `mindforge_daemon_status` | `GET /mindforge/daemon/status` | 守护进程状态 |
+
+### Model Lifecycle Manager 统一控制面（`/models/*`）
+
+**新增**：统一管理后端进程内 4 个本地模型（PaddleOCR / memory_embedding / guide_embedding / mindforge_searcher）生命周期的控制面。设计文档：`temp/sdd/model-lifecycle-manager/design.md`。环境约束与显存释放实测详见 `docs/environment-constraints.md` 的 "Model Lifecycle Manager 显存释放实测" 段。
+
+**审批级别**（已在 `server/route_tags.py` 的 `_APPROVAL_POST_PATTERNS` 增 `/models` 前缀 + `_MODERATE_EXCLUDE_PATTERNS` 镜像，**所有 POST 端点判为 `approval_required`**，避免 fail-open 让 agent 无审批卸载 OCR 瘫痪 Computer Use 主路径）：
+
+| 端点 | 方法 | 审批级别 | 说明 |
+|------|------|----------|------|
+| `/models` | GET | read_only | 列出全部注册模型状态（model_id/resource/loaded/footprint_mb/priority/evictable/in_flight/loaded_at/last_load_ms） |
+| `/models/{model_id}/load` | POST | approval_required | 手动加载模型（豁免冷却/降级，仍受压力态约束） |
+| `/models/{model_id}/unload` | POST | approval_required | 手动卸载模型 |
+| `/models/pause` | POST | approval_required | 暂停压力监控（手动超驰通道；PAUSED 期间准入放行且暂停逐出） |
+| `/models/resume` | POST | approval_required | 恢复压力监控 |
+| `/models/pressure` | GET | read_only | 各资源压力态 + used/total + 最近迁移事件 |
+
+**支持的 model_id**：`ocr` / `memory_embedding` / `guide_embedding` / `mindforge_searcher`。
+
+**MCP 调用方式**：通过 `localagent_advanced_tool` 网关（GET 类免审批，POST 类触发审批弹窗）：
+
+```
+# 列出所有模型状态（GET 免审批）
+localagent_advanced_tool(tool="models_list", params={})
+
+# 查询压力态（GET 免审批）
+localagent_advanced_tool(tool="models_pressure", params={})
+
+# 手动加载 OCR（POST 触发审批）
+localagent_advanced_tool(tool="models_load", params={"model_id": "ocr"})
+
+# 手动卸载 MindForge 搜索引擎（POST 触发审批）
+localagent_advanced_tool(tool="models_unload", params={"model_id": "mindforge_searcher"})
+
+# 暂停压力监控（POST 触发审批，PAUSED 期间准入放行且暂停逐出）
+localagent_advanced_tool(tool="models_pause", params={"resource": "gpu"})
+```
+
+**手动卸载记忆 embedding 的恢复步骤**（重要：默认钉住规避，手动卸载走审批门槛）：
+
+1. `POST /models/memory_embedding/load` 重新加载 embedding engine
+2. `POST /memory/rebuild_vector_index` 补卸载窗口内缺失的向量索引（卸载期间写入的消息会永久缺失向量索引，记忆语义检索静默降级为 BM25-only）
+
+**Health 聚合**：`/health.model_manager` 低频枚举（不放高频计数器避免 client 指纹漂移），返回 `{enabled, gpu_state, cpu_state, loaded_ids, reload_degraded_ids, last_transition_ts}`；`HealthResponse` schema 已显式声明 `model_manager` 字段。
 
 ### 远程 VL 与网关策略
 
@@ -226,10 +269,11 @@ localagent_advanced_tool(tool="<operation_id>", params={...})
 | **v6-lite 引擎专用** | `llm_pool_chat_tools`, `llm_pool_stream` | v6-lite 对话引擎 LLMGateway/SSE 专用端点，不进 agent tool catalog（防递归，REST 仍可用） |
 | **GUI/脚本专用** | `activity_daily_*`(4), `user_message_*`(4) | 由 GUI 面板和日报系统管理 |
 | **零调用状态** | `system_status`, `keep_awake_status`, `docviewer_status`, `memory_maintain_status`, `agent_guide_usage` | 通过 `/health` 获取聚合状态 |
+| **入站网关** | `inbound_v1_models`, `inbound_v1_chat_completions`, `inbound_keys_list`, `inbound_keys_create`, `inbound_keys_update`, `inbound_keys_delete`, `inbound_calls_list`, `inbound_stats` | OpenAI 兼容中转端点，消费者是外部 harness（Cline/Cherry Studio）与「入站管理」GUI 面板，不进 agent 工具列表 |
 
 ### 脚本驱动功能（非 agent 直接调用）
 
-> **记账审核**已从主后端剥离，迁移为独立服务（端口 8780）。原 `/accounting/*` 端点不再注册到主后端，因此无对应的 MCP 工具需排除。记账审核通过独立服务 Web 页面 `http://127.0.0.1:8780/` 操作，详见 [accounting skill](file:///f:/<project_root>/.agents/skills/accounting.md)。
+> **记账审核**已从主后端剥离，迁移为独立服务（端口 8780）。原 `/accounting/*` 端点不再注册到主后端，因此无对应的 MCP 工具需排除。记账审核通过独立服务 Web 页面 `http://127.0.0.1:8780/` 操作，详见 [accounting skill](file:///<project_root>/.agents/skills/accounting.md)。
 
 ## v6-lite-streaming-gui：真流式 + DoomLoop + SessionFacade
 

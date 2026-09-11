@@ -1,8 +1,8 @@
 import json
 
-jsonl = r'f:\<project_root>\output\<data_drive>:\<bilibili_organized_output>\classification_results.jsonl'
+jsonl = r'<project_root>\output\<data_drive>:\<bilibili_organized_output>\classification_results.jsonl'
 items = []
-with open(jsonl, 'r', encoding='utf-8') as f:
+with open(jsonl, encoding='utf-8') as f:
     for line in f:
         items.append(json.loads(line))
 

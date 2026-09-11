@@ -76,6 +76,51 @@
 - **分类**：Added（新增功能）/ Changed（行为变更）/ Fixed（Bug 修复）/ Deprecated（即将移除）/ Removed（已移除）/ Security（安全相关）
 - **格式**：`- 简述变更（涉及文件路径，为什么改）`
 
+## 提交前机械防线（强制，2026-08-26 逻辑 bug 审查后建立）
+
+任何对 `server/`、`client/`、`lib/` 的代码变更，完成自测后、向用户报告"完成"之前，**必须跑以下两道机械检查**。这是防"上游改了下游没改"合同漂移复发的制度约束——审查结论见 commit `bf0c073`（f1-f10 共 16 组根因）：本项目历史 P0 bug 全部源于字符串弱耦合断链 + 宽泛 except 静默失效，人工 review 挡不住，必须机械兜底。
+
+### 1. 端点 smoke test
+
+```
+uv run python -m pytest tests/server_endpoints/test_smoke_endpoints.py -q
+```
+
+OpenAPI 驱动遍历全部 GET 端点打真实请求：HTTP ≥500 即失败（路由级断裂直接爆炸）；HTTP 200 + `{"error": ...}` 的静默失效模式以 warnings 逐条上报（运行时清单即真相，修复后可逐步升级为硬断言）。
+
+- 改了路由 / Pydantic 模型 / 服务层后必跑
+- 新增端点自动被覆盖，无需手动登记
+- 排除清单（screen/browser/ocr/vision/models 前缀，需真实外部资源）在文件头部有注释说明原因，勿随意删
+
+### 2. pyright 增量对比
+
+```
+uv run pyright
+```
+
+配置见根目录 `pyrightconfig.json`（basic 模式扫 server/client/lib 三目录）。与基线对比规则：
+
+- 当前基线 **0 错误**（2026-08-30 全仓归零；审查起点 459 → 435 → 0）
+- **不允许新增错误**；顺手修旧错误欢迎但不强制
+- ⚠️ **`include` 只列 server/client/lib**：`workspace/` 与 `tools/` 下的脚本仓库级运行**从不检查**，"全仓 0 errors" 对这些文件是假绿灯。新增/修改这类脚本必须显式传路径：`uv run pyright workspace/<...>/xxx.py`
+- 基线数字以本行为准；实时错误清单直接跑 `uv run pyright` 取，不再维护快照文件
+
+### 执行纪律
+
+- 两道全绿才能声称代码任务完成；红了要么修复、要么向用户解释新增原因并获认可
+- 注册表类改动（GUIDE_REGISTRY / manifest / 白名单 / config）额外跑 `uv run python tools/audit/drift_detector.py` 对账脚本，看有无新断链（报告写到 `temp/audit/drift_report.md`）
+
+### 3. 硬化规则检查（2026-08-31 新增，"说过三遍的规则"→"会变红的构建"）
+
+```
+uv run python tools/check_hard_rules.py            # 全量（pytest 已挂 quick 层：tests/test_hard_rules.py）
+uv run python tools/check_hard_rules.py --staged   # staged（pre-commit hook 自动跑，已生效）
+```
+
+四项：C1 tracked `.py/.md/.toml/.json` 无 UTF-8 BOM ｜ C2 源码无硬编码密钥字面量 ｜ C3 文档路径越界（.html 只许白名单位置、根目录 .md 锁定）｜ C4 import 边界（client↔server 互不许 import，白名单除外）。规则真源与白名单都在 `tools/check_hard_rules.py` 常量内——**白名单变更必须显式改代码并 commit**（这正是"硬化"的含义），不支持任何配置文件旁路。hook 安装：`uv run python tools/check_hard_rules.py install`（重克隆/换机后需重跑一次）。
+
+配套工具：`tools/gen_feature_map.py` 生成 `data/feature_map.json`（GUI 面板→入口/控件/验证方式地图，改 client GUI 后重跑并回填手写字段）；guide 路由改动必跑 `uv run python tests/guide_eval/run_eval.py` 盲测集（<85% 红，见 `.trae/rules/project_rules.md` "Guide 关键词维护"）。
+
 ## agent_guide keywords 编写规范
 
 新增或修改 `GUIDE_REGISTRY` 条目（`server/agent_guide_data.py` 或 `workspace/<module>/loop_actions.py`）时**必读** [docs/agent-guide-keywords.md](agent-guide-keywords.md)。该文档含匹配算法回顾、五大编写原则（精确优于泛 / entry/method 分层 / 避免共享 / 避免泛动词 / 覆盖口语动词）、已知问题清单、6 步标准编写流程。
@@ -93,7 +138,7 @@
 
 ### 踩坑案例：VLCandidate 身份分裂
 
-**现象**：`tests/test_recorder_consumer_e2e.py` 的 `isinstance(cand, VLCandidate)` 断言失败，即使 `cand` 实际就是 `VLCandidate` 实例。
+**现象**：`workspace/recorder/tests/test_recorder_consumer_e2e.py` 的 `isinstance(cand, VLCandidate)` 断言失败，即使 `cand` 实际就是 `VLCandidate` 实例。
 
 **根因**：3 个 manifest 测试（`test_agent_guide_manifest.py`、`test_loop_manager_manifest.py`、`test_panel_registry_manifest.py`）在 setup/teardown 用以下代码清理 workspace 模块：
 
@@ -153,10 +198,10 @@ def test_something(self, tmp_path, monkeypatch):
 
 ### 相关文件
 
-- `tests/test_agent_guide_manifest.py` - `_snapshot_workspace_modules` / `_restore_workspace_modules` 实现
-- `tests/test_loop_manager_manifest.py` - 同上
-- `tests/test_panel_registry_manifest.py` - 同上
-- `tests/test_recorder_consumer_e2e.py` - 受污染影响的测试（VLCandidate 身份分裂现象）
+- `tests/guide_loops/test_agent_guide_manifest.py` - `_snapshot_workspace_modules` / `_restore_workspace_modules` 实现
+- `tests/guide_loops/test_loop_manager_manifest.py` - 同上
+- `tests/componentization/test_panel_registry_manifest.py` - 同上
+- `workspace/recorder/tests/test_recorder_consumer_e2e.py` - 受污染影响的测试（VLCandidate 身份分裂现象）
 
 ## 危险操作测试铁律（强制，2026-08-03 教训）
 
@@ -351,7 +396,7 @@ uv run python -m pytest tests/ -v --tb=short  # 验证没破坏功能
 
 ### 已知环境噪声：cv2 空壳模块导致 pyautogui 测试失败（Windows，可忽略）
 
-> **触发**：2026-08-04 watchdog-mode E2E 测试发现，`tests/test_screen.py::TestSafety::test_safe_action_not_blocked` 和 `tests/test_screen.py::TestMouseKeyboard::test_type_action_safe` 因 `module 'cv2' has no attribute '__version__'` 失败。
+> **触发**：2026-08-04 watchdog-mode E2E 测试发现，`tests/approval_screen/test_screen.py::TestSafety::test_safe_action_not_blocked` 和 `tests/approval_screen/test_screen.py::TestMouseKeyboard::test_type_action_safe` 因 `module 'cv2' has no attribute '__version__'` 失败。
 
 **现象**（识别特征，遇到立即忽略）：
 - 上述 2 个测试失败，错误信息含 `module 'cv2' has no attribute '__version__'`
@@ -392,16 +437,39 @@ uv run python -m pytest tests/ -v --tb=short  # 验证没破坏功能
 
 | 入口 | 场景 | 命令 |
 |------|------|------|
-| **`tools/run_tests_collect.py`**（推荐） | 一次性收集全部失败 | `uv run python tools/run_tests_collect.py` |
-| **`tests/run_all.py`** | 分层跑（quick 排除外部资源 / full 全跑） | `uv run python tests/run_all.py --quick` |
-| **直接 pytest** | 单文件调试（看详细 traceback） | `uv run python -m pytest tests/test_xxx.py -v --tb=short` |
+| **`tests/run_all.py`**（推荐） | 分层跑（quick 排除外部资源 / full 全跑），报告含失败复现命令 | `uv run python tests/run_all.py --quick` |
+| **`tools/run_tests_collect.py`** | 一次性收集全部失败（与 run_all 共用 test_runner 层） | `uv run python tools/run_tests_collect.py` |
+| **直接 pytest** | 单文件/单目录调试（看详细 traceback） | `uv run python -m pytest tests/memory -v --tb=short` |
+
+**收集范围**（2026-08-27 起）：脚本层经 `lib.component_manifest.collect_test_dirs()`
+自动扫描各组件 `manifest.toml` 的 `[tests]` 段，把 `workspace/<skill>/tests/` 一并纳入。
+所以脚本命令只写 `tests/` 也会自动带上 workspace 组件测试（当前 6 个目录），
+不要再手动拼 workspace 路径。
+
+### 测试目录结构（按功能域分组，加新测试先归组）
+
+```
+tests/
+├── agent_runner/       # agent runner 主循环
+├── approval_screen/    # 审批+屏幕控制授权
+├── archive_sdd_tickets/# SDD ticket 编号回归测试归档（历史保留，不再新增）
+├── browser/ client_ui/ componentization/ files_tools/ gacha/
+├── guide_loops/ headless/ lib_core/ llm_vision/ memory/
+├── release_ci/ security/ server_endpoints/ skills/
+└── fixtures/browser/   # browser E2E 静态资源
+workspace/<skill>/tests/  # 组件测试，由 manifest.toml [tests] 声明
+```
+
+**规则**：新增测试放进对应功能域子目录（不新建平铺文件）；SDD ticket 回归测试进
+archive_sdd_tickets；workspace skill 的测试放 `<skill>/tests/` 并在 `manifest.toml`
+补 `[tests]` 段（有测试 enabled=true + paths=["tests"]）。
 
 **参数一致性**（pyproject.toml `addopts` 已统一配置，不要在命令行重复加）：
 - `-q -ra`：安静进度 + 失败/跳过摘要（替代旧的 `-v` 刷屏 / 纯 `-q` 看不到摘要）
 - `--tb=short`：中等 traceback（单文件调试用）
 - `--maxfail=500`：不在第一次失败停
 - `--timeout=30 --timeout-method=thread`：防卡死
-- `-n auto`：pytest-xdist 并行
+- `-n auto`：pytest-xdist 并行（**内存警告见下方"进程崩溃处理"**）
 - `--junit-xml`：**只由脚本层加**（run_tests_collect.py / run_all.py），不放 addopts（避免单文件调试污染）
 
 **脚本层覆盖**（`tools/test_runner.py` 共享逻辑，两个脚本共用）：
@@ -409,17 +477,26 @@ uv run python -m pytest tests/ -v --tb=short  # 验证没破坏功能
 - `--tb=line`：全量收集时覆盖 addopts 的 `--tb=short`（一行一个失败，最简）
 - `--junit-xml=temp/test_results.xml`：结构化真源，解析 XML 而非文本（pytest-xdist 并行时文本顺序乱）
 - 崩溃检测：returncode 非 0-5 标记"进程崩溃"（如 3221225477 = STATUS_ACCESS_VIOLATION），不假装"0 失败"
+- 报告含**每个失败的单独复现命令**——修复验证先跑失败子集（或 `pytest --lf` 重跑上次失败），
+  全过后再跑整轮 quick，不要每次验证都跑全量
+- **失败清单默认强制输出**（2026-09-03）：跑完总是把完整失败/错误清单（JUnit XML 驱动，
+  测试全名 + 错误摘要，一行一个）打印到控制台，**不依赖 agent 主动读 report 文件**。
+  不需要时显式加 `--no-list`（不推荐：丢了清单就退回"测→修→再测"循环）
 
 **产出**（写入 `temp/`，两个脚本产出相同）：
 - `test_full_log.txt` — 完整 pytest 输出
 - `test_results.xml` — JUnit XML（结构化真源）
-- `test_failure_report.md` — 结构化报告（状态/摘要/失败表格/分类建议）
+- `test_failure_report.md` — 结构化报告（状态/摘要/失败表格/**逐条复现命令**/分类建议）
 
 **禁止行为**：
-- ❌ 用 `pytest tests/ -v` 跑全量（3663 测试刷屏，看不到失败摘要）
-- ❌ 不加 `-m 'not gpu and not browser and ...'` 跑全量（会跑 E2E，需 CDP:9222 + 后端:8766）
+- ❌ 用 `pytest tests/ -v` 跑全量（约 5000 测试刷屏，看不到失败摘要）
+- ❌ 手动裸跑全量不加 marker —— 直接用 `tests/run_all.py --quick`（quick 已统一排除
+  gpu/browser/real_backend/network/chaos/e2e/gui/migration）
 - ❌ 用 `capture_output=True` 黑盒跑（看不到中间输出，崩溃时拿到空 stdout 假绿）
 - ❌ 手动拼 `--tb=line`/`--tb=short`/`--maxfail` 等参数（addopts 已配，脚本层按需覆盖）
+- ❌ 验证修复时反复跑全量 —— 先跑报告中列出的失败子集命令，确认全过后再跑一次全量收尾
+- ❌ 跑子集/`--lf` 验证时丢了全局视野 —— 入口脚本每次跑完都打印完整失败清单（除非 `--no-list`），
+  子集验证前后先对照这份清单，确认覆盖了全部失败、没有"修一批漏一批"
 
 ### 标准流程（强制）
 
@@ -435,13 +512,13 @@ uv run python tools\run_tests_collect.py
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/ `
-    -m 'not gpu and not browser and not real_backend and not network and not chaos' `
+    -m 'not gpu and not browser and not real_backend and not network and not chaos and not e2e and not gui and not migration' `
     --tb=line --junit-xml=temp\test_results.xml
 ```
 
 参数说明（addopts 已配的参数，命令行不重复加）：
 - `-q -ra`（addopts）：安静进度 + 失败/跳过摘要
-- `-m 'not gpu and not ...'`：排除需要外部资源的测试（GPU/浏览器/真实后端/网络/混沌），只跑纯单元测试（约 3600 个，3-4 分钟）
+- `-m 'not gpu and not ...'`：排除需要外部资源的测试（GPU/浏览器/真实后端/网络/混沌/E2E/GUI/数据迁移），只跑纯单元测试（约 4700 个，7 分钟左右）
 - `--tb=line`（脚本层覆盖 addopts 的 `--tb=short`）：每行一个失败摘要，避免长 traceback 淹没全局
 - `--maxfail=500`（addopts）：不在第一次失败时停，拿到全部失败
 - `--junit-xml=temp/test_results.xml`（脚本层加）：结构化输出，解析 XML 而非文本
@@ -473,33 +550,44 @@ uv run python tools\run_tests_collect.py
 
 #### Step 3: 批量修复（禁止逐个修逐个测）
 
-**禁止**每修一个就跑一次全测试（3-4 分钟/次，5 个失败就是 15-20 分钟浪费）。应：
+**禁止**每修一个就跑一次全测试（7 分钟/次，5 个失败就是 35 分钟浪费）。应：
 1. 一次性修所有"真实 bug"类失败
 2. 一次性修所有"过时测试"类失败
 3. 测试隔离问题单独处理（加 cleanup fixture 或标记 `pytest.mark.xfail`）
-4. 修完后再跑一次 Step 1 确认
+4. 修完后先跑失败子集验证（见 Step 4），最后跑一次全量收尾
 
-#### Step 4: 验证修复
+#### Step 4: 验证修复（先子集，后全量）
 
-修完后再跑 Step 1，确认：
-- 修过的测试现在通过
-- 没有引入新失败（对比失败数）
-- ruff lint 通过（`ruff check server client tests`）
+1. **先跑失败子集**：报告里每个失败都附了单独复现命令，或者用缓存重跑上次全部失败：
+   ```powershell
+   uv run python -m pytest --lf --tb=short        # 只重跑上次失败的测试
+   ```
+   （`--lf` 依赖 .pytest_cache，脚本层跑过就有；确认修复 + 无新失败即可）
+2. **再跑一次全量 quick** 收尾，确认：
+   - 修过的测试现在通过
+   - 没有引入新失败（对比失败数）
+   - ruff lint 通过（`ruff check server client tests`）
 
 ### 进程崩溃处理（returncode 非 0-5）
 
 `tools/test_runner.py:classify_exit` 自动分类退出码。若报告显示 `crashed_NNN`：
 
-- **3221225477 = STATUS_ACCESS_VIOLATION**：Qt access violation，conftest.py:95-122 已知问题
+- **3221225477 = STATUS_ACCESS_VIOLATION**：Qt access violation，conftest.py 已知问题
   （全量测试时随机崩溃，JUnit XML 无 failure/error 记录，崩溃发生在 pytest 汇总/进程退出阶段）
+- **MemoryError / WinError 8（内存资源不足）/ execnet 序列化 MemoryError**：
+  xdist worker 过多打爆内存。2026-08-27 教训：16 个 worker 并发时每个都要导入 app+PySide6
+  （收集+序列化数 MB×16），32GB 内存机器上连续 OOM。**降并发重跑**即可：
+  ```powershell
+  uv run python tests/run_all.py --quick -n 4   # -n last-wins，覆盖内置的 -n auto
+  ```
 - **其他非 0-5 码**：Windows fatal exception，进程被系统杀死
 
 **处理步骤**：
 1. 看 `temp/test_full_log.txt` 末尾，找崩溃前最后一个输出（定位崩溃点）
 2. 看 `temp/test_results.xml` 是否生成——若缺失说明崩溃在 XML 落盘前
-3. 用 `tests/run_all.py --full` 或分段跑（按目录）缩小崩溃范围：
+3. 分段跑（按功能域目录）缩小崩溃范围：
    ```powershell
-   uv run python -m pytest tests/test_recorder_*/ -v --tb=short  # 跑某一目录
+   uv run python -m pytest tests/memory -v --tb=short  # 只跑某一功能域
    ```
 4. conftest.py 的 `pytest_runtest_teardown` hook（Qt 状态清理）已在缓解，若仍崩溃
    通常是某个测试未正确清理 QApplication 状态——单独跑该文件能复现则修测试隔离
@@ -632,7 +720,7 @@ pytest tests/  # 又 3 分钟
 
 ### 发版 8 步流程（system.release，agent 必须按此顺序执行）
 
-> 项目纯本地：**不发 git tag、不发 GitHub release、不 push remote**。release 仅通过 CHANGELOG 文档化 + 本地 git commit。
+> 本地操作：**不发 git tag、不发 GitHub release、不 push remote**。release 仅通过 CHANGELOG 文档化 + 本地 git commit。
 
 1. **全测试套件验证（强制，2026-08-03 教训）**：发版前必须跑全测试套件，**所有测试通过或跳过有合理注释**才能发版。失败测试必须按"测试修复铁律"修复（查根因，禁止绕过）。
    ```
@@ -793,7 +881,7 @@ MCP 网关层有 **50KB 硬上限 size guard**：单个 TextContent 超阈值时
 - 新增 REST 端点后，必须在 `server/mcp_whitelist.py` 显式决定：进 `DIRECT_TOOLS` 还是加 `GATEWAY_EXCLUDE`，不能"默认不处理"（默认会进网关，可能膨胀）
 - 运维/批量/管理类端点（GUI/面板/脚本调用）一律 `GATEWAY_EXCLUDE`
 - 高频只读端点才考虑 `DIRECT_TOOLS`（agent 每次会话都可能用）
-- 修改 `mcp_whitelist.py` 后跑 `uv run python -m pytest tests/test_mcp.py -v` 验证白名单一致性
+- 修改 `mcp_whitelist.py` 后跑 `uv run python -m pytest tests/server_endpoints/test_mcp.py -v` 验证白名单一致性
 
 **当前已排除的运维端点**（见 `server/mcp_whitelist.py` 的 `GATEWAY_EXCLUDE`）：
 shutdown/health/config/llm_pool_*/activity_daily_*/user_message_*/inbox_batch/各类 form 端点/零调用状态端点
@@ -856,7 +944,7 @@ shutdown/health/config/llm_pool_*/activity_daily_*/user_message_*/inbox_batch/�
 
 ChatGPT 桌面客户端的"流式 HTTP"类型**强制要求 OAuth 流程**，本地 MCP 服务无法满足（后端日志会看到 `GET /.well-known/oauth-protected-resource` 404 探测，握手成功但客户端报"不可用"）。
 
-解决方案：用 [tools/mcp_bridge.js](file:///f:/<project_root>/tools/mcp_bridge.js) 把 STDIO 协议桥接到现有的 Streamable HTTP 端点（基于 `mcp-remote`）。**后端零改动**，原有的 Trae/CatPaw 直连配置不受影响。
+解决方案：用 [tools/mcp_bridge.js](file:///<project_root>/tools/mcp_bridge.js) 把 STDIO 协议桥接到现有的 Streamable HTTP 端点（基于 `mcp-remote`）。**后端零改动**，原有的 Trae/CatPaw 直连配置不受影响。
 
 前置条件：
 1. 后端已启动（`start.bat`）
@@ -870,7 +958,7 @@ ChatGPT 配置：
 | **类型** | STDIO |
 | **启动命令** | `node` |
 | **参数** | `tools/mcp_bridge.js` |
-| **工作目录** | 项目根目录（如 `f:\<project_root>`） |
+| **工作目录** | 项目根目录（如 `<project_root>`） |
 | 环境变量 | （可选）`LOCALAGENT_MCP_URL=http://127.0.0.1:8766/mcp`，自定义端点时使用 |
 
 桥接脚本会自动按以下优先级查找 mcp-remote：

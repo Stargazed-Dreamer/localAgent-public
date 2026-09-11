@@ -90,7 +90,7 @@ class StatusCard(QFrame):
         self._form.setContentsMargins(0, 4, 0, 0)
         self._details_widget = QLabel("")
         set_text_role(self._details_widget, "tertiary")
-        self._details_widget.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._details_widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._details_widget.setWordWrap(True)
         layout.addWidget(self._details_widget)
 

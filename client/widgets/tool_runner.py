@@ -121,10 +121,13 @@ class ScriptRunner(QThread):
                 bufsize=1,
                 env=child_env,
             )
-            for line in self.process.stdout:
-                if self._stopped:
-                    break
-                self.output_signal.emit(line.rstrip("\n"))
+            # Popen.stdout 桩类型为 IO[Any] | None，窄化后再迭代
+            stdout = self.process.stdout
+            if stdout is not None:
+                for line in stdout:
+                    if self._stopped:
+                        break
+                    self.output_signal.emit(line.rstrip("\n"))
             self.process.wait()
             code = self.process.returncode
             self.finished_signal.emit(code, "完成" if code == 0 else f"退出码 {code}")
@@ -227,10 +230,12 @@ class QueueManager(QThread):
                     bufsize=1,
                     env=child_env,
                 )
-                for line in self.process.stdout:
-                    if self._stopped:
-                        break
-                    self.task_output.emit(tool_id, line.rstrip("\n"))
+                stdout = self.process.stdout
+                if stdout is not None:
+                    for line in stdout:
+                        if self._stopped:
+                            break
+                        self.task_output.emit(tool_id, line.rstrip("\n"))
                 self.process.wait()
                 code = self.process.returncode
                 msg = "完成" if code == 0 else f"退出码 {code}"
@@ -324,17 +329,20 @@ class ToolDetailWidget(QWidget):
                         "optional": True,
                     }
                 opt_name = opt["name"]
+                # label：界面显示名（如 subcommand → 子命令），命令行仍用 name
+                opt_label = opt.get("label") or opt_name
                 opt_desc = opt.get("description", "")
                 opt_default = opt.get("default")
                 opt_choices = opt.get("choices")
                 opt_optional = opt.get("optional", False)
 
                 row = QHBoxLayout()
-                enable_cb = QCheckBox(opt_name)
+                enable_cb = QCheckBox(opt_label)
                 enable_cb.setToolTip(opt_desc)
                 enable_cb.setChecked(False)
                 row.addWidget(enable_cb)
 
+                value_widget = None
                 if opt_choices:
                     value_widget = QComboBox()
                     for c in opt_choices:
@@ -342,8 +350,10 @@ class ToolDetailWidget(QWidget):
                     if opt_default in opt_choices:
                         value_widget.setCurrentText(str(opt_default))
                 elif isinstance(opt_default, bool):
-                    value_widget = QCheckBox("启用")
-                    value_widget.setChecked(opt_default)
+                    # 布尔开关：单复选框即"是否附加该 flag"。
+                    # 旧版在这里再渲染一个"启用"复选框，外勾内不勾时 flag 不追加，
+                    # 语义陷阱（B6），已移除。
+                    value_widget = None
                 elif isinstance(opt_default, int) and not isinstance(opt_default, bool):
                     value_widget = QSpinBox()
                     value_widget.setRange(0, 999999)
@@ -355,13 +365,17 @@ class ToolDetailWidget(QWidget):
                     if opt_optional:
                         value_widget.setPlaceholderText(opt_desc)
 
-                value_widget.setToolTip(opt_desc)
-                row.addWidget(value_widget, 1)
+                if value_widget is not None:
+                    value_widget.setToolTip(opt_desc)
+                    row.addWidget(value_widget, 1)
 
-                if opt_desc and not opt_optional:
+                # 说明紧跟在值控件后（旧版右对齐到面板最右侧，视觉关联弱）
+                if opt_desc and not (
+                    isinstance(value_widget, QLineEdit) and opt_optional
+                ):
                     desc_small = QLabel(opt_desc)
                     set_text_role(desc_small, "caption")
-                    row.addWidget(desc_small)
+                    row.addWidget(desc_small, 1)
 
                 options_layout.addLayout(row)
                 self.option_widgets[opt_name] = (enable_cb, value_widget, opt)
@@ -397,13 +411,22 @@ class ToolDetailWidget(QWidget):
         layout.addWidget(self.output_text, 1)
 
     def _build_command(self) -> list[str]:
-        """T03: 返回参数列表而非命令字符串，配合 shell=False 防注入。"""
+        """T03: 返回参数列表而非命令字符串，配合 shell=False 防注入。
+
+        注意：manifest 的 command 是 Windows 路径（如 r'.venv\\Scripts\\python.exe'），
+        必须用 posix=False 拆分——POSIX 模式会把反斜杠当转义符吞掉，
+        导致 `.venv\\Scripts\\python.exe` 被拆成 `.venvScriptspython.exe`，进而
+        Popen(shell=False) 报 WinError 2（找不到该可执行文件）。
+        """
         import shlex
-        cmd = shlex.split(self.tool["command"])
+        cmd = shlex.split(self.tool["command"], posix=False)
         for opt_name, (enable_cb, value_widget, _opt) in self.option_widgets.items():
             if not enable_cb.isChecked():
                 continue
-            if isinstance(value_widget, QCheckBox):
+            if value_widget is None:
+                # 布尔开关：勾选即附加 flag 本身
+                cmd.append(opt_name)
+            elif isinstance(value_widget, QCheckBox):
                 if value_widget.isChecked():
                     cmd.append(opt_name)
             elif isinstance(value_widget, QComboBox):
@@ -482,7 +505,7 @@ class ToolDetailWidget(QWidget):
 
     def _append_output(self, text: str, color: str = tokens.TEXT_SECONDARY):
         cursor = self.output_text.textCursor()
-        cursor.movePosition(QTextCursor.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         fmt = cursor.charFormat()
         fmt.setForeground(QColor(color))
         cursor.setCharFormat(fmt)
@@ -509,7 +532,7 @@ class CategoryPageWidget(QWidget):
 
         if not self.tools:
             label = QLabel("此分类下暂无工具")
-            label.setAlignment(Qt.AlignCenter)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             set_text_role(label, "title")
             layout.addWidget(label)
             return
@@ -525,7 +548,12 @@ class CategoryPageWidget(QWidget):
             tabs.addTab(scroll, tool["name"])
         layout.addWidget(tabs)
 
-    def get_tabs(self) -> QTabWidget:
+    def get_tabs(self) -> QTabWidget | None:
+        """返回分类页的 QTabWidget；空分类（无工具，构建路径不含 QTabWidget）返回 None。
+
+        调用方均以 `if tabs:` 判断后使用；此前曾改为兜底返回空 QTabWidget，
+        但 QObject 恒为真值使该判断失效（且无 parent 造成对象泄漏），故恢复 None。
+        """
         return self.findChild(QTabWidget)
 
 
@@ -659,7 +687,7 @@ class ToolLauncherWindow(QMainWindow):
             for detail in page.detail_widgets:
                 self.tool_widgets[detail.tool_id] = detail
 
-    def _on_enqueue_task(self, tool_id: str, tool_name: str, command: str):
+    def _on_enqueue_task(self, tool_id: str, tool_name: str, command: list[str]):
         self.queue_manager.add_task(tool_id, tool_name, command)
 
     def _connect_queue_signals(self):

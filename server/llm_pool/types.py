@@ -131,6 +131,10 @@ USE_CASE_REGISTRY: dict[str, UseCaseDef] = {
     "hourly_summarize":    UseCaseDef("hourly_summarize",    "llm", False, (3, 5), "每小时活动总结（tier 放宽到 3-5，让 deepseek-v4-flash-free 作为 tier 4-5 quota 耗尽时的 fallback）"),
     "download_watcher":   UseCaseDef("download_watcher",   "llm", True,  (4, 5), "下载文件分类（含文件内容，敏感）"),
     "command_guard":      UseCaseDef("command_guard",      "llm", False, (3, 5), "命令审批 LLM 预审"),
+    # 入站网关转发（Cline/Cherry Studio 等 harness）。default_tier (0,0)=不带 tier 约束，
+    # 兜底与否由入站 key 的按别名兜底范围决定；显式注册让出站 key 的 allowed_uses
+    # 白名单对入站流量生效（未注册前网关不传 use_case，白名单形同虚设）。
+    "inbound_gateway":    UseCaseDef("inbound_gateway",    "llm", False, (0, 0), "入站网关转发（harness 流量）"),
     # ── VL use cases（全部 sensitive=true，预防性）──
     # [2,5]：VL 模型已多样化（glm-4.6v-flash tier2 / agnes-2.0-flash tier2 / Qwen3-VL-235B tier5 / gpt-5.6-luna tier5）
     # 放宽 tier 范围让所有 VL 模型都能参与 fallback，避免单一 provider 429/503 时无其他 provider 可用

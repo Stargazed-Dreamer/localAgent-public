@@ -12,13 +12,10 @@
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QScrollArea,
     QStackedWidget,
@@ -30,7 +27,7 @@ from client.core.format_utils import format_uptime
 from client.core.http_client import HttpClient
 from client.core.panel_base import PanelBase, PanelMeta
 from lib.ui import tokens
-from lib.ui.theme import set_kind, set_text_role
+from lib.ui.theme import set_text_role
 
 # 模块状态显示顺序
 _HEALTH_MODULES = [
@@ -182,8 +179,7 @@ class MonitoringPanel(PanelBase):
         self._fake_stats: dict | None = None
         self._refresh_btn: QPushButton | None = None
         self._task_authorization_status_label: QLabel | None = None
-        self._persistent_request_btn: QPushButton | None = None
-        self._persistent_release_btn: QPushButton | None = None
+        self._permission_check: QCheckBox | None = None
         self._persistent_thread = None
         self._refresh_thread = None
 
@@ -240,31 +236,17 @@ class MonitoringPanel(PanelBase):
         layout.addLayout(header_row)
 
         authorization_row = QHBoxLayout()
+        self._permission_check = QCheckBox("电脑操作许可")
+        self._permission_check.setToolTip(
+            "勾选后弹出确认窗，确认后 agent 获得电脑操作授权（危险操作仍拦截）"
+        )
+        self._permission_check.toggled.connect(self._on_permission_toggled)
+        authorization_row.addWidget(self._permission_check)
+
         self._task_authorization_status_label = QLabel("当前任务未授权")
         self._task_authorization_status_label.setWordWrap(True)
         set_text_role(self._task_authorization_status_label, "secondary")
         authorization_row.addWidget(self._task_authorization_status_label, 1)
-
-        self._persistent_request_btn = QPushButton("请求任务授权")
-        self._persistent_request_btn.setToolTip(
-            "请求当前任务的普通 Computer Use 操作授权"
-        )
-        self._persistent_request_btn.setStatusTip(
-            "授权后普通操作免重复确认，危险操作仍需确认"
-        )
-        set_kind(self._persistent_request_btn, "primary")
-        self._persistent_request_btn.clicked.connect(
-            self._on_persistent_request_clicked
-        )
-        authorization_row.addWidget(self._persistent_request_btn)
-
-        self._persistent_release_btn = QPushButton("收回授权")
-        self._persistent_release_btn.setToolTip("立即收回当前任务授权")
-        self._persistent_release_btn.setStatusTip("当前没有可收回的任务授权")
-        self._persistent_release_btn.clicked.connect(
-            self._on_persistent_release_clicked
-        )
-        authorization_row.addWidget(self._persistent_release_btn)
         layout.addLayout(authorization_row)
 
         # 滚动区域包含所有卡片
@@ -466,7 +448,9 @@ class MonitoringPanel(PanelBase):
     def _on_refresh_done(self) -> None:
         self._set_loading(False)
         t = self._refresh_thread
-        if t.health is None:
+        # 初始化不变量：_refresh_thread 仅由 _refresh_async 创建，finished 触发时必非 None；
+        # health None 表示后端离线（RefreshThread 内已判定）
+        if t is None or t.health is None:
             self._stack.setCurrentWidget(self._offline_widget)
             return
         self._stack.setCurrentWidget(self._normal_widget)
@@ -530,22 +514,22 @@ class MonitoringPanel(PanelBase):
             else:
                 self._task_authorization_status_label.setText("当前任务授权已被配置禁用")
                 set_text_role(self._task_authorization_status_label, "warning")
-        if self._persistent_request_btn:
-            self._persistent_request_btn.setEnabled(configured and not active)
-            self._persistent_request_btn.setStatusTip(
-                "授权功能已被配置禁用"
-                if not configured
-                else "已有任务授权，请先收回当前授权"
-                if active
-                else "授权后普通操作免重复确认，危险操作仍需确认"
-            )
-        if self._persistent_release_btn:
-            self._persistent_release_btn.setEnabled(active)
-            self._persistent_release_btn.setStatusTip(
-                "立即收回当前任务授权"
-                if active
-                else "当前没有可收回的任务授权"
-            )
+        if self._permission_check is not None:
+            # 程序化回写勾选态：blockSignals 防止触发 _on_permission_toggled 循环。
+            # 勾选态始终以 /health 实际授权状态为准（agent 侧 release / idle 自动撤销 /
+            # watchdog 到期降级后开关自动回弹）。
+            self._permission_check.blockSignals(True)
+            self._permission_check.setChecked(active)
+            self._permission_check.setEnabled(configured)
+            self._permission_check.blockSignals(False)
+            if not configured:
+                self._permission_check.setToolTip("授权功能已被配置禁用")
+            elif active:
+                self._permission_check.setToolTip("取消勾选立即收回电脑操作授权")
+            else:
+                self._permission_check.setToolTip(
+                    "勾选后弹出确认窗，确认后 agent 获得电脑操作授权（危险操作仍拦截）"
+                )
 
     def _update_persistent_buttons(self) -> None:
         """Compatibility alias for older callers and tests."""
@@ -566,72 +550,35 @@ class MonitoringPanel(PanelBase):
         if remaining == 0:
             self._refresh_async()
 
-    def _on_persistent_request_clicked(self) -> None:
-        """打开用户确认流程，请求当前任务授权。
+    def _on_permission_toggled(self, checked: bool) -> None:
+        """电脑操作许可开关：勾选 = 请求授权（后端弹确认窗后生效），取消 = 立即收回。
 
-        弹出自定义 QDialog 让用户输入任务描述 + 选择看门狗模式（复选框）。
-        看门狗模式：不因空闲撤销，硬上限到期撤销（默认 10h），takeover_confirm 禁用。
-        用户取消则不发请求。
+        请求固定 mode=watchdog（长时许可，不因空闲撤销）；用户在确认窗未勾选
+        看门狗复选框时后端返回 mode_downgraded，实际授予普通授权（空闲 30 分钟
+        自动撤销）——由 _on_persistent_call_done 提示 + /health 刷新如实显示。
         """
-        from datetime import datetime
-
-        takeover = (self._health or {}).get("screen", {}).get(
-            "takeover_confirm", {}
-        )
-        try:
-            prompt_timeout = float(takeover.get("timeout_seconds", 30))
-        except (TypeError, ValueError):
-            prompt_timeout = 30.0
-
-        # 自定义 QDialog：任务描述输入 + 看门狗模式复选框
-        default_desc = f"GUI 请求 - {datetime.now().strftime('%H:%M:%S')}"
-        dialog = QDialog(self)
-        dialog.setWindowTitle("请求任务授权")
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("任务描述（用于授权历史回溯）："))
-        desc_edit = QLineEdit(default_desc)
-        layout.addWidget(desc_edit)
-
-        watchdog_check = QCheckBox(
-            "看门狗模式（持续监控，不因空闲撤销，10h 后自动收回，危险操作仍拦截）"
-        )
-        watchdog_check.setChecked(False)
-        layout.addWidget(watchdog_check)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return  # 用户取消，不发请求
-
-        task_desc = desc_edit.text().strip()
-        if not task_desc:
-            return
-
-        payload = {
-            "task_description": task_desc,
-            "source": "gui",
-        }
-        if watchdog_check.isChecked():
-            payload["mode"] = "watchdog"
-
-        self._persistent_async_call(
-            "/screen/control/request",
-            "当前任务授权已开启",
-            payload=payload,
-            timeout=max(5.0, prompt_timeout + 5.0),
-        )
-
-    def _on_persistent_release_clicked(self) -> None:
-        """立即收回当前任务授权。"""
-        self._persistent_async_call(
-            "/screen/control/release", "当前任务授权已收回"
-        )
+        if checked:
+            takeover = (self._health or {}).get("screen", {}).get(
+                "takeover_confirm", {}
+            )
+            try:
+                prompt_timeout = float(takeover.get("timeout_seconds", 30))
+            except (TypeError, ValueError):
+                prompt_timeout = 30.0
+            self._persistent_async_call(
+                "/screen/control/request",
+                "电脑操作许可已开启",
+                payload={
+                    "task_description": "用户面板手动授权",
+                    "source": "gui_panel",
+                    "mode": "watchdog",
+                },
+                timeout=max(5.0, prompt_timeout + 5.0),
+            )
+        else:
+            self._persistent_async_call(
+                "/screen/control/release", "电脑操作许可已关闭"
+            )
 
     def _persistent_async_call(
         self,
@@ -696,24 +643,31 @@ class MonitoringPanel(PanelBase):
         self._persistent_thread.finished.connect(
             lambda: self._on_persistent_call_done(success_msg)
         )
-        # 禁用两个按钮防止重复点击
-        if self._persistent_request_btn:
-            self._persistent_request_btn.setEnabled(False)
-        if self._persistent_release_btn:
-            self._persistent_release_btn.setEnabled(False)
+        # 请求进行中禁用开关防重复点击（done 回调恢复）
+        if self._permission_check:
+            self._permission_check.setEnabled(False)
         self._persistent_thread.start()
 
     def _on_persistent_call_done(self, success_msg: str) -> None:
         """持久授权端点调用完成"""
         t = self._persistent_thread
         if t and (t.error or not t.success):
-            # 失败：恢复按钮状态（根据当前 health）
+            # 失败：恢复开关状态（根据当前 health）
             self._update_task_authorization_controls()
             # ISSUE-004：失败时显示用户反馈/错误，让用户知道为什么失败
             if self._task_authorization_status_label and t.error:
                 self._task_authorization_status_label.setText(t.error)
                 set_text_role(self._task_authorization_status_label, "warning")
             return
+        # 降级提示：请求 watchdog 但确认窗未勾选复选框 → 实际授予普通授权。
+        # 先给一句明确提示，随后的 /health 刷新会用真实状态覆盖显示。
+        if t and t.status == "mode_downgraded":
+            if self._task_authorization_status_label:
+                self._task_authorization_status_label.setText(
+                    "看门狗模式未确认（确认窗未勾选复选框），已授予普通授权"
+                    "（空闲 30 分钟自动撤销）"
+                )
+                set_text_role(self._task_authorization_status_label, "warning")
         # 成功：刷新面板拉取最新 persistent_mode 状态
         self._refresh_async()
 

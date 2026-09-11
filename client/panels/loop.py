@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 
 from client.core.http_client import HttpClient
 from client.core.panel_base import PanelBase, PanelMeta
-from lib.ui import icon, icon_button, tokens
+from lib.ui import EmptyState, icon, icon_button, tokens
 from lib.ui.theme import set_kind, set_text_role
 
 
@@ -395,6 +395,16 @@ class LoopPanel(PanelBase):
         scroll.setWidget(self._list_container)
         layout.addWidget(scroll, 1)
 
+        # 空状态（与列表区域互斥显示，components.md §12）
+        self._scroll = scroll
+        self._empty_state = EmptyState(
+            "refresh",
+            "没有 Loop 任务",
+            hint="workspace 组件声明 loop_actions 后，调度状态会显示在这里",
+        )
+        self._empty_state.setVisible(False)
+        layout.addWidget(self._empty_state, 1)
+
     # —— PanelBase 钩子 ——
 
     def on_show(self) -> None:
@@ -434,6 +444,8 @@ class LoopPanel(PanelBase):
         # 移除所有卡片（保留末尾的 stretch）
         while self._list_layout.count() > 1:
             item = self._list_layout.takeAt(0)
+            if item is None:
+                continue
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -485,6 +497,9 @@ class LoopPanel(PanelBase):
 
         # 重建列表
         self._clear_list()
+        has_tasks = len(self._tasks) > 0
+        self._scroll.setVisible(has_tasks)
+        self._empty_state.setVisible(not has_tasks)
         for task in self._tasks:
             tid = task.get("task_id", "")
             if not tid:
@@ -504,16 +519,26 @@ class LoopPanel(PanelBase):
         """立即运行任务（长超时，Loop 任务执行可能很慢）。异步 POST 不阻塞 UI。"""
         # Loop 任务执行可能很慢（如 github 任务），用 120s 超时
         worker = self._make_worker("post", f"/loop/tasks/{task_id}/run", timeout=120.0)
-        worker.done.connect(lambda resp: self._on_run_task_done(task_id, resp))
+        worker.done.connect(lambda resp, sc=None: self._on_run_task_done(task_id, resp, sc))
         worker.failed.connect(lambda _err: self._on_run_task_done(task_id, None))
         worker.start()
 
-    def _on_run_task_done(self, task_id: str, resp: dict | None) -> None:
+    def _on_run_task_done(self, task_id: str, resp: dict | None, status_code: int | None = None) -> None:
+        if resp is None and status_code == 409:
+            # 任务正在执行中（调度器触发），非错误
+            QMessageBox.information(
+                self, "任务执行中",
+                f"任务 {task_id} 正在执行中（调度器触发）。\n请稍后刷新查看结果。"
+            )
+            self._refresh_async()
+            return
         if resp is None:
             # 超时或网络错误，任务可能仍在执行
-            QMessageBox.information(
-                self, "已触发",
-                f"任务 {task_id} 已触发，可能仍在执行中。\n请稍后刷新查看结果。"
+            QMessageBox.warning(
+                self, "触发失败",
+                f"任务 {task_id} 触达后端失败（超时或网络错误），本次未执行。\n请检查后端状态后重试。"
+                if status_code is None else
+                f"任务 {task_id} 请求失败（HTTP {status_code}）。\n请刷新查看详情。"
             )
             self._refresh_async()
             return

@@ -34,3 +34,16 @@ entries_var = "GUIDE_REGISTRY_ENTRIES"
 file = "SKILL.md"
 task_type = "recurring.arknights_gacha"
 index_section = "components"
+
+[backup]
+# 备份声明（与 [watch] 解耦）：仅含个人寻访记录，由 WorkspaceBackupAction loop 调度
+# 注：bwiki_pools*.json / prts_limited_pools.json 是游戏 Wiki 参考数据（已在 exports.source 发布），不属个人数据
+# "raw/" 是目录 → 备份时打 zip（raw_YYYYMMDD_HHMMSS.zip），含原始 API 响应（不可再生）
+# 消费方：tools/backup_workspace.py → backups/workspace/arknights_gacha/<basename>_<ts>.<ext|zip>
+# 备份频次见 config.toml [loops.workspace_backup]
+paths = ["gacha_records.json", "summary.json", "pool_registry.json", "raw_full.json", "raw/"]
+
+[tests]
+# 自动化测试声明：当前无自动化测试
+enabled = false
+paths = []

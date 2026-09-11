@@ -29,7 +29,6 @@ def _build_playwright_header() -> str:
     return f"""
 import asyncio
 from playwright.async_api import async_playwright
-from playwright_stealth import Stealth
 
 def _cdp_endpoint():
     return '{cdp_url}'

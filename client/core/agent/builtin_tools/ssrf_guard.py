@@ -225,7 +225,7 @@ def ssrf_guarded_lookup(host: str, port: int) -> tuple[bool, str, str | None]:
                 f"DNS resolved {host} to {ip} which is in blocked CIDR"
             ), None
         if validated_ip is None:
-            validated_ip = ip_str
+            validated_ip = str(ip_str)
 
     if validated_ip is None:
         return False, f"No valid IP for {host}", None

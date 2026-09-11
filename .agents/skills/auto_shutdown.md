@@ -2,7 +2,7 @@
 
 > task_type: `adhoc.auto_shutdown`
 >
-> 关联端点：`POST /auto_shutdown/trigger` + `POST /auto_shutdown/cancel`（[server/auto_shutdown.py](file:///f:/<project_root>/server/auto_shutdown.py)）
+> 关联端点：`POST /auto_shutdown/trigger` + `POST /auto_shutdown/cancel`（[server/auto_shutdown.py](file:///<project_root>/server/auto_shutdown.py)）
 >
 > 历史背景：原 `workspace/auto_shutdown/monitor.py` 独立 CLI 子进程已于 2026-08-03 删除，关机流程收进后端端点。agent 现在在 Trae 会话里自己跑检测 loop，不依赖独立子进程。
 
@@ -218,7 +218,7 @@ while not flag_file.exists():
 
 ## 相关文件
 
-- [server/auto_shutdown.py](file:///f:/<project_root>/server/auto_shutdown.py) — 端点实现
-- [tests/test_auto_shutdown.py](file:///f:/<project_root>/tests/test_auto_shutdown.py) — 测试（含 autouse 安全网 fixture 防真关机）
+- [server/auto_shutdown.py](file:///<project_root>/server/auto_shutdown.py) — 端点实现
+- [tests/test_auto_shutdown.py](file:///<project_root>/tests/test_auto_shutdown.py) — 测试（含 autouse 安全网 fixture 防真关机）
 - `temp/sdd/auto-shutdown-refactor/spec.md` — SDD 规约（含危险操作测试铁律）
 - `docs/dev-workflow.md` "危险操作测试铁律" 章节 — 测试安全规范

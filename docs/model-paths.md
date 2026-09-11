@@ -20,7 +20,7 @@ external_dir = "<data_drive>:\\ai_models"
 
 | 模块 | 路径 | 代码位置 |
 |------|------|----------|
-| PaddleOCR | `<data_drive>:\ai_models\paddleocr` | `server/ocr.py` |
+| PaddleOCR | `<data_drive>:\ai_models\paddleocr`（paddlex 实际读取 `<该路径>\official_models\<模型名>\`） | `server/ocr.py` |
 | 嵌入模型 | `<data_drive>:\ai_models\embeddings` | `server/memory/config.py` → `server/memory/embeddings.py` |
 | Whisper STT | `<data_drive>:\ai_models\faster_whisper` | 非本项目，仅共享存储 |
 | CosyVoice TTS | `<data_drive>:\ai_models\cosyvoice` | 非本项目，仅共享存储 |
@@ -66,11 +66,16 @@ config.toml [models].external_dir
     │                       │
     │                       └─► EmbeddingEngine(cache_dir=...)  (server/memory/embeddings.py)
     │
-    └─► 环境变量 (start.bat 设置)
-            ├─► HF_HOME = <data_drive>:\ai_models\huggingface
+    └─► 环境变量
+            ├─► HF_HOME = <data_drive>:\ai_models\huggingface (第三方 HF SDK 缓存)
             ├─► MODELSCOPE_CACHE = <data_drive>:\ai_models\modelscope
-            └─► PADDLEX_HOME = <data_drive>:\ai_models\paddleocr (冗余，代码已用 get_models_config)
+            └─► PADDLE_PDX_CACHE_HOME = paddleocr_dir (server/ocr.py 的 _ensure_env() 设置)
 ```
+
+> **坑（paddlex ≥3.7）**：`paddlex/utils/cache.py` 的 `CACHE_DIR = os.environ.get("PADDLE_PDX_CACHE_HOME", ~/.paddlex)`，
+> 是**模块 import 时固化**的模块级常量，不是 `PADDLEX_HOME`（旧版变量，3.7 起已不生效）。
+> 只在 `get_models_config()` 里返回正确路径、不在 paddlex import 前设置 `PADDLE_PDX_CACHE_HOME`，
+> 模型会静默下载到 `~/.paddlex/official_models`，配置形同失效。详见 CHANGELOG Unreleased。
 
 ## 新增模型引用时的规范
 

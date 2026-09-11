@@ -20,7 +20,8 @@ v9 schema：VL provider 参数迁移到 key 级 vision 段（统一 key 来源�
 
 多对多映射：
   Key 维度：多物理 key / 单 key 多 model / 每 model 独立 tier+scope / 安全等级 (privacy_warning)
-  Use case 维度：13 个 use_case（7 LLM + 3 VL + 3 AIGC），每个声明 scope/sensitive/default_tier(范围 [min,max])
+  Use case 维度：14 个内置 use_case（8 LLM + 3 VL + 3 AIGC）+ 组件 manifest 动态注册，
+  每个声明 scope/sensitive/default_tier(范围 [min,max])
   路由层：resolve_keys(use_case, tier) 做多对多匹配，tier 硬过滤，model 软偏好
 """
 
@@ -82,7 +83,10 @@ def _normalize_tier(tier) -> int:
 
     - int: 直接返回（截断到 1-5）
     - str: 旧名称 ("default"/"cheap"/"powerful") → 数字
-    - None: 返回 0（表示不指定，由 use_case.default_tier 决定）
+    - None / 0: 返回 0（表示不指定，由 use_case.default_tier 决定）
+
+    0 必须保持 0：它是"未指定"哨兵。若 clamp 到 1，_normalize_tier_range((0,0))
+    会被误归一成 (1,1)，无 tier 的 call()/stream() 调用将被硬过滤到仅 tier-1 key。
     """
     if tier is None:
         return 0
@@ -91,13 +95,15 @@ def _normalize_tier(tier) -> int:
         if s in _LEGACY_TIER_MAP:
             return _LEGACY_TIER_MAP[s]
         try:
-            return max(1, min(5, int(s)))
+            v = int(s)
         except ValueError:
             return 0
+        return max(1, min(5, v)) if v else 0
     try:
-        return max(1, min(5, int(tier)))
+        v = int(tier)
     except (TypeError, ValueError):
         return 0
+    return max(1, min(5, v)) if v else 0
 
 
 def _normalize_tier_range(tier) -> tuple[int, int]:
@@ -1023,10 +1029,18 @@ def _test_key(api_key: str, base_url: str, model: str, timeout: int = 30,
     经 asyncio.to_thread 调用，本函数运行在线程池中，不阻塞事件循环。
     """
     from lib.async_http import get_sync_client
+    from server.llm_pool.opencode import build_opencode_headers, derive_session_id
     # v11：规范化 protocol
     proto = (protocol or "openai").lower().strip()
     if proto not in ("openai", "anthropic"):
         proto = "openai"
+
+    # opencode 端点健康检查也要带会话亲和 header（2026-09-06 上游强制，缺失即 400
+    # MissingSessionID，会把健康 key 误标 REMOVED）。健康检查消息恒为"回复OK"，
+    # 用 key 指纹做 namespace 派生稳定会话 ID（不泄露 key 本体，仅本地参与哈希）。
+    oc_headers = build_opencode_headers(
+        base_url, derive_session_id([{"role": "user", "content": "回复OK"}],
+                                    namespace=f"healthcheck:{api_key[:12]}"))
 
     try:
         if proto == "anthropic":
@@ -1037,6 +1051,7 @@ def _test_key(api_key: str, base_url: str, model: str, timeout: int = 30,
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
+                **oc_headers,
             }
             payload = {
                 "model": model or "claude-3-5-haiku-20241022",
@@ -1051,6 +1066,7 @@ def _test_key(api_key: str, base_url: str, model: str, timeout: int = 30,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
+                    **oc_headers,
                 },
                 json={
                     "model": model,

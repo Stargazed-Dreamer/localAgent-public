@@ -18,42 +18,66 @@
 import copy
 import json
 import os
-import shutil
 import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import Qt, QThread, Signal, QTimer, QMimeData, QFileInfo
-from PySide6.QtGui import QColor, QAction, QActionGroup, QDrag, QFont, QIcon, QKeySequence, QShortcut
+from PySide6.QtCore import QFileInfo, Qt, QTimer
+from PySide6.QtGui import QActionGroup, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QFileDialog, QMessageBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSplitter,
-    QListWidget, QListWidgetItem, QCheckBox, QComboBox,
-    QDialog, QProgressBar, QMenu, QAbstractItemView, QGroupBox,
-    QInputDialog, QStyle, QFrame, QFileIconProvider, QToolButton, QTabBar,
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QFileDialog,
+    QFileIconProvider,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidgetItem,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSplitter,
+    QTabBar,
+    QTableWidgetItem,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 # 添加当前目录到路径，以便导入 predictor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from category_widget import CategoryListWidget
+from details_dialog import DetailsDialog
+from file_table_widget import FileTableWidget
 from predictor import (
-    predict_categories, load_categories, save_categories,
-    save_sample, load_sample, check_backend_available,
-    classify_folder,
+    check_backend_available,
+    load_categories,
+    load_sample,
+    save_categories,
+    save_sample,
+)
+from session_store import (
+    SessionState,
+    delete_session,
+    derive_session_id,
+    list_sessions,
+    save_session,
 )
 from state_manager import StateManager
-from type_descriptor import describe_file_type
-from file_table_widget import FileTableWidget
-from details_dialog import DetailsDialog
-from worker_threads import FileScanThread, PredictThread, MoveFilesThread
-from category_widget import CategoryListWidget
-from stream_review_dialog import StreamReviewDialog
 from step_review_dialog import StepReviewDialog
-from session_store import (
-    SessionState, derive_session_id, save_session, list_sessions, delete_session,
-)
+from stream_review_dialog import StreamReviewDialog
+from type_descriptor import describe_file_type
+from worker_threads import FileScanThread, MoveFilesThread, PredictThread
 
 # ── 配置 ──
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "categories.json")

@@ -13,211 +13,216 @@ description: >
 
 ## 概述
 
-`temp/` 是 LocalAgent 的临时目录，用于存放：
-- `exec_python` 接口的临时脚本
-- 调试日志（后端启动日志、终端会话日志）
-- 一次性任务的中间数据（git diff、扫描结果、测试图等）
-- 临时解压/提取内容
+`temp/` 是临时堆积区：`exec_python` 的临时脚本、调试日志、终端会话日志、一次性任务的中间数据、临时解压内容都落在这里。它的本质是**内容随任务流动**——目录名每隔几周就换一批，而"这东西删了能不能找回来"这个性质是稳定的。
 
-**问题**：temp 容易堆积大量历史文件（日志、中间产物、旧测试数据），需要定期清理。
+**本 skill 的核心方法：按性质判定，不按名字查表。** 而"性质"只能从**实际读过的内容**得出——没读过内容的文件，不具备被判定为"可删"的资格。
 
-**本 skill 的工作流**：扫描分类 → 生成清单 → 用户确认 → 删除/移动（走回收站） → 收尾报告。
+> 历史上本 skill 曾用 A–M 十三类"目录名 → 处理方式"决策表，2026-08-28 实测 13 类里 11 类的名字已不存在，而当时占空间前三的目录（个人笔记 / 源码副本 / 个人财务）**一个都不在表里**——按表清理会既漏掉真正的保护对象，又误删刚生成的活文件。故改为下面的三问。
 
-## 前置条件
-- LocalAgent 后端已启动（可选，用于调用 MCP 工具）
-- PowerShell 可用（删除走回收站需要 `Microsoft.VisualBasic.FileIO`）
+## 一、三问决策树
 
-## 分类决策表
+对 `temp/` 下每一项（先按**顶层目录**判定，再按需下钻）依次问：
 
-扫描 `temp/` 后，把每个文件/目录归到以下类别：
+```
+（前置：先按本节末"判可删前必须读过内容"读过这个文件，再往下问）
+Q1 可重建吗？（删掉后能否重新生成 / 重新获取——必须实际验证重放路径现在还能跑通）
+   是 → ✅ 可删【回收站】
+   否 ↓
+Q2 是唯一副本吗？（世上还有别处存着吗）
+   是 → ★ 保护（绝不删；可提议移动，由用户定）
+   否 ↓
+Q3 有归属吗？（属于某个 workspace 任务、别的项目、或某个已登记的仓库对象）
+   有 → 📦 移回归属地（不删、不留在 temp）
+   无 → ❓ 标"待定"，交用户裁决
+```
 
-| 类别 | 特征 | 默认处理 | 注意事项 |
-|---|---|---|---|
-| **A. 调试日志** | `*.log`、`backend_stderr*.log`、`backend_stdout*.log`、`fake_llm.log` | 删（回收站） | 一般可重新生成 |
-| **B. 终端日志** | `terminals/` 下的 `term_*.stdout.log` / `term_*.stderr.log` | 删（回收站） | 大部分为 0 字节；运行中终端的日志不要删 |
-| **C. 任务中间产物** | changelog 研究的 `git_*.txt`、`git_research/`、`changelog_research/`、扫描结果等 | 看任务是否完成：完成→删；未完成→保留或归档 | 检查 `.agents/wip/` 是否有对应 open 任务 |
-| **D. 业务数据误放** | 用户业务数据（如 `exam_prep/`、`微信收藏导出/`） | 移到 `workspace/{任务名}/` | temp 只放临时文件，业务数据归 workspace |
-| **E. 备份/参考** | 外部 skill 参考、zip 包、git 克隆 | `temp/refs/` 或 `references/` | references/ 放外部克隆项目；temp/refs/ 放本项目相关备份 |
-| **F. 散落脚本** | 一次性 `.py` 脚本（非 exec_python 临时执行） | `temp/scripts/` | 与 `tools/` 重复的删（先 MD5 对比） |
-| **G. OCR/视觉调试数据** | `bbox_*.json`、`grid_*.png`、采样结果 | WIP 已完成；保留基线参考数据，临时重复图按清单审核 | 升级 PaddleOCR/PaddleX 时需要三档坐标回归 |
-| **H. 旧测试图** | 早期 OCR/UI 测试截图（如 `img_test/`） | 删（回收站） | 超过 3 个月且无 wip 关联 |
-| **I. 临时解压/提取** | `old_kit/`、`pdf_extract/` 等 | 保留（正常临时使用） | 这是 temp 的正当用途，不要清理 |
-| **J. 其他项目文件** | 不属于 LocalAgent 的文件（如 `mimo_*.json` 属于 MuseArc） | 移回原项目目录 | 询问用户原项目位置 |
-| **K. SDD 流程产物** ★保护 | `temp/sdd/<slug>/` 下的 spec.md / tickets.md / checklist.md / design-decisions.md / grill-me.md / 00-overview.md / NN-*.md / BLOCKED.md / plan.md / design.md / README.md | **绝不删除**（项目真源，工作记忆） | SDD 文档是上下文压缩后的恢复锚点；如需归档由用户决策迁入 `workspace/sdd_archive/`，agent 不得擅自清理 |
-| **L. HTML 展示文件** | `temp/html/<feature>.html` 或 `temp/html/<feature>/` | 看是否还在用：开发中→保留；已完成且无引用→删（回收站） | 删前先 grep 项目源码是否还有指向该 HTML 的引用 |
-| **M. 历史归档** ★保护 | `temp/planning_archive/sdd/` 下从 `planning_notes/` 迁移的历史 SDD 文档 | **绝不删除**（只读归档） | 2026-07-30 从 `planning_notes/` 迁移而来，保留作为历史参考 |
+三问之外还有第二节的交叉校验，**任何判定都要再过一遍**。
 
-## 工作流
+### 前置：判"可删"之前必须真的读过这个文件
 
-### Step 1: 扫描与分类
+**对每一个准备列入删除清单的文件，必须先实际读取其内容至少 30 行（不足 30 行则读全文；大文件读开头 30 行 + 结尾 30 行），读到内容才能落判定。仅凭文件名 / 扩展名 / 目录名 / 体积下结论一律无效。**
 
-1. 列出 `temp/` 下所有文件和目录（含子目录内容概览）
-2. 按分类决策表归类每一项
-3. 对不确定的项目：
-   - 检查 `.agents/wip/` 是否有相关 open 任务
-   - 检查 `tools/` 是否有重复文件（MD5 对比）
-   - 检查文件是否属于其他项目（看内容路径引用）
-4. 统计每类的大小和数量
+- **"看起来像可复现产物"不等于可复现**：Q1 判"可重建"之前，必须验证重放路径**现在真的还能跑通**（生成脚本还在、上游数据还在、对应代码版本没变）。跑不通就是一去不回的历史记录。
+- **来历不明的文件先读它自己会说话**：打开文件头几十行通常能看到时间戳、生成命令、"本报告由 xxx 生成"之类的自述，比猜目录名可靠得多。读不出来历的文件按 Q2/Q3 处理（保护或待定），不要按名字归类。
+- 代价已实测过一次：2026-08-30 把 `temp/audit/final_report.md`（23 KB）与 `pyright_summary.md`（8.8 KB）按文件名当"可复现产物"删除，实际是一次性历史审查记录、被文档引用 5 处、且对应代码版本已变更无法重放。用户裁决不取回，引用改指 commit。
 
-### Step 2: 生成清单并询问用户
+**目录级的批量判定不允许跳过这一条**：想整份删一个目录，先对目录内文件按大小/类型抽样各读 30 行，抽样发现任何"唯一副本 / 被引用 / 不可复现"信号，就停止批量判定，逐文件过。
 
-**强制规则：删除/移动操作前必须给用户完整清单并获得明确同意。**
+## 二、交叉校验（判定之后必须再过一遍）
 
-清单格式：
+### 1. 活跃性 → 一律保留，不得入删除清单
+
+命中任一条即保留：
+
+- **mtime 在最近 2 小时内**（2026-08-30 实测：清理进行中 temp 就被并发会话写入两次，94 → 95 个根目录 `.py`。窗口再小就会端掉别的会话几分钟前刚生成的文件）
+- **WIP 关联**：`wip_list(summary=true)` 查 DB 中的 open 任务（真源），并 grep `.agents/wip/*.md`（人类可读留档）——两边都无关才判"无归属"
+- **被 `AGENTS.md` / `docs/` / `tests/` / `client/` / `server/` grep 命中路径或文件名** ← 这条最容易被跳过，代价最大：文档点名的工具可能只躺在 temp 一份（`drift_detector.py` 案例）。这类文件**先移出清理范围，另议归属迁移**，不要"顺手删了再改文档"
+- 运行中终端的会话日志（先查终端状态，别按扩展名筛）
+
+### 2. 跨项目性 → 移回，不再讨论可重建性
+
+内容明显属于别的项目（其他仓库的状态文件、另一台机器的移交包）→ 归 Q3 移动，不能用"这个任务用完了"当删除理由。
+
+### 3. 仓库注册对象 → 走对应协议，不能只删目录
+
+`temp/` 里可以藏着**已注册的 git worktree**：`du` 排名很高（实测 63 MB / 732 个 `.py`），看起来像垃圾，实际是仓库注册对象。判定链：
+
+```
+.git 是 gitdir: 指针文件 → git worktree list 确认注册
+  → 该 commit 是否 master 祖先（git merge-base --is-ancestor）
+  → git status 是否 clean
+  → 两者皆是 ⇒ 磁盘零独有内容，可回收
+```
+
+**顺序必须是：回收站删目录 → `git worktree prune`。** 只删目录不 prune 会留悬空记录；反过来图省事用 `git worktree remove --force` 是**永久删除**，违反硬约束 1。
+
+### 4. 源码副本 → 先确认原始位置真的存在
+
+"看起来像重复"不等于重复。738 个 `.py` 的副本按"`.py` = 临时脚本"的直觉筛选会被整份端掉。Q1 判"可重建"之前，必须实际验证原始 clone / 上游仓库在别处存在。
+
+## 三、保护清单（按性质，不按名字）
+
+| 性质 | 例子（**示例，非枚举**） |
+|---|---|
+| 个人创作与记录 | 笔记、日记、复盘、人生设计蓝图、财务账单、收藏导出数据 |
+| 项目真源与工作记忆 | `temp/sdd/<slug>/`（spec/tickets/checklist/design-decisions/BLOCKED 等）、`temp/planning_archive/`、wip 关联物 |
+| 唯一副本的源码 / 数据 | 未提交的产出、外部 clone、快照压缩包 |
+| 仍在使用的校准基线 | OCR bbox 三档回归基线（升级 PaddleOCR/PaddleX 时要跑） |
+
+**SDD 与 planning 归档是绝对保护**：`temp/sdd/<slug>/` 是上下文压缩后的恢复锚点（见 AGENTS.md「上下文压缩防护」），`temp/planning_archive/` 是只读历史归档。agent 不得擅自清理或移动；要归档由用户决策。
+
+`temp/` 正当用途本身不算垃圾：临时解压、临时查看、probe 现场，任务还在进行就保留。
+
+## 四、工作流
+
+### Step 1：扫描与判定
+
+1. 列出 `temp/` 顶层（含大小），**先按顶层目录判定性质**，别一上来按扩展名筛
+2. **对每一个准备判"可删"的文件实际读内容**（≥30 行；大文件读头 30 + 尾 30；不足 30 行读全文），目录级批量判定前先按大小/类型抽样。没读过的文件不得进删除清单
+3. 跑第二节四条交叉校验：mtime 窗口、grep 引用、wip 关联、worktree 注册
+4. 每一项落到：可删 / ★保护 / 📦移动 / ❓待定
+
+### Step 2：生成清单并询问用户
+
+**强制：删除/移动前必须给用户完整清单并获得明确同意。**
+
+清单必须是**扫描时刻展开的具体路径快照**（落成文件，如 `temp/20260830_cleanup_list.txt`），**不能是删除时才求值的模式**——"根目录所有 `*.py`"这类活规则会连带删掉并发会话刚生成的文件。
 
 ```
 ## 🗑️ 删除清单（送回收站，可恢复）
-| 类别 | 项 | 大小 | 备注 |
+| 项 | 大小 | 判定依据（三问 + 校验） | 证据（含内容证据） |
 |---|---|---|---|
-| A. 日志 | backend_stderr*.log | 84 KB | |
-...
+| temp/xxx.log | 84 KB | Q1 可重建 | 通读头尾：pytest 输出转储，重跑 `tests/...` 即再生 |
 
 ## 📦 移动清单
-| 类别 | 源 → 目标 | 大小 |
-|---|---|---|
-| D. 业务数据 | temp/exam_prep/ → workspace/exam_prep/ | 4.3 MB |
-...
+| 源 → 目标 | 大小 | 归属依据 |
 
-## ❓ 不确定项
-（列出需要用户决定的项目）
+## ★ 保护清单（列出来让用户确认你没打算删）
+## ❓ 待定项（说明分歧点）
 ```
 
-用 `AskUserQuestion` 询问：
-1. 整体清单是否同意
-2. 不确定项的处理方式
-3. 是否需要新增 wip 待办（如发现遗漏的任务）
+每一项**必须附判定依据和证据**（如"该 commit 是 master 祖先且 status clean"、"ledger 显示 305/305 已提交"），而不是只写名字。
 
-### Step 3: 执行删除（走回收站）
+**删除项的证据栏必须含"内容证据"**——一句话说明文件实际写的是什么（引开头一行 / 概括正文内容），证明它被读过。只有名字、大小、扩展名的行等于没读过，**不得出现在给用户审核的删除清单里**。
 
-**强制规则：删除必须走 Windows 回收站，不得用 `Remove-Item` 直接删除。**
+用 `AskUserQuestion` 批量问：① 整体清单是否同意 ② 待定项处理方式 ③ 是否发现遗漏任务需要建 wip。
 
-PowerShell 实现：
+> ⚠️ 用户说"全部删"也不能覆盖保护类。清单里同时有垃圾和个人财务数据时，"全部删"字面执行会造成不可逆损失——把冲突**明确指出来**让用户确认，而不是照字面办。
 
-```powershell
-Add-Type -AssemblyName Microsoft.VisualBasic
-$recycle = [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
-$opts = [Microsoft.VisualBasic.FileIO.UICancelOption]::ThrowException
+### Step 3：执行前二次 diff
 
-# 删除文件
-[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path, $recycle, $opts)
-# 删除目录
-[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($path, $recycle, $opts)
+执行前重新扫一遍 temp，把**清单生成后新增的路径**剔除或补进清单。两道防线叠加：静态快照防"活规则端掉新文件"，二次 diff 防"漏掉新垃圾"。
+
+### Step 4：删除（走回收站）
+
+**唯一入口 `tools/disk/recycle.py`**（纯 ctypes `SHFileOperationW` + `FOF_ALLOWUNDO`）：
+
+```bash
+uv run python tools/disk/recycle.py --list <路径快照文件> --on-error continue
 ```
 
-**不要用**：
-- `Remove-Item -Force`（直接删除，不可恢复）
-- `del`、`rm`（同上）
-- `rd /s /q`（同上）
+- 路径写**反斜杠绝对路径**；删除前逐行 `os.path.exists` 校验
+- 有并发写入的场景用 `--on-error continue`（默认 `abort` 会因单个被占用文件中断整批，留下半清理状态）
+- ⚠️ **不要**改用 PowerShell `Add-Type -AssemblyName Microsoft.VisualBasic` + `FileIO.DeleteFile`——本机 `Add-Type` 被安全策略拦截，照做必失败
+- **禁用**：`Remove-Item` / `del` / `rm` / `rd /s /q` / `shutil.rmtree` / `git worktree remove --force`
 
-### Step 4: 执行移动
+**校验真进回收站时注意编码坑**：PowerShell 5.1 按 ANSI 读取**无 BOM** 的 `.ps1`，脚本里的中文路径字面量比对必然失败（会出现"文件明明在回收站，却报 NOT-IN-BIN"的假阴性）。反查用 ASCII 模式匹配（`$_.Name -like '*.7z'`）或干脆在 Python 里校验。
 
-用 `Move-Item -Force`：
+### Step 5：执行移动
 
-```powershell
-# 移动文件
-Move-Item -Path $src -Destination $dst -Force
-# 移动目录（目标目录已存在且为空时，先删空目录再移动）
-if (Test-Path $dst) { Remove-Item $dst -Force -Recurse }
-Move-Item -Path $src -Destination $dst -Force
-```
+`Move-Item` 即可（移动不涉及可逆性）。目标目录不存在先建；目标已存在同名目录时先确认内容再决定合并策略。业务数据从 temp 移到 `workspace/<task>/` 后，检查该任务是否需要 `manifest.toml`（见 cross_workspace_advisor / project_rules）。
 
-**移动前创建必要目录**：
-```powershell
-$dirs = @('temp\refs', 'temp\scripts', 'workspace\{任务名}')
-foreach ($d in $dirs) {
-    if (-not (Test-Path $d)) { New-Item -Path $d -ItemType Directory -Force | Out-Null }
-}
-```
+### Step 6：wip 待办处理
 
-### Step 5: wip 待办处理
+- **发现遗漏任务**（中间产物对应的任务其实没完成）→ `wip_create`，`next_steps` 必须可执行
+- **业务数据搬迁需要后续处理** → 建 wip 说明背景和下一步
+- **发现归属错位的工具**（文档点名却躺在 temp）→ 单独提议迁到 `tools/` 并同步改引用，**不要混在删除动作里**
 
-清理过程中如果发现：
+### Step 7：收尾报告
 
-1. **遗漏的 wip 任务**（如 `wip_migrated_backup/` 中有未迁移的 JSON）：
-   - 转为 `.md` 格式恢复到 `.agents/wip/`
-   - 在 skill 文件中记录恢复动作
+1. 删除项数与释放空间（如"183 项，408 MB → 218 MB"）、0 失败与否
+2. 移动项数与目标位置
+3. 新增 wip 待办清单
+4. **主动交代操作期间的异常文件变动**——别的进程/会话写入或删除的东西要如实说明，别糊过去
+5. temp 最终状态（大小、剩余顶层目录）
 
-2. **业务数据搬迁需要后续处理**（如微信收藏搬到 workspace 后还需进一步整理）：
-   - 在 `.agents/wip/` 创建新待办，说明背景、next steps、关联
+## 五、规则
 
-3. **skill 需要更新**（如 exam_prep 关键文档未同步到 skill）：
-   - 创建 wip 待办记录需要同步的内容
+### 硬约束（不可违反）
 
-### Step 6: 收尾报告
+1. **删除必走回收站**：只用 `tools/disk/recycle.py`；禁用 `Remove-Item`/`rm`/`shutil.rmtree`/`git worktree remove --force`
+2. **清单先行 + 明确同意**：任何删除/移动前必须给完整清单并获用户同意；用户说"全部删"不覆盖保护类，冲突必须指出
+3. **清单是静态路径快照**：扫描时刻展开成具体路径文件，禁止"所有 `*.py`"这类执行时求值的活规则；执行前二次 diff 新增项
+4. **判"可删"前必须读过内容**：每个拟删文件实际读 ≥30 行（大文件头 30 + 尾 30，不足 30 行读全文），清单证据栏必须有内容证据；**禁止仅凭文件名/扩展名/目录名/体积下结论**，"可重建"还须验证重放路径现在真能跑通（见第一节前置）
+5. **活跃文件不删**：2 小时内的 mtime / wip 关联 / 被 `AGENTS.md`·`docs/`·`tests/`·`client/`·`server/` grep 命中 → 一律移出清理范围
+6. **保护类不删**：个人创作与记录、项目真源（SDD / planning 归档）、唯一副本、在用校准基线
+7. **业务数据只移不删**
+8. **备份分级**：删除走 `recycle.py` 且已确认入站时，回收站本身就是备份，**不再叠一层备份**（避免同一份数据占两倍空间）；仅对回收站覆盖不了的情形强制先备份——① 大批量且体积逼近回收站容量 ② 目标盘非 NTFS / 网络盘（回收站不适用）③ 跨目录结构性移动（移动可能覆盖同名文件）
 
-报告内容：
-1. 删除项数和释放空间（如"85 项删除，释放 60 MB"）
-2. 移动项数和目标位置
-3. 新增的 wip 待办列表
-4. temp 目录最终状态（大小、结构）
-5. 发现的异常（如操作期间产生的新目录）
+### 经验做法（可调整）
 
-## 关键规则
+- 先按顶层目录分类再下钻；性质从读过的内容得出，别从目录名/文件名推断。抽样只用于**快速排除**整个目录（抽样全是垃圾→再逐文件确认），不能用来给单个文件定罪
+- 清单做**反向校验**：确认近期活跃文件没被误纳入
+- 判"一次性脚本的任务是否已完成"：取脚本名里的批次/任务标识去查 wip 或对应 ledger 是否已提交，比内容比对可行得多
+- 收尾把分类决策和发现写进记忆，方便下次清理
+- 与 `tools/` 重复的脚本可以直接删，但**内容比对是可选优化项，不是删除前置条件**——一次性脚本与通用工具几乎永远不会字节相同，把 MD5 相等当门槛会导致"永远删不掉"或"为执行规则而放宽标准反而误删"。⚠️ 这里豁免的只是**逐字节比对**，不豁免硬约束 4 的**读内容**：仍然必须读过才知道它是不是重复
 
-1. **删除必走回收站**：用 `Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile/DeleteDirectory` + `RecycleOption.SendToRecycleBin`，不得用 `Remove-Item`
-2. **清单先行**：所有删除/移动操作前必须给用户完整清单，获得明确同意后才执行
-3. **业务数据不删**：业务数据（微信收藏、考试资料等）只能移动到 workspace，不能删除
-4. **wip 关联检查**：对每个文件，检查 `.agents/wip/` 是否有相关 open 任务；有则保留或归档
-5. **重复检查**：脚本类文件先与 `tools/` 对比 MD5，重复才删
-6. **跨项目检查**：不属于 LocalAgent 的文件（如 MuseArc 状态文件）移回原项目
-7. **OCR 校准数据谨慎**：WIP 已完成，但基线 JSON 和三档网格仍用于升级回归；只清理明确重复的临时副本，且遵循清单审核
-8. **运行中终端不删**：`terminals/` 下属于运行中终端的日志不要删（先查 `exec_terminals_list`）
-9. **临时解压保留**：`old_kit/`、`pdf_extract/` 等正常临时使用不要清理，这是 temp 的正当用途
-10. **清理后归档**：清理完成后，把分类决策和发现记录到记忆或 wip，方便下次清理
-11. **SDD 文档保护（强制）**：`temp/sdd/<slug>/` 下的所有文件（spec/tickets/checklist/design-decisions/grill-me/00-overview/NN-*.md/BLOCKED.md 等）是项目真源和工作记忆，**绝不删除**。它们是上下文压缩后的恢复锚点（见 AGENTS.md「上下文压缩防护」）。如需归档，由用户决策迁入 `workspace/sdd_archive/`，agent 不得擅自清理或移动
-12. **历史归档保护（强制）**：`temp/planning_archive/sdd/` 下的文档是 2026-07-30 从 `planning_notes/` 迁移的历史 SDD 归档，**绝不删除**（只读归档）
-13. **HTML 展示文件谨慎清理**：`temp/html/` 下的 .html 文件删前必须 grep 项目源码确认无引用；开发中的 HTML 保留，已交付且无引用的可删（走回收站）
+## 关于目录结构
 
-## 默认目录结构（清理后）
-
-```
-temp/
-├── sdd/               # ★ SDD 流程产物（保护，不清理）
-│   └── <feature-slug>/  # spec.md / tickets.md / checklist.md / design-decisions.md 等
-├── html/              # HTML 展示文件（谨慎清理，删前 grep 引用）
-│   └── <feature-name>.html 或 <feature-name>/
-├── planning_archive/  # ★ 历史归档（保护，不清理）
-│   └── sdd/           # 2026-07-30 从 planning_notes/ 迁移的历史 SDD 文档
-├── refs/              # 备份与参考（本项目相关）
-│   ├── ocr_calibration/  # OCR bbox 校准数据
-│   ├── external_skills/  # 外部 skill 参考
-│   └── ...
-├── scripts/           # 散落的一次性脚本
-│   └── ...
-├── {临时目录}/        # exec_python 临时执行、解压查看等
-└── {临时目录}/
-```
+**temp 无固定结构，不要强加。** 它是临时堆积区，不是有治理结构的项目目录。历史上本 skill 曾规定"清理后应该有 `refs/`、`scripts/`、`html/` 等"，结果是 agent 花力气把文件塞进"应该有的"目录（无意义劳动），或结构图与实际脱节沦为废文档。清理的目标是**减少体积和风险**，不是**整形**。
 
 ## 与其他 skill 的关系
 
 | skill | 关系 |
 |---|---|
-| `disk_manager` | 磁盘清理 skill（系统级），temp_cleanup 专注于 temp 目录 |
-| `neat-freak` | 文档审查 skill，temp_cleanup 专注于文件清理 |
+| `disk_manager` | 磁盘清理 skill（系统级），temp_cleanup 专注 temp 目录 |
+| `neat-freak` | 文档审查 skill，temp_cleanup 专注文件清理 |
 | `wip_tracker` | 清理中发现遗漏 wip 时用 wip_tracker 恢复 |
 | `task_closure` | 清理任务本身的收尾走 task_closure |
+| `cross_workspace_advisor` | 业务数据/新任务的归属地决策 |
 
 ## 依赖
 
 | 依赖 | 用途 |
 |---|---|
-| PowerShell | 删除走回收站、移动文件 |
-| `Microsoft.VisualBasic.FileIO` | 回收站 API |
-| `.agents/wip/` | 检查 open 任务 |
-| `tools/` | 重复文件对比 |
+| `tools/disk/recycle.py` | 回收站删除唯一入口（纯 ctypes，无 PowerShell 依赖） |
+| `git`（只读子命令） | worktree 注册状态、commit 祖先关系判定 |
+| Grep / Glob | 交叉校验的引用检查与路径存在性 |
+| `wip_list` + `.agents/wip/*.md` | 检查 open 任务（DB 真源 + 人类可读留档） |
+| PowerShell | 仅用于 `Move-Item` 与回收站反查（注意 BOM/ANSI 坑） |
 
 ## 输入/输出
 
 - **输入**：`temp/` 目录
-- **输出**：清理后的 `temp/` + 可选的 wip 待办 + 清理报告
-- **可恢复**：所有删除项进 Windows 回收站，可恢复
+- **输出**：清理后的 `temp/` + 静态路径快照清单 + 可选 wip 待办 + 清理报告
+- **可恢复**：所有删除项进 Windows 回收站
 
 ## 触发频率建议
 
 - 用户主动触发（"整理 temp"）
 - temp 目录超过 100 MB 时建议触发
-- 大型任务完成后（如 changelog 整理、skill 创建）建议检查 temp
+- 大型任务完成后（如 changelog 整理、skill 创建）建议检查
 
 ## 记忆 key
 
-- `temp_cleanup`：上次清理时间、清理了什么、发现的问题
+- `temp_cleanup`：上次清理时间、清理了什么、发现的归属错位与踩坑

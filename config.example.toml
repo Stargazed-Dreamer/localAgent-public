@@ -171,7 +171,7 @@ cooldown_max = 60.0                     # 退避封顶秒数（指数递增 base
 # 独立于日常浏览器，通过 CDP 协议控制。
 # 兼容旧 [chrome] 段：若未配置 [browser]，后端会回退读取 [chrome] 段（向后兼容）。
 debug_port = 9222                         # 远程调试端口
-user_data_dir = "F:\\project_temp\\localAgent\\chrome_debug"  # 独立用户数据目录（默认沿用 chrome_debug 名）
+user_data_dir = "<project_root>\\chrome_debug"  # 独立用户数据目录（默认沿用 chrome_debug 名）
 # 浏览器原子操作 VL 反馈闭环（browser_action/wait_for/wait_and_action）
 # agent 传 verify_prompt 时，操作后截图 + 调远程 VL 返回 ≤200 字画面描述，无论成败都反馈
 # 让 agent 据此决定下一步而非猜原因。紧急时设 false 跳过 VL 调用
@@ -254,6 +254,24 @@ backoff_jitter_ms = 300
 #   weights/embeddings   - 嵌入模型
 external_dir = ""
 
+# PaddleOCR 推理设备: "cpu" | "gpu" | "auto"
+# 默认 "cpu"（稳妥）。GPU 实际可用（2026-08-26 独立进程对照实验：4160x2560 大图稳态 ~4s
+# vs CPU ~35s），但有两个坑：① 大图首次推理有 ~98s warmup，易误判为挂死；② 显存被游戏
+# 占满时曾致 server 首次 GPU 推理挂死（单核满转+GPU 空转，根因未完全定位）。
+# 切 "gpu" 前提：显存充足（别同时开游戏）+ 进程内 torch 先于 paddle GPU 初始化
+# （顺序反了会崩 WinError 127 cudnn DLL 冲突）。
+paddle_device = "cpu"
+
+# GPU→CPU 条件降级（2026-08-31）：paddle_device="gpu" 时，GPU 压力拒绝态
+# （显存被其他程序占满触发 model_manager REFUSING）下，OCR 不再直接不可用，
+# 而是在主机内存/CPU 达标时降级到 CPU 继续服务。阈值依据游戏满载实测标定
+# （可用内存最低 0.46GB 时降级必然 swap/OOM，故阈值必须真正生效）。
+# 恢复带迟滞：降级后至少保持 gpu_fallback_hold_sec 秒且 GPU 水位回落到
+# low_watermark 以下，下次加载才回 GPU（避免水位临界反复切换）。
+# gpu_fallback_min_avail_gb = 2.0   # 降级所需最小可用内存（GB）
+# gpu_fallback_max_cpu_pct = 70.0   # 降级允许的最大 CPU 占用（%）
+# gpu_fallback_hold_sec = 300.0     # 降级后最短保持秒数（迟滞防抖）
+
 [logging]
 # 日志配置（崩溃可追溯）
 file_enabled = true                       # 是否写入文件日志（默认 true；关闭后仅控制台输出，崩溃后无法追溯）
@@ -327,6 +345,12 @@ takeover_confirm_timeout_seconds = 30
 # 超时行为：cancel（默认，推荐）/ proceed（仅兼容旧配置）
 takeover_timeout_action = "cancel"
 
+# 坐标点击 UIA 融合总闸（ZCode computer-use 风格）：action=click 默认先 UIA hit-test，
+# 命中可点击元素直接后台 invoke（不抢焦点、零键鼠事件），未命中/异常自动回退原始键鼠。
+# execute_action/batch_actions 可用 strategy=event 强制原始键鼠、strategy=uia_only 拒绝回退。
+# false 时全部走原始键鼠（旧行为）
+coordinate_uia_fusion = true
+
 # 当前任务授权（旧配置名 takeover_persistent 保留兼容）：用户在接管弹窗中勾选后，
 # 当前任务的普通控制免重复确认；危险操作和安全阻断仍生效。授权仅存内存。
 # 请求：GUI"请求任务授权" / screen_request_control
@@ -369,6 +393,46 @@ by_ratio = 0.0
 # P1-A：启动后后台预热 PaddleOCR（不阻塞 startup，首次调用可省 ~10s 加载耗时）
 # true = 启动后立即在后台线程加载模型；false = 首次 OCR 调用时加载（默认）
 preload_on_startup = false
+
+[model_manager]
+# Model Lifecycle Manager（design temp/sdd/model-lifecycle-manager/design.md）
+# 统一负责后端进程内本地模型（PaddleOCR / 记忆 embedding / guide embedding /
+# MindForge 搜索引擎）的加载准入、压力逐出与手动控制。
+# - 主动策略首期仅开 GPU（VRAM）；CPU 监控实现但默认关闭
+# - 热路径模型（两个 embedding）默认钉住（evictable=False，仅手动卸载可达）
+# - enabled=false 时纯透传（不做自动监控，admit() 全放行）
+enabled = true
+poll_interval_sec = 5.0         # 监控采样周期（秒）
+reload_fail_cooldown_sec = 30    # per-model 加载失败冷却默认值（秒）
+
+[model_manager.gpu]
+# GPU 显存压力监控（主动逐出唯一资源维度，design D2）
+# 高压持续 high_sustain 个周期 → REFUSING；低压持续 low_sustain 个周期 → ARMED；
+# 单样本 ≥ critical_watermark → 立即 REFUSING；逐出完成 → NORMAL；ARMED → 加载成功后 NORMAL
+enabled = true
+high_watermark = 0.90           # 高压阈值（VRAM 占用比例）
+high_sustain = 3                # 持续多少个采样周期才升级到 REFUSING
+critical_watermark = 0.97       # 临界阈值（单样本即触发 REFUSING）
+low_watermark = 0.70            # 低压阈值（占用比例）
+low_sustain = 6                 # 持续多少个采样周期才降级到 ARMED
+min_loaded_seconds = 60         # 模型保护期：加载后 N 秒内不被逐出
+unload_timeout_sec = 15         # 卸载超时（秒，含排空 in_flight）
+
+[model_manager.cpu]
+# CPU 内存压力监控（默认关闭：8GB+ 主机内存下 ~2GB 搜索引擎不构成压力，误杀代价高）
+# 字段同 [model_manager.gpu]，启用时同款状态机生效
+enabled = false
+
+# [model_manager.models.<id>]：每模型覆盖（如要钉住/调整优先级）
+# 字段：evictable / priority / reload_fail_cooldown_sec
+# 示例：
+#   [model_manager.models.ocr]
+#   evictable = true
+#   priority = 80
+#   reload_fail_cooldown_sec = 30
+#
+#   [model_manager.models.memory_embedding]
+#   evictable = false   # 默认钉住（热路径，每个 MCP 请求都会用）
 
 [vision]
 # 远程 VL（v9 起：provider 配置在 keys.json 的 key.vision 段，config.toml 仅保留全局开关）
@@ -419,6 +483,7 @@ hf_mirror = "https://hf-mirror.com"        # HuggingFace 镜像源（中国用�
 # enable_semantic = true                      # 是否启用语义检索（设为 false 可跳过嵌入模型下载，仅用BM25；详见 docs/memory-system.md）
 # hybrid_alpha = 0.5                          # 向量检索权重（0=纯BM25, 1=纯向量）
 # auto_record = true                          # 是否自动记录 agent 交互
+# record_sources = ["tool", "agent", "user"]  # 自动记录的来源类型；默认含 "tool" 但 97%+ 为低价值工具调用噪声，可在 config.toml 改为 ["agent", "user"] 禁用
 # maintenance_interval = 10                   # 每 N 次 agent 交互触发记忆维护
 # orphan_cleanup_days = 30                    # 孤立消息清理阈值（天）
 # summary_cleanup_days = 180                  # 孤立摘要清理阈值（天）
@@ -496,7 +561,7 @@ vl_persist_batch_threshold = 20            # 配额文件批量写盘阈值（�
 [loops.download_watcher]
 enabled = false                             # 默认关闭；启用前确认 watch_dir 目录存在，否则后端会自动跳过该 loop（不崩溃）
 scan_interval = 300                         # 秒，每5分钟扫描
-watch_dir = "E:/<data_drive>:\<system_data_root>/<data_drive>:/Downloads"  # 监控目录（你的实际下载路径，可在 shell:<data_drive>:/Downloads 查看；导出时自动替换为占位符）
+watch_dir = "<data_drive>:\<system_data_root>/<data_drive>:/Downloads"  # 监控目录（你的实际下载路径，可在 shell:<data_drive>:/Downloads 查看；导出时自动替换为占位符）
 file_count_threshold = 15                   # 超过15个文件触发分类
 classify_batch_size = 50                    # 单次分类文件数上限
 folder_batch_size = 10                      # 单次文件夹分类数上限（文件夹分类成本高，默认 10）
@@ -511,6 +576,23 @@ fail_threshold = 3                          # 连续失败 N 次自动暂停（L
 enabled = true
 check_interval = 300                        # 秒，每5分钟检查触发条件
 fail_threshold = 5
+
+# 场景D2：邮件信源（workspace/email_source 组件，新邮件 → inbox → agent 感知）
+# 密钥在 data/secret/secrets.toml [tokens] email_auth_code（授权码，QQ/163 等国内邮箱必须用授权码而非登录密码）
+# 首次运行建 baseline（记录当前最大 UID），历史邮件不推送；fetch 用 BODY.PEEK 不改已读状态
+[loops.email_source]
+enabled = false                             # 默认关闭；填好下方邮箱配置 + secrets.toml 授权码后开启
+poll_interval = 300                         # 秒，轮询间隔
+first_run_delay = 60                        # 后端启动后延迟首跑（秒），避免与其它 loop 抢 IO
+imap_host = "imap.qq.com"                   # IMAP 服务器（QQ: imap.qq.com / 163: imap.163.com / Gmail: imap.gmail.com）
+imap_port = 993                             # SSL 端口
+smtp_host = "smtp.qq.com"                   # SMTP 服务器（发信）
+smtp_port = 465                             # 465=SSL / 587=STARTTLS
+username = "you@example.com"                # 邮箱账号
+folder = "INBOX"                            # 收件文件夹
+max_per_poll = 10                           # 单次最多拉取封数（防积压邮件瞬间灌爆 inbox）
+body_snippet_chars = 500                    # inbox 摘要最大字符数
+fail_threshold = 3                          # 连续失败 N 次自动暂停（授权码失效快速止损）
 
 # 场景E：workspace 可选组件（独立组件，通过约定接口动态注册）
 # 各组件的配置示例见 workspace/<component>/README.md 或 SETUP_GUIDE.md
@@ -539,6 +621,26 @@ current_quota = 100                         # 当前 vl_daily_quota 配置值（
 enabled = true
 check_interval = 43200                      # 检查间隔（秒，默认 12 小时）
 first_run_delay = 300                       # 首次运行延迟（秒，避开启动高峰）
+
+# 场景G3：密钥定时备份（防 agent 误删 gitignored 敏感文件后无法恢复）
+# 用途：每 5 天把 keys.json / secrets.toml / config.toml 明文副本备份到
+#       项目内 backups/secrets/ + 项目外目录（路径在 [secret_backup] 段配置）双位置
+# 触发后调 tools/backup_secrets.py 的 run_backup()；失败会推 inbox 告警
+# 恢复方式：手动运行 tools/restore_secrets.py list/restore
+[loops.secret_backup]
+enabled = true
+interval_seconds = 432000                    # 备份间隔（秒，默认 5 天 = 5 * 86400）
+first_run_delay = 300                       # 首次运行延迟（秒，避开启动高峰）
+fail_threshold = 3                          # 备份失败较严重，阈值低于默认 5
+
+# 场景G2：workspace 关键数据备份 loop（与 secret_backup 对称）
+# 备份目标由各 workspace/<component>/manifest.toml [backup] 段声明，按组件分子目录隔离
+# 详见 tools/backup_workspace.py
+[loops.workspace_backup]
+enabled = true
+interval_seconds = 432000                    # 备份间隔（秒，默认 5 天，与 secret_backup 同频次）
+first_run_delay = 600                       # 首次运行延迟（秒，比 secret_backup 晚 5 分钟避免并发压力）
+fail_threshold = 3                          # 备份失败较严重，阈值低于默认 5
 
 # 场景H：headless agent session（后端自主启动 agent 会话，IDE 关了也能跑）
 # spec: temp/sdd/headless-agent-session/spec.md
@@ -645,3 +747,47 @@ lufs_attempt = 4                            # LUFS 归一化最大重试次数
 lufs_step = 3.0                             # 每次 LUFS 目标响度增量
 max_chars_per_line = 40                     # 单条字幕最大字符数（0=不拆分，超过按词级时间戳拆分）
 min_duration_per_line = 1.5                 # 单条字幕最短持续时间秒（0=不限，优先级高于最大字数）
+
+# ===== 密钥备份配置 =====
+# 防止 agent 误删 keys.json / secrets.toml / config.toml 后无法恢复（gitignored 不可追踪）
+# 设计参考：项目内 backups/secrets/ 快速恢复 + 项目外目录防单盘故障
+# 触发方式：手动运行 tools/backup_secrets.py（GUI 工具栏"密钥备份"），或定时调度（每 5 天）
+# 恢复方式：手动运行 tools/restore_secrets.py list/restore
+# 详见 SECURITY-RISKS.md 第 15 项（明文备份风险，暂不加密）
+
+[secret_backup]
+# 项目内备份目录（相对项目根；已在 .gitignore 中排除 backups/）
+internal_dir = "backups/secrets"
+# 项目外备份目录（绝对路径；建议放不同物理盘防单盘故障；为空则只启用项目内备份）
+external_dir = ""
+# 保留策略：保留最近 N 个版本 + keep_within_days 天内所有版本（两者取并集，超出的删除）
+keep_last_n = 10
+keep_within_days = 20
+
+# === workspace 关键数据备份（ADR-0029）===
+# 用途：备份 workspace 各组件的关键个人数据（股票 watchlist / 账单 / db 等）
+# 备份目标声明：workspace/<component>/manifest.toml [backup] 段 paths = [...]
+# 设计与 [secret_backup] 对称，但独立目录和保留策略避免相互挤占
+# 触发方式：手动运行 tools/backup_workspace.py，或定时调度（每 5 天，与密钥备份同频次）
+# 详见 tools/backup_workspace.py
+[workspace_backup]
+# 项目内备份目录（相对项目根；按组件分子目录 backups/workspace/<component>/）
+internal_dir = "backups/workspace"
+# 项目外备份目录（绝对路径；为空则禁用外部备份；建议放不同物理盘防单盘故障）
+external_dir = ""
+# 保留策略：默认比密钥更激进（workspace 数据更新更快，旧版本意义不大）
+keep_last_n = 7
+keep_within_days = 14
+
+
+[inbound.detail_logging]
+# 入站网关请求/响应正文明细留存（旁路表 inbound_call_details，可开关）。
+# 正文可能含用户提示/业务敏感内容且无界，默认关；仅排查入站失败等场景时按需开启。
+# 明细不暴露给任何 REST/MCP 读取端点，需要时自写脚本直连 data/inbound_calls.db 查询。
+# 注意：以下默认值与 server/inbound_gateway/call_log.py 的代码内置默认一致；
+# 本机只需 enabled = true（其余走代码默认），真机可显式覆盖这三条上限。
+enabled = false                # 默认关；置 true 开启正文留存
+max_records = 50               # 明细窗口：整体最多保留条数（超出丢最老让位）
+max_total_bytes = 524288000    # 明细窗口：整体正文最大字节数（500 MB，超出丢最老让位）
+max_single_bytes = 104857600   # 单条正文最大字节数（100 MB，超限写入前截断 + truncated 标记）
+

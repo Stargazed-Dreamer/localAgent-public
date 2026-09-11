@@ -1,13 +1,13 @@
 """Florence-2 测速脚本（独立，不依赖 picture_tagger 包）。
 用 cuda10 conda 环境运行：
-  E:\<data_drive>:\<miniconda_root>\envs\cuda10\python.exe temp\florence_bench.py
+  <data_drive>:\<miniconda_root>\\envs\\cuda10\\python.exe temp\florence_bench.py
 """
 import time
-import sys
-import torch
-from transformers import AutoModelForCausalLM, AutoProcessor
-from PIL import Image
 from pathlib import Path
+
+import torch
+from PIL import Image
+from transformers import AutoModelForCausalLM, AutoProcessor
 
 print(f"torch={torch.__version__}, cuda={torch.cuda.is_available()}, gpu={torch.cuda.get_device_name(0)}")
 print(f"GPU mem free: {torch.cuda.mem_get_info()[0]/1024**3:.2f} GB / {torch.cuda.mem_get_info()[1]/1024**3:.2f} GB")
@@ -40,7 +40,7 @@ def run_task(image, task_prompt, max_tokens=128):
     return parsed
 
 
-test_dir = Path(r"F:\codex\PictureTagger\test")
+test_dir = Path(r"<external_project_root>\PictureTagger\test")
 files = sorted([f for f in test_dir.iterdir() if f.suffix.lower() in ('.jpg', '.png', '.jpeg', '.webp')])
 print(f"\nFound {len(files)} test images")
 

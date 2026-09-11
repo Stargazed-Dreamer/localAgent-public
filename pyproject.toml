@@ -1,6 +1,6 @@
 [project]
 name = "localagent"
-version = "0.39.0"
+version = "0.46.0"
 description = "LocalAgent API backend with PaddleOCR-VL"
 requires-python = ">=3.12"
 dependencies = [
@@ -46,7 +46,10 @@ dependencies = [
     "playwright>=1.60.0",
     # phase 3 public audience: SPDX 2.3 SBOM 生成 + schema 校验（2026-07-31 用户批准）
     "spdx-tools>=0.8.0",
-    "playwright-stealth>=2.0.3",
+    # playwright-stealth 已于 2026-09-03 移除：本项目的浏览器接入方式是
+    # connect_over_cdp 连接用户自启的真实 Chrome，指纹天然合规；stealth 的
+    # 「加法型」补丁会在真实浏览器上制造自相矛盾的假指纹并污染用户 tab。
+    # 详见 docs/browser-anti-detection.md。
     "uiautomation>=2.0.29",
     "pandas>=3.0.3",
     "baostock>=0.9.3",
@@ -66,6 +69,7 @@ dependencies = [
     # user 在 grill-me Q6 明确批准加此依赖
     "jinja2>=3.1.0",
     "truststore>=0.10.4",
+    "imbox>=0.10.1",
 ]
 
 [dependency-groups]
@@ -75,6 +79,7 @@ dev = [
     "pytest-xdist>=3.5.0",
     "pytest-timeout>=2.3.0",
     "ruff>=0.12.0",
+    "pyright>=1.1.411",
 ]
 
 [tool.uv]
@@ -177,10 +182,12 @@ testpaths = ["tests"]
 # --tb=short: 中等详细 traceback（单文件调试时有用；全量收集时脚本层覆盖为 --tb=line）
 # --maxfail=500: 容忍较多失败再停（便于一次性看全失败清单）
 # timeout=30 + thread method: 默认 30s 超时防卡死（Windows 兼容 thread method）
-# -n auto: pytest-xdist 自动按 CPU 核数并行（进程隔离，绕开 Qt access violation）
+# -n auto 已从 addopts 移除（2026-08-25）：写死在 addopts 导致无法用 -n0 关闭，
+#   且在受限环境（WorkBuddy 沙箱等）下 xdist worker 全部启动失败。
+#   需要并行走 tests/run_all.py 或显式加 -n auto。
 # 注：--junit-xml 不放 addopts（避免单文件调试时污染），由 tools/run_tests_collect.py
 #     和 tests/run_all.py 脚本层按需加。详见 docs/dev-workflow.md "测试运行入口" 段。
-addopts = "--tb=short -q -ra --maxfail=500 -p no:warnings --timeout=30 --timeout-method=thread -n auto"
+addopts = "--tb=short -q -ra --maxfail=500 -p no:warnings --timeout=30 --timeout-method=thread"
 markers = [
     "gpu: 标记需要 torch/PaddlePaddle/GPU 的测试",
     "browser: requires real debug browser on CDP :9222 + backend on :8766",

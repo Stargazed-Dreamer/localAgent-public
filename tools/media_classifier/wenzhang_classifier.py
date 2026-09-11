@@ -6,22 +6,21 @@
 - 审查拒绝的文段单独收录
 - 支持断点续传
 """
+import concurrent.futures
 import json
 import os
-import sys
-import time
 import shutil
 import threading
-import requests
-import concurrent.futures
+import time
+from collections import defaultdict
 from pathlib import Path
-from collections import defaultdict, Counter
 
 import docx
+import requests
 
 # ============ 配置 ============
 ROOT = Path(r"E:\<data_drive>:\<articles_root>")
-OUTPUT = Path(r"f:\<project_root>\output\文字篇章整理")
+OUTPUT = Path(r"<project_root>\output\文字篇章整理")
 API = "http://127.0.0.1:8766"
 CONCURRENCY = 60
 PROJECT = "文字篇章整理"
@@ -394,7 +393,7 @@ def load_done_ids(result_file, reject_file):
     done = set()
     for f in [result_file, reject_file]:
         if f.exists():
-            with open(f, "r", encoding="utf-8") as fp:
+            with open(f, encoding="utf-8") as fp:
                 for line in fp:
                     try:
                         done.add(json.loads(line)["id"])
@@ -431,7 +430,7 @@ def generate_report():
     total = 0
     rejected = 0
     if result_file.exists():
-        with open(result_file, "r", encoding="utf-8") as f:
+        with open(result_file, encoding="utf-8") as f:
             for line in f:
                 try:
                     obj = json.loads(line)
@@ -442,7 +441,7 @@ def generate_report():
                 except Exception:
                     pass
     if reject_file.exists():
-        with open(reject_file, "r", encoding="utf-8") as f:
+        with open(reject_file, encoding="utf-8") as f:
             for line in f:
                 rejected += 1
     report = {
@@ -456,9 +455,9 @@ def generate_report():
     report_file = OUTPUT / "_统计报告.json"
     with open(report_file, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
-    print(f"\n=== 统计报告 ===")
+    print("\n=== 统计报告 ===")
     print(f"已分类: {total}  审查拒绝/错误: {rejected}  总计: {total + rejected}")
-    print(f"\n分类分布:")
+    print("\n分类分布:")
     for cat, n in report["categories"].items():
         pct = n / total * 100 if total else 0
         print(f"  {cat:8s} {n:5d} ({pct:.1f}%)")

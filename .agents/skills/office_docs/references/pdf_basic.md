@@ -1,6 +1,6 @@
 # PDF 基础元素参考（创建 + 操作 + 提取）
 
-本文件是 [office_pdf skill](file:///f:/<project_root>/.agents/skills/office_pdf/SKILL.md) 的子参考，专注 PDF 文档（.pdf）的完整工作流：创建新 PDF、操作现有 PDF、提取 PDF 内容。
+本文件是 [office_pdf skill](file:///<project_root>/.agents/skills/office_pdf/SKILL.md) 的子参考，专注 PDF 文档（.pdf）的完整工作流：创建新 PDF、操作现有 PDF、提取 PDF 内容。
 
 > **重要**：OfficeCli 项目没有 PDF skill，本文件由本项目独立设计。基于原 `office_export/references/pdf.md` 内容并扩充。
 
@@ -1425,7 +1425,7 @@ body_leading = BODY_SIZE * 1.5
 - 输出：`workspace/office_pdf/某主题合集_20260718.pdf`
 - 特点：文章之间用 PageBreak 分隔；文章标题用绿色 Heading2；页眉显示合集名 + 日期；页脚显示页码 + 来源 URL
 
-详见 [web_archive skill](file:///f:/<project_root>/.agents/skills/web_archive/SKILL.md)。
+详见 [web_archive skill](file:///<project_root>/.agents/skills/web_archive/SKILL.md)。
 
 ### 2. 日总结 PDF（daily_summary）
 
@@ -1435,7 +1435,7 @@ body_leading = BODY_SIZE * 1.5
 - 输出：`workspace/office_pdf/日报_20260718.pdf`
 - 特点：标题"YYYY-MM-DD 工作日报"；按时段分章节（上午/下午/晚上）；任务表格汇总（绿色表头）；页脚加日期和页码
 
-详见 [daily_summary skill](file:///f:/<project_root>/.agents/skills/daily_summary.md)。
+详见 [daily_summary skill](file:///<project_root>/.agents/skills/daily_summary.md)。
 
 ### 3. 面经报告（niuke_review）
 
@@ -1445,7 +1445,7 @@ body_leading = BODY_SIZE * 1.5
 - 输出：`workspace/office_pdf/面经报告_20260718.pdf`
 - 特点：封面页（标题/日期/作者）；评分总览表格（绿色表头 + 隔行变色）；按题目分页，每题含答案和评分；末尾改进建议；全程使用中文字体（MSYH）
 
-详见 [niuke_review skill](file:///f:/<project_root>/.agents/skills/niuke_review.md)。
+详见 [niuke_review skill](file:///<project_root>/.agents/skills/niuke_review.md)。
 
 ### 4. 研究报告（deep_research）
 
@@ -1453,7 +1453,7 @@ body_leading = BODY_SIZE * 1.5
 
 - 输入：deep_research 输出的 markdown 报告
 - 输出：`workspace/office_pdf/研究报告_20260718.pdf`
-- 参考样式：[deep_research/references/pdf_report_style.md](file:///f:/<project_root>/.agents/skills/deep_research/references/pdf_report_style.md)
+- 参考样式：[deep_research/references/pdf_report_style.md](file:///<project_root>/.agents/skills/deep_research/references/pdf_report_style.md)
 - 特点：封面 + 目录 + 多章节 + 图表；正式报告风格；替换原 office_export 的 PDF 调用
 
 ## 参考
@@ -1461,4 +1461,4 @@ body_leading = BODY_SIZE * 1.5
 - [reportlab 官方文档](https://docs.reportlab.com/)
 - [pypdf 官方文档](https://pypdf.readthedocs.io/)
 - [pdfplumber 官方文档](https://github.com/jsvine/pdfplumber)
-- [office_pdf SKILL.md](file:///f:/<project_root>/.agents/skills/office_pdf/SKILL.md)
+- [office_pdf SKILL.md](file:///<project_root>/.agents/skills/office_pdf/SKILL.md)

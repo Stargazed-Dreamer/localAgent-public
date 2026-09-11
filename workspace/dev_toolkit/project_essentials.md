@@ -5,7 +5,7 @@
 
 ## 1. 概述
 
-本文件汇总 LocalAgent 项目（`f:\<project_root>\`）在 anthropics/skills 基础上做的改进与本土化：
+本文件汇总 LocalAgent 项目（`<project_root>\`）在 anthropics/skills 基础上做的改进与本土化：
 
 1. **anti-AI-slop 实战经验**：合并 brand-guidelines + frontend-design 精华 + 本项目用户偏好
 2. **Reconnaissance-Then-Action 模式**：动态页面调试铁律
@@ -169,7 +169,7 @@ with sync_playwright() as p:
 
 ## 4. 三层 MCP 架构
 
-来自本项目实战，详见 `f:\<project_root>\server\mcp_whitelist.py`。
+来自本项目实战，详见 `<project_root>\server\mcp_whitelist.py`。
 
 ### 4.1 三层暴露策略
 
@@ -252,7 +252,7 @@ MCP 网关层有 50KB 硬上限 size guard：
 
 ### 4.5 本项目实际数据
 
-来自 `f:\<project_root>\server\mcp_whitelist.py`：
+来自 `<project_root>\server\mcp_whitelist.py`：
 - DIRECT_TOOLS：~35 个直连工具
 - 网关自动收纳：~50 个工具（通过 `localagent_advanced_tool` 访问）
 - GATEWAY_EXCLUDE：~20 个排除工具（仅 REST 可用）
@@ -297,7 +297,7 @@ TOOL_ANNOTATIONS = {
 
 ### 5.3 本项目全工具映射参考
 
-来自 `f:\<project_root>\server\mcp_whitelist.py`：
+来自 `<project_root>\server\mcp_whitelist.py`：
 
 ```python
 TOOL_ANNOTATIONS = {
@@ -591,21 +591,21 @@ MCP 网关层有 50KB 硬上限：
 
 ## 13. 参考资源
 
-- **LocalAgent 项目主入口**：`f:\<project_root>\AGENTS.md`
-- **功能变更检查清单**：`f:\<project_root>\.trae\rules\project_rules.md`
-- **MCP 白名单 + Tool Annotations**：`f:\<project_root>\server\mcp_whitelist.py`
-- **MCP 网关实现**：`f:\<project_root>\server\core\mcp_gateway.py`
-- **强化版 skill-creator**：`f:\<project_root>\.agents\skills\skill-creator.md`
-- **强化版 html-dev-debug**：`f:\<project_root>\.agents\skills\html-dev-debug.md`
-- **MCP 三层架构文档**：`f:\<project_root>\docs\mcp-reference.md`
-- **三层记忆系统**：`f:\<project_root>\docs\memory-system.md`
-- **LLM 并发池架构**：`f:\<project_root>\docs\llm-pool.md`
-- **环境兼容性约束**：`f:\<project_root>\docs\environment-constraints.md`
-- **工具脚本指南**：`f:\<project_root>\docs\tools-guide.md`
+- **LocalAgent 项目主入口**：`<project_root>\AGENTS.md`
+- **功能变更检查清单**：`<project_root>\.trae\rules\project_rules.md`
+- **MCP 白名单 + Tool Annotations**：`<project_root>\server\mcp_whitelist.py`
+- **MCP 网关实现**：`<project_root>\server\core\mcp_gateway.py`
+- **强化版 skill-creator**：`<project_root>\.agents\skills\skill-creator.md`
+- **强化版 html-dev-debug**：`<project_root>\.agents\skills\html-dev-debug.md`
+- **MCP 三层架构文档**：`<project_root>\docs\mcp-reference.md`
+- **三层记忆系统**：`<project_root>\docs\memory-system.md`
+- **LLM 并发池架构**：`<project_root>\docs\llm-pool.md`
+- **环境兼容性约束**：`<project_root>\docs\environment-constraints.md`
+- **工具脚本指南**：`<project_root>\docs\tools-guide.md`
 - **本工具包其他文件**：
-  - [README.md](file:///f:/<project_root>/workspace/dev_toolkit/README.md)
-  - [html_toolkit.md](file:///f:/<project_root>/workspace/dev_toolkit/html_toolkit.md)
-  - [mcp_builder.md](file:///f:/<project_root>/workspace/dev_toolkit/mcp_builder.md)
-  - [webapp_testing.md](file:///f:/<project_root>/workspace/dev_toolkit/webapp_testing.md)
-  - [skill_creator.md](file:///f:/<project_root>/workspace/dev_toolkit/skill_creator.md)
-  - [evals_template.json](file:///f:/<project_root>/workspace/dev_toolkit/evals_template.json)
+  - [README.md](file:///<project_root>/workspace/dev_toolkit/README.md)
+  - [html_toolkit.md](file:///<project_root>/workspace/dev_toolkit/html_toolkit.md)
+  - [mcp_builder.md](file:///<project_root>/workspace/dev_toolkit/mcp_builder.md)
+  - [webapp_testing.md](file:///<project_root>/workspace/dev_toolkit/webapp_testing.md)
+  - [skill_creator.md](file:///<project_root>/workspace/dev_toolkit/skill_creator.md)
+  - [evals_template.json](file:///<project_root>/workspace/dev_toolkit/evals_template.json)

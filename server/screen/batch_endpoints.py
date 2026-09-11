@@ -87,13 +87,17 @@ class BatchActionItem(BaseSchema):
     y: int | None = None
     text: str | None = None
     keys: list[str] | None = None
-    direction: str | None = "down"
-    amount: int | None = 3
-    dx: int | None = 0
-    dy: int | None = 0
-    wait: float | None = 0.0  # action="wait" 时的等待秒数；其他 action 后的额外延迟
+    direction: str = "down"
+    amount: int = 3
+    dx: int = 0
+    dy: int = 0
+    button: str = "left"  # mouse_down/mouse_up 的按键（left | right）
+    wait: float = 0.0  # action="wait" 时的等待秒数；其他 action 后的额外延迟
     element_text: str | None = None  # 安全检查用
     snapshot_id: str | None = None  # 评估文档 P0：坐标动作的截图 snapshot_id（STALE_COORDINATES 检测）
+    # 坐标点击 UIA 融合策略（仅 action="click" 生效，语义与 execute_action 一致）：
+    # auto（默认）= 命中可点击元素直接 UIA invoke，未命中回退原始键鼠；event = 强制原始键鼠；uia_only = 必须命中
+    strategy: str = "auto"
     # 第二轮评估 P1：批量动作每步支持声明式后验（type=ocr_contains/ocr_not_contains）
     expected: dict | None = None  # {"type": "ocr_contains", "text": "...", "mode"?: ..., "window_title"?: ...}
 
@@ -245,7 +249,7 @@ def batch_actions(req: BatchActionsRequest):
         ok, errmsg = _validate_action_params(
             item.action, item.x, item.y, item.text, item.keys,
             direction=item.direction, amount=item.amount,
-            dx=item.dx, dy=item.dy,
+            dx=item.dx, dy=item.dy, button=item.button,
         )
         if not ok:
             results.append({"index": i, "action": item.action, "status": "blocked", "reason": errmsg})
@@ -253,6 +257,19 @@ def batch_actions(req: BatchActionsRequest):
             if req.stop_on_error:
                 aborted = True
                 aborted_reason = f"防呆检查失败: {errmsg}"
+                break
+            continue
+
+        # strategy 防呆（与 execute_action 一致的枚举校验）
+        if item.strategy not in ("auto", "event", "uia_only"):
+            results.append({
+                "index": i, "action": item.action, "status": "blocked",
+                "reason": f"未知 strategy='{item.strategy}'。支持: auto/event/uia_only",
+            })
+            blocked += 1
+            if req.stop_on_error:
+                aborted = True
+                aborted_reason = f"未知 strategy='{item.strategy}'"
                 break
             continue
 
@@ -358,14 +375,54 @@ def batch_actions(req: BatchActionsRequest):
                 time.sleep(min(req.interval, 0.05))
             continue
 
+        # ZCode 风格：click 步骤先尝试 UIA 融合（strategy 控制；event 强制原路径）。
+        # 命中 → 该步直接 UIA invoke（不抢焦点、零键鼠事件）；未命中 → auto 回退原始键鼠。
+        fusion_result_item: dict | None = None
+        item_transport = "sent"
+        if (
+            item.action == "click"
+            and item.x is not None and item.y is not None
+            and item.strategy != "event"
+            and screen_cfg.get("coordinate_uia_fusion", True)
+        ):
+            try:
+                from server.screen.uia import try_uia_click_fusion
+                fusion_result_item = try_uia_click_fusion(item.x, item.y)
+            except Exception as e:
+                logger.warning(f"批量步骤 {i} UIA 融合异常，回退原始键鼠: {e}")
+                fusion_result_item = None
+            if fusion_result_item is None and item.strategy == "uia_only":
+                results.append({
+                    "index": i, "action": item.action, "status": "blocked",
+                    "reason": "strategy=uia_only: 坐标处未命中可点击 UIA 元素（或 invoke 失败）",
+                    "transport_status": "not_sent",
+                })
+                blocked += 1
+                if req.stop_on_error:
+                    aborted = True
+                    aborted_reason = "strategy=uia_only 未命中 UIA 可点击元素"
+                    break
+                continue
+
         # 执行
         try:
-            r = _execute_action(
-                action=item.action, x=item.x, y=item.y,
-                text=item.text, keys=item.keys,
-                direction=item.direction, amount=item.amount,
-                dx=item.dx, dy=item.dy,
-            )
+            if fusion_result_item is not None:
+                r = {
+                    "success": True,
+                    "message": (
+                        f"click 已通过 UIA {fusion_result_item['action']} 执行"
+                        f"（element_role={fusion_result_item['role']}, name={fusion_result_item['name']!r}），"
+                        f"未发送键鼠事件"
+                    ),
+                }
+                item_transport = fusion_result_item.get("transport", "sent_uia_invoke")
+            else:
+                r = _execute_action(
+                    action=item.action, x=item.x, y=item.y,
+                    text=item.text, keys=item.keys,
+                    direction=item.direction, amount=item.amount,
+                    dx=item.dx, dy=item.dy, button=item.button,
+                )
             # 评估文档 P0：执行后立即检查焦点是否漂移
             delivery = "unknown"
             target_match_after = None
@@ -413,7 +470,7 @@ def batch_actions(req: BatchActionsRequest):
                 "status": item_status,
                 "message": r["message"],
                 "focus_check_status": focus_check_status,
-                "transport_status": "sent" if r["success"] else "error",
+                "transport_status": item_transport if r["success"] else "error",
                 "delivery_status": delivery,
                 "target_match_after": target_match_after,
                 "postcondition_status": item_postcond,
@@ -586,7 +643,7 @@ def preview_action(req: PreviewActionRequest):
                     win_offset_x, win_offset_y = left, top
                 except Exception:
                     captured_title = ""
-            png_bytes = _capture_window(target_hwnd)
+            png_bytes = _capture_window(target_hwnd) if isinstance(target_hwnd, int) else _capture_fullscreen()
             if png_bytes is None:
                 raise HTTPException(status_code=500, detail="窗口截图失败")
         else:
@@ -678,7 +735,7 @@ def preview_action(req: PreviewActionRequest):
         if max(orig_w, orig_h) > req.max_edge:
             scale = req.max_edge / max(orig_w, orig_h)
             new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-            img = img.resize((new_w, new_h), Image.LANCZOS)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         else:
             new_w, new_h = orig_w, orig_h
 

@@ -111,7 +111,7 @@ C:\ProgramData\NVIDIA Corporation\NVIDIA app\UpdateFramework\ota-artifacts  # NV
 %LOCALAPPDATA%\NVIDIA Corporation\NVIDIA App\CefCache                       # NVIDIA App浏览器缓存
 %LOCALAPPDATA%\NVIDIA Corporation\NVIDIA Overlay\CefCache                   # NVIDIA覆盖层缓存
 %LOCALAPPDATA%\Microsoft\Windows\Explorer                                   # 缩略图缓存
-E:\<data_drive>:\<system_data_root>\QQMusicCache\downloadproxyNew\tp2p\.tpfs\duty     # QQ音乐播放缓存（可达10GB+）
+<data_drive>:\<system_data_root>\QQMusicCache\downloadproxyNew\tp2p\.tpfs\duty     # QQ音乐播放缓存（可达10GB+）
 ```
 
 **第二梯队：需关闭对应程序**
@@ -283,7 +283,7 @@ E:\<data_drive>:\<backup_root>\SystemBackup\{日期}\
 你的filesync工具处理文件同步，新增的系统环境备份需要加入filesync配置：
 
 ```
-E:\<data_drive>:\<backup_root>\SystemBackup → J:\SystemBackup |重复文件:检查日期和大小 |增删文件处理:增量更新 |状态:启用
+E:\<data_drive>:\<backup_root>\SystemBackup → <backup_drive> |重复文件:检查日期和大小 |增删文件处理:增量更新 |状态:启用
 ```
 
 备份脚本执行后，filesync会自动同步到移动硬盘。

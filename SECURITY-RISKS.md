@@ -367,6 +367,9 @@ clone 完整 git 历史可获取历史密钥。
 | 2026-08-06 | git 历史密钥 | 中危，密钥轮换 |
 | 2026-08-07 | route_tags fail-open | 低危，设计选择（安全靠 safety+approval） |
 | 2026-08-07 | server 侧 OCR 路径遍历 | 中危，工具通用性优先不改 |
+| 2026-08-18 | 密钥备份明文存储（第 15 项） | 中危，设计选择（个人用暂不处理；明文副本 + 双位置 + 保留策略 + 仅手动恢复） |
+| 2026-08-18 | workspace 个人数据明文备份（第 16 项） | 中危，设计选择（与密钥备份同频次 + 独立配置目录和保留策略；ADR-0029） |
+| 2026-09-03 | 入站请求/响应正文明文落库（第 17 项） | 中危，本机开启 + 默认关 + 窗口上限（50 条/500MB/单条 100MB）+ 无读取端点 |
 
 ---
 
@@ -411,3 +414,128 @@ agent 通过 `localagent_advanced_tool` 网关可调这些端点，传 `C:\<user
 ### 当前处置
 
 **不改，工具通用性优先。** OCR 工具需读任意路径的图片（桌面截图、D 盘 PDF 等），加白名单会限制工具通用性。记入风险文档。
+
+---
+
+## 15. 密钥备份明文存储（中危，备份方案设计选择）
+
+### 描述
+
+`tools/backup_secrets.py` 把 `data/llm/keys.json`、`data/secret/secrets.toml`、`config.toml` 三个明文敏感文件**明文副本**备份到两个位置：
+
+- 项目内 `backups/secrets/`（已在 .gitignore 排除，不进 git 历史，不进 release 包）
+- 项目外目录（绝对路径，配置在 config.toml `[secret_backup].external_dir`；建议不同物理盘防单盘故障）
+
+备份文件名格式：`<basename>_<YYYYMMDD>_<HHMMSS>.<ext>`，保留策略「最近 N 个版本 + M 天内所有版本」取并集（默认 N=10, M=20）。
+
+### 触发场景
+
+2026-08-18：agent 工作时误删 `keys.json`，因 .gitignore 排除且无备份机制难以恢复。用户决策加本地备份方案：双重位置 + 5 天定时 + 手动触发 + 明文 + 仅手动恢复。
+
+### 影响
+
+- 备份目录被未授权访问（如外部盘被挂载到其他系统、共享目录误开）→ 所有密钥直接泄露
+- 备份目录的明文副本数量是原文件的 N 倍（保留 10 个版本即 10 份明文密钥），增加泄露面
+- 与原文件 at-rest 风险等级相同（详见第 7 项 lib/secret 明文存储），但备份位置脱离了项目根的 .gitignore 兜底
+
+### 缓解措施
+
+- `backups/` 在 .gitignore 排除，不进 git 历史
+- `config.toml` 在 .gitignore 排除，外部路径不入 release 包
+- `tools/backup_secrets.py` / `tools/restore_secrets.py` 源码不硬编码具体外部路径，通过 `lib.secret.get_*_path()` + `lib.config_reader.load_config()` 读取 `[secret_backup]` 段，避免 release 包泄露本机路径
+- 保留策略限制备份副本数量（≤ N 个版本 + M 天）
+- 项目外目录建议放在不同物理盘防单盘故障
+- 用户对外部备份目录有文件系统级访问控制（Windows 用户隔离）
+
+### 未来可扩展
+
+- 加密层：PBKDF2 + AES-256-GCM（恢复需输密码）
+- 机器绑定加密：Windows DPAPI（本机本用户免密解密，换机不可读）
+- 写入时 hook：在 `_write_raw_keys_file` 前快照，防 mid-write 损坏
+
+### 当前处置
+
+**个人用暂不处理。** 用户明确决策（2026-08-18）：明文副本 + 记入风险文档。设计为后续可平滑升级加密层（备份文件名格式不变，仅内容从明文改为密文）。
+
+---
+
+## 16. workspace 个人数据明文备份（中危，备份方案设计选择）
+
+### 描述
+
+`tools/backup_workspace.py` 按 `workspace/<component>/manifest.toml [backup]` 段声明的路径，把各组件的关键个人数据（股票 watchlist / 持仓 db / 账单 / 配置等）**明文副本**备份到两个位置：
+
+- 项目内 `backups/workspace/<component>/`（已在 .gitignore 排除，不进 git 历史，不进 release 包）
+- 项目外目录（绝对路径，配置在 config.toml `[workspace_backup].external_dir`；建议不同物理盘防单盘故障）
+
+文件路径 → 原子拷贝；目录路径（以 "/" 结尾或 is_dir）→ 递归打 zip 后原子写。备份文件名格式 `<basename>_<YYYYMMDD>_<HHMMSS>.<ext|zip>`，保留策略「最近 N 个版本 ∪ M 天内所有版本」（默认 N=7, M=14，比密钥更激进）。
+
+### 触发场景
+
+2026-08-18：用户反馈"workspace 还有很多关键数据未被跟踪（如股票的个人数据），实际上非常值得备份"，希望"manifest.toml 里加一条说明本 work 下哪些是需要备份的文件，然后 loop 任务一起处理好"。决策：与 secret_backup 对称设计但独立配置目录和保留策略（ADR-0029）。
+
+### 影响
+
+- 备份目录被未授权访问 → 所有个人数据直接泄露（持仓信息、账单、配置等）
+- workspace 备份多是大文件（duckdb 几十 MB），泄露面比密钥更大（含行为数据）
+- 备份目标由各组件 manifest 声明，组件作者加 `[backup]` 段时需自行评估敏感性
+- 与第 15 项密钥备份同类风险，但密钥脱密后影响更严重（财务账户被盗用 vs 交易行为被窥探）
+
+### 缓解措施
+
+- `backups/` 在 .gitignore 排除，不进 git 历史
+- `config.toml` 在 .gitignore 排除，外部路径不入 release 包
+- `tools/backup_workspace.py` 源码不硬编码外部路径，通过 `lib.config_reader.load_config()` 读取 `[workspace_backup]` 段，避免 release 包泄露本机路径
+- zip 内 arcname 用相对路径不暴露本机绝对路径
+- 保留策略限制备份副本数量（默认 ≤ 7 个版本 + 14 天）
+- 项目外目录建议放在不同物理盘防单盘故障
+- 用户对外部备份目录有文件系统级访问控制（Windows 用户隔离）
+- 备份目标声明权在组件作者（manifest [backup] 段），不强行扫描全部组件数据
+
+### 未来可扩展
+
+- 加密层：PBKDF2 + AES-256-GCM（与第 15 项共享同一加密层，备份文件名格式不变）
+- 机器绑定加密：Windows DPAPI
+- 选择性加密：只对 `[backup].sensitive = true` 的组件加密（与 backup 段可加敏感标志字段配套）
+
+### 当前处置
+
+**个人用暂不处理。** 用户明确决策（2026-08-18）：与密钥备份同频次（5 天）+ 独立配置 + 明文副本 + 记入风险文档。设计为后续可平滑升级加密层（备份文件名格式不变，仅内容从明文改为密文）。
+
+---
+
+## 17. 入站请求/响应正文明文落库（中危，可开关 detail logging）
+
+### 描述
+
+入站网关新增可开关的请求/响应正文明细留存：当 `[inbound.detail_logging].enabled = true` 时，所有进入转发（pool.call/stream）的 `/v1/chat/completions` 调用，其**请求 JSON 原文**与**响应正文**（非流式 content / 流式聚合正文含 thinking）明文存到 `data/inbound_calls.db` 的 `inbound_call_details` 表。正文可能含用户提示、业务数据、系统提示片段等敏感内容，**无加密、无自动脱敏**。
+
+### 存储位置
+
+- `data/inbound_calls.db` 的 `inbound_call_details` 表（`request_body` / `response_body`）
+- 独立快照表，自带定位字段（key/model/status/error），生命周期与统计主表 `inbound_calls` **完全解耦**（不联动删除）
+- 窗口上限：整体 ≤ 50 条 / ≤ 500 MB（超出丢最老让位）；单条 ≤ 100 MB（超限写入前截断，置 `truncated` 标记）
+
+### 利用条件
+
+- 攻击者能读取 `data/inbound_calls.db`（该库与主表同目录，未设文件级 0o600 权限）
+- 或本机多用户环境其他用户能读 `data/` 目录
+- 开关默认关；仅本机（config.toml）显式开启
+
+### 影响
+
+- 明文泄露最近转发流量的请求/响应全文（提示词、业务内容、潜在系统提示片段）
+- 单库最多约 500 MB 明文正文（窗口自收敛）
+
+### 缓解措施
+
+- 开关默认 `false`（config.example.toml 文档 + 代码内置默认），仅本机 config.toml 置 true
+- 明细**不暴露给任何 REST/MCP 读取端点**；需要时自写脚本直连库 SELECT
+- 明细窗口自动让位清最老，总量被 500 MB / 50 条封顶
+- `data/` 依赖文件系统权限与 .gitignore 兜底（不进 git / release 包）
+- 自读脚本若需传播，脱敏由脚本侧自行处理（本项目未引入自动脱敏层）
+
+### 当前处置
+
+**个人用调试需要开启**（2026-09-03 本机 config.toml 置 true）。中危，接受并记录。开关由 `[inbound.detail_logging]` 控制，无需时置 false 即关闭。
+

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 apply_placeholders.py - 占位符自动替换脚本
 
@@ -13,19 +12,19 @@ apply_placeholders.py - 占位符自动替换脚本
 
     命令行（必填通过参数提供）：
         python tools/deploy/apply_placeholders.py <export_dir> ^
-            --project-root D:\code\localAgent ^
+            --project-root D:\\code\\localAgent ^
             --username your_name ^
             --data-drive D ^
             [--dry-run] [--skip-optional]
 
     预演模式（只输出将修改的文件清单和替换次数，不实际写入）：
         python tools/deploy/apply_placeholders.py <export_dir> --dry-run ^
-            --project-root D:\code\localAgent --username your_name --data-drive D
+            --project-root D:\\code\\localAgent --username your_name --data-drive D
 
 注意：
     <data_drive> 应传盘符字母（如 D），不要带冒号。导出包中占位符已含冒号
-    （如 <data_drive>:\<data_drive>:\Documents），传 D 才能得到 D:\<data_drive>:\Documents；若传 D: 会产生
-    D::\<data_drive>:\Documents 双冒号异常路径，脚本会检测并报错退出。
+    （如 <data_drive>:\\<data_drive>:\Documents），传 D 才能得到 D:\\<data_drive>:\Documents；若传 D: 会产生
+    D::\\<data_drive>:\Documents 双冒号异常路径，脚本会检测并报错退出。
 
     占位符清单需与 release/profiles/friend-full.toml 的
     [deployment_mapping.required_mappings] 段保持同步。
@@ -42,7 +41,6 @@ apply_placeholders.py - 占位符自动替换脚本
 import argparse
 import os
 import sys
-
 
 # 占位符清单
 # 此清单需与 release/profiles/friend-full.toml 的 [deployment_mapping.required_mappings] 保持同步
@@ -144,7 +142,7 @@ def replace_placeholders_in_content(content, replacements):
 
 
 def process_files(text_files, replacements, dry_run=False):
-    """
+    r"""
     处理所有文本文件。
     返回 (scanned_count, modified_count, total_replace_counts, modified_files, double_colon_files)
     modified_files: list of (file_path, per_file_counts)
@@ -160,7 +158,7 @@ def process_files(text_files, replacements, dry_run=False):
         scanned += 1
         try:
             # newline="" 让 Python 不做换行符转换，保留原 CRLF/LF 风格
-            with open(file_path, "r", encoding="utf-8", newline="") as f:
+            with open(file_path, encoding="utf-8", newline="") as f:
                 content = f.read()
         except (UnicodeDecodeError, OSError):
             # 跳过无法以 UTF-8 解码的文件（可能是二进制或非 UTF-8 编码）
@@ -196,7 +194,7 @@ def verify_replacements(text_files, required_placeholders, optional_placeholders
 
     for file_path in text_files:
         try:
-            with open(file_path, "r", encoding="utf-8", newline="") as f:
+            with open(file_path, encoding="utf-8", newline="") as f:
                 content = f.read()
         except (UnicodeDecodeError, OSError):
             continue

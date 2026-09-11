@@ -8,6 +8,8 @@ import io
 import logging
 import threading
 import time
+from collections.abc import Sequence
+from typing import Any
 
 from PIL import Image
 
@@ -200,7 +202,9 @@ def _capture_window(hwnd: int, force_fullscreen_crop: bool = False) -> bytes | N
                 pass
         if bitmap is not None:
             try:
-                bitmap.DeleteObject()
+                # PyCBitmap stub 未声明 DeleteObject，Any 承载动态属性
+                _bitmap_dynamic: Any = bitmap
+                _bitmap_dynamic.DeleteObject()
             except Exception:
                 pass
 
@@ -246,7 +250,7 @@ def _images_equal(img_a: bytes, img_b: bytes) -> bool:
     return hashlib.md5(img_a).hexdigest() == hashlib.md5(img_b).hexdigest()
 
 
-def _find_overlap_and_stitch(images: list[Image.Image], min_overlap_ratio: float = _STITCH_MIN_OVERLAP_RATIO) -> Image.Image:
+def _find_overlap_and_stitch(images: Sequence[Image.Image], min_overlap_ratio: float = _STITCH_MIN_OVERLAP_RATIO) -> Image.Image:
     """拼接多张图片为长图,自动检测重叠区域。
 
     算法:对相邻两张图 A(上) B(下),在 B 中搜索与 A 底部最匹配的行,

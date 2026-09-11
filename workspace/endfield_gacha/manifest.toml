@@ -35,3 +35,15 @@ index_section = "components"
 
 [config_schema]
 file = "config_schema.toml"
+
+[backup]
+# 备份声明（与 [watch] 解耦）：仅含个人寻访记录，由 WorkspaceBackupAction loop 调度
+# "raw/" 是目录 → 备份时打 zip（raw_YYYYMMDD_HHMMSS.zip），含原始 API 响应（不可再生）
+# 消费方：tools/backup_workspace.py → backups/workspace/endfield_gacha/<basename>_<ts>.<ext|zip>
+# 备份频次见 config.toml [loops.workspace_backup]
+paths = ["summary.json", "weapon_records.json", "char_records.json", "raw/"]
+
+[tests]
+# 自动化测试声明：当前无自动化测试
+enabled = false
+paths = []

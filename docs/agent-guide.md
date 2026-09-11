@@ -1,6 +1,6 @@
 # Agent Guide 任务路由系统
 
-本文档描述 server 端任务路由系统的架构、GUIDE_REGISTRY 数据结构、三种调用模式、consumption_contexts 消费闭环、first_action 注入机制、workspace 动态扩展机制。keywords 编写规范见 [agent-guide-keywords.md](file:///f:/<project_root>/docs/agent-guide-keywords.md)。
+本文档描述 server 端任务路由系统的架构、GUIDE_REGISTRY 数据结构、三种调用模式、consumption_contexts 消费闭环、first_action 注入机制、workspace 动态扩展机制。keywords 编写规范见 [agent-guide-keywords.md](file:///<project_root>/docs/agent-guide-keywords.md)。
 
 ## 1. 概述
 
@@ -14,7 +14,7 @@
 
 ## 2. GUIDE_REGISTRY 结构
 
-**定义位置**：[agent_guide.py L196](file:///f:/<project_root>/server/agent_guide.py)（浅拷贝静态版本 + 运行时 update 动态条目）
+**定义位置**：[agent_guide.py L196](file:///<project_root>/server/agent_guide.py)（浅拷贝静态版本 + 运行时 update 动态条目）
 
 ```python
 GUIDE_REGISTRY: dict[str, dict] = dict(_STATIC_GUIDE_REGISTRY)  # L196
@@ -22,7 +22,7 @@ GUIDE_REGISTRY: dict[str, dict] = dict(_STATIC_GUIDE_REGISTRY)  # L196
 GUIDE_REGISTRY.update(_load_optional_guide_entries())  # L262
 ```
 
-- 静态导入：从 [agent_guide_data.py](file:///f:/<project_root>/server/agent_guide_data.py) 导入 `_STATIC_GUIDE_REGISTRY`
+- 静态导入：从 [agent_guide_data.py](file:///<project_root>/server/agent_guide_data.py) 导入 `_STATIC_GUIDE_REGISTRY`
 - 动态合并：`_load_optional_guide_entries()` 加载 workspace 组件的 manifest 声明条目（详见第 8 节）
 - 浅拷贝设计：测试通过 `importlib.reload(agent_guide)` 模拟组件删除/添加时，GUIDE_REGISTRY 重置为静态版本再 update 动态条目，避免污染
 
@@ -47,14 +47,14 @@ GUIDE_REGISTRY.update(_load_optional_guide_entries())  # L262
 | `memory_generation_workflow` | dict | 否 | 记忆生成工作流（仅 recurring.memory_generation） |
 | `task_closure_workflow` | dict | 否 | 任务收尾工作流（仅 system.task_closure） |
 | `wip_archive_workflow` | dict | 否 | WIP 归档工作流（仅 system.wip_archive） |
-| `classification_table` | dict | 否 | 分类决策表（仅 system.temp_cleanup） |
+| `classification_table` | dict | 否 | 判定规则表（字段名沿用历史；内容已是"三问决策树 + 交叉校验"，仅 system.temp_cleanup） |
 | `do_not_store` | list[str] | 否 | 不应存储的内容清单 |
 | `vendor_repo` | str | 否 | 上游仓库 URL（融合 skill 标注来源） |
 | `vendor_path` | str | 否 | 上游 skill 本地路径 |
 
 ## 3. Scope 分类
 
-代码中实际存在 6 个 scope：5 个静态 scope 定义在 [agent_guide_data.py](file:///f:/<project_root>/server/agent_guide_data.py)，第 6 个 `recording` 通过 workspace 动态加载。
+代码中实际存在 6 个 scope：5 个静态 scope 定义在 [agent_guide_data.py](file:///<project_root>/server/agent_guide_data.py)，第 6 个 `recording` 通过 workspace 动态加载。
 
 | scope | 描述 | 代表性 task_type | 来源 |
 |-------|------|------------------|------|
@@ -63,13 +63,13 @@ GUIDE_REGISTRY.update(_load_optional_guide_entries())  # L262
 | `system` | 系统元任务 | `system.task_closure`、`system.task_reminder`、`system.project_audit`、`system.release`、`system.public_distribution` | 静态 |
 | `dev` | 开发任务 | `dev.goal_engineering`、`dev.implement`、`dev.anti_hallucination`、`dev.to_spec`、`dev.grill_me` | 静态 |
 | `daily` | 日常事务 | `daily.teach`、`daily.cangjie_extraction` | 静态 |
-| `recording` | 录制包消费（动态加载） | `recording.discover`、`recording.consume` | 动态（[workspace/recorder/loop_actions.py](file:///f:/<project_root>/workspace/recorder/loop_actions.py)） |
+| `recording` | 录制包消费（动态加载） | `recording.discover`、`recording.consume` | 动态（[workspace/recorder/loop_actions.py](file:///<project_root>/workspace/recorder/loop_actions.py)） |
 
-> task_type 完整清单见 [.agents/skills/_index.md](file:///f:/<project_root>/.agents/skills/_index.md) 核心 Skill 段 + 组件化模块段，数量随新增/重构变动。
+> task_type 完整清单见 [.agents/skills/_index.md](file:///<project_root>/.agents/skills/_index.md) 核心 Skill 段 + 组件化模块段，数量随新增/重构变动。
 
 ## 4. 三种调用模式
 
-**统一端点**：`GET /guide`（[agent_guide.py L810-966](file:///f:/<project_root>/server/agent_guide.py)，`operation_id="agent_guide"`）
+**统一端点**：`GET /guide`（[agent_guide.py L810-966](file:///<project_root>/server/agent_guide.py)，`operation_id="agent_guide"`）
 
 **函数签名**：
 
@@ -101,7 +101,7 @@ def get_agent_guide(
 
 ### 5.1 数据库列定义
 
-文件：[memory/schema.py L63-64](file:///f:/<project_root>/server/memory/schema.py)
+文件：[memory/schema.py L63-64](file:///<project_root>/server/memory/schema.py)
 
 ```sql
 consumption_contexts TEXT,  -- JSON 数组字符串，如 ["recurring.accounting", "adhoc.web_archive"]
@@ -112,7 +112,7 @@ trigger_keywords TEXT       -- JSON 数组字符串，如 ["退款", "curl"]
 
 ### 5.2 写入端（记忆写入时填字段）
 
-文件：[memory/manager.py](file:///f:/<project_root>/server/memory/manager.py)
+文件：[memory/manager.py](file:///<project_root>/server/memory/manager.py)
 
 `set` 方法 L189+，关键字段处理在 L218-230：
 
@@ -132,7 +132,7 @@ if structured:
 
 ### 5.3 读取端（guide 读取时反向查询注入）
 
-文件：[memory/manager.py](file:///f:/<project_root>/server/memory/manager.py)
+文件：[memory/manager.py](file:///<project_root>/server/memory/manager.py)
 
 `find_consumable_memories` 方法 L364-（完整实现延续到约 L545）：
 
@@ -150,7 +150,7 @@ if structured:
 
 ### 5.4 调用点（_build_task_guide 中）
 
-文件：[agent_guide.py L700-716](file:///f:/<project_root>/server/agent_guide.py)
+文件：[agent_guide.py L700-716](file:///<project_root>/server/agent_guide.py)
 
 ```python
 # 动态关联：按 consumption_contexts / trigger_keywords 反向查询
@@ -164,13 +164,13 @@ if mgr:
 
 ### 5.5 staleness 字段注入
 
-文件：[memory/router.py L535](file:///f:/<project_root>/server/memory/router.py)
+文件：[memory/router.py L535](file:///<project_root>/server/memory/router.py)
 
 `_enrich_with_staleness(data)` 在 `_build_task_guide` 中调用（L720-724），让首轮就能看到过时记忆警告。
 
 ### 5.6 写入约束（task_closure 中强调）
 
-文件：[agent_guide_data.py](file:///f:/<project_root>/server/agent_guide_data.py)
+文件：[agent_guide_data.py](file:///<project_root>/server/agent_guide_data.py)
 
 `system.task_closure` 的 `step_3_extract.instruction` L446-453：
 
@@ -183,7 +183,7 @@ if mgr:
 
 ## 6. first_action 注入"【必读记忆】"机制
 
-文件：[agent_guide.py L726-736](file:///f:/<project_root>/server/agent_guide.py)
+文件：[agent_guide.py L726-736](file:///<project_root>/server/agent_guide.py)
 
 ```python
 # first_action 后处理注入"【必读记忆】"（零侵入路由层增强）
@@ -207,7 +207,7 @@ if existing_memories:
 
 ## 7. match_task_candidates 五路加权
 
-文件：[agent_guide.py L504-638](file:///f:/<project_root>/server/agent_guide.py)
+文件：[agent_guide.py L504-638](file:///<project_root>/server/agent_guide.py)
 
 ### 五路加权（摘要级）
 
@@ -234,13 +234,13 @@ L614-629：只有 `kw_exact` 命中 OR `kw_fuzzy ratio ≥ 80%` 才算强匹配�
 
 `WEAK_MATCH_THRESHOLD = 15`（L411）— top-1 score 低于此值走精简响应。
 
-> 关键词编写规范（5 大原则 + 标准流程 + 维护清单）详见 [agent-guide-keywords.md](file:///f:/<project_root>/docs/agent-guide-keywords.md)。
+> 关键词编写规范（5 大原则 + 标准流程 + 维护清单）详见 [agent-guide-keywords.md](file:///<project_root>/docs/agent-guide-keywords.md)。
 
 ## 8. workspace 动态扩展
 
 ### 8.1 manifest.toml 示例
 
-文件：[workspace/accounting/manifest.toml](file:///f:/<project_root>/workspace/accounting/manifest.toml)
+文件：[workspace/accounting/manifest.toml](file:///<project_root>/workspace/accounting/manifest.toml)
 
 ```toml
 [component]
@@ -263,7 +263,7 @@ index_section = "components"
 
 ### 8.2 AgentGuideEntry dataclass
 
-文件：[component_manifest.py L46-49](file:///f:/<project_root>/server/component_manifest.py)
+文件：[component_manifest.py L46-49](file:///<project_root>/server/component_manifest.py)
 
 ```python
 @dataclass
@@ -275,7 +275,7 @@ class AgentGuideEntry:
 
 ### 8.3 加载流程
 
-文件：[agent_guide.py L199-258](file:///f:/<project_root>/server/agent_guide.py) `_load_optional_guide_entries`
+文件：[agent_guide.py L199-258](file:///<project_root>/server/agent_guide.py) `_load_optional_guide_entries`
 
 **双轨策略**：
 1. **优先读 manifest**（L219-237）：调 `load_manifests()` → 对每个 enabled 组件读 `[agent_guide]` 段 → `importlib.import_module(f"workspace.{name}.{m.agent_guide.file[:-3]}")` → 取 `entries_var`（通常为 `GUIDE_REGISTRY_ENTRIES`）→ `result.update(entries)`
@@ -329,9 +329,9 @@ flowchart TB
 
 ## 10. 相关文档
 
-- [agent-guide-keywords.md](file:///f:/<project_root>/docs/agent-guide-keywords.md) — keywords 编写规范（5 大原则 + 标准流程 + 维护清单）
-- [.agents/skills/_index.md](file:///f:/<project_root>/.agents/skills/_index.md) — task_type 完整清单（核心 Skill 段 + 组件化模块段）
-- [todos-wip.md](file:///f:/<project_root>/docs/todos-wip.md) — 待办与 WIP 系统（task_closure 整合）
-- [chat-engine.md](file:///f:/<project_root>/docs/chat-engine.md) — v6-lite 对话引擎架构
+- [agent-guide-keywords.md](file:///<project_root>/docs/agent-guide-keywords.md) — keywords 编写规范（5 大原则 + 标准流程 + 维护清单）
+- [.agents/skills/_index.md](file:///<project_root>/.agents/skills/_index.md) — task_type 完整清单（核心 Skill 段 + 组件化模块段）
+- [todos-wip.md](file:///<project_root>/docs/todos-wip.md) — 待办与 WIP 系统（task_closure 整合）
+- [chat-engine.md](file:///<project_root>/docs/chat-engine.md) — v6-lite 对话引擎架构
 - `server/agent_guide.py` — 主路由层
 - `server/agent_guide_data.py` — 静态 GUIDE_REGISTRY 数据

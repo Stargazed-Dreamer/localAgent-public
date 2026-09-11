@@ -11,7 +11,7 @@
  *   类型：STDIO
  *   启动命令：node
  *   参数：tools/mcp_bridge.js
- *   工作目录：项目根目录（f:\<project_root>）
+ *   工作目录：项目根目录（<project_root>）
  *
  * 环境变量：
  *   LOCALAGENT_MCP_URL  自定义 MCP 端点（默认 http://127.0.0.1:8766/mcp）

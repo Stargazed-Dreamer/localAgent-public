@@ -1,0 +1,137 @@
+{"query": "你好", "expected_top1": null, "source": "history", "note": "history#1 weak，应无 strong match"}
+{"query": "今天天气怎么样", "expected_top1": null, "source": "manual", "note": "闲聊"}
+{"query": "1+1等于几", "expected_top1": null, "source": "manual", "note": "闲聊"}
+{"query": "帮我把这段文字润色一下", "expected_top1": null, "source": "manual", "note": "通用写作，无对应 skill"}
+{"query": "执行危险代码", "expected_top1": null, "source": "history", "note": "history#15 weak，无 skill 应答"}
+{"query": "测试覆盖", "expected_top1": null, "source": "history", "note": "history#19 weak"}
+{"query": "我今天都干了啥，帮我捋一下时间线", "expected_top1": "recurring.daily_summary", "source": "manual", "note": "2026-08-08 教训案例，口语化无 keyword 命中，靠向量化/正式变体"}
+{"query": "给我今日工作总结", "expected_top1": "recurring.daily_summary", "source": "manual", "note": "keyword 直接命中"}
+{"query": "生成昨天的日报", "expected_top1": "recurring.daily_summary", "source": "manual", "note": "补跑昨日日报"}
+{"query": "我想重新规划一下人生方向", "expected_top1": "recurring.life_design", "source": "manual", "note": "人生规划"}
+{"query": "帮我做奥德赛计划", "expected_top1": "recurring.life_design", "source": "manual", "note": "keyword 命中"}
+{"query": "帮我适配一下鸣潮的 GKD 签到规则", "expected_top1": "adhoc.gkd_signin_automation", "source": "manual", "note": "组合词 GKD签到，防跨 skill 平局"}
+{"query": "这个 GKD 规则失效了，重新抓快照解析节点", "expected_top1": "adhoc.gkd_signin_automation", "source": "manual", "note": "规则失效+快照"}
+{"query": "帮我深度研究一下协作工具市场", "expected_top1": "adhoc.deep_research", "source": "manual", "note": "keyword 命中"}
+{"query": "做个竞品分析", "expected_top1": "adhoc.deep_research", "source": "manual", "note": "keyword 命中"}
+{"query": "把这个私有项目的 README 改成公开版", "expected_top1": "adhoc.readme_author", "source": "manual", "note": "公开版 README"}
+{"query": "README 太弱了，重写一下", "expected_top1": "adhoc.readme_author", "source": "manual", "note": "keyword 命中"}
+{"query": "把这份 md 转成 docx", "expected_top1": "adhoc.office_docx", "source": "manual", "note": "keyword 命中"}
+{"query": "生成一份 Word 格式的报告", "expected_top1": "adhoc.office_docx", "source": "manual", "note": "生成 Word"}
+{"query": "把这些账单数据汇总成 Excel", "expected_top1": "adhoc.office_xlsx", "source": "manual", "note": "账单汇总 keyword"}
+{"query": "帮我生成 xlsx 表格", "expected_top1": "adhoc.office_xlsx", "source": "manual", "note": "keyword 命中"}
+{"query": "帮我把项目总结做成 PPT", "expected_top1": "adhoc.office_pptx", "source": "manual", "note": "生成 PPT + 项目总结"}
+{"query": "生成一份汇报演示文稿", "expected_top1": "adhoc.office_pptx", "source": "manual", "note": "汇报演示 keyword"}
+{"query": "把归档材料合并成一个 PDF", "expected_top1": "adhoc.office_pdf", "source": "manual", "note": "归档材料 + 合并 PDF"}
+{"query": "这份 md 转成可打印的 pdf", "expected_top1": "adhoc.office_pdf", "source": "manual", "note": "md 转 pdf + printable"}
+{"query": "识别这张图片里的文字", "expected_top1": "adhoc.ocr", "source": "manual", "note": "识别图片 keyword"}
+{"query": "OCR 一下这张截图", "expected_top1": "adhoc.ocr", "source": "manual", "known_gap": true, "note": "串台：'截图' keyword 在 dev.computer_use（22分 strong）压过 ocr（14分）。待修：ocr keywords 加'OCR截图'或 computer_use 的'截图'改组合词"}
+{"query": "消费录制包，回放操作", "expected_top1": "recording.consume", "source": "manual", "known_gap": true, "note": "串台：discover 30分 strong 压过 consume 24分。待修：consume keywords 加'消费录制包/回放'，discover 去'录制'泛词"}
+{"query": "我现在有什么该做的事", "expected_top1": "system.task_reminder", "source": "manual", "note": "该做什么 keyword"}
+{"query": "提醒我今天的任务清单", "expected_top1": "system.task_reminder", "source": "manual", "note": "提醒我 keyword"}
+{"query": "这个任务今天做不完了，留档一下", "expected_top1": "system.wip_tracking", "source": "manual", "note": "留档 keyword"}
+{"query": "继续之前没做完的工作", "expected_top1": "system.wip_tracking", "source": "manual", "note": "继续之前的工作 keyword"}
+{"query": "同步一下文档", "expected_top1": "system.doc_sync", "source": "manual", "note": "keyword 命中"}
+{"query": "帮我整理一下文档", "expected_top1": "system.doc_sync", "source": "manual", "note": "串台对：整理一下 vs 整理temp"}
+{"query": "这个任务做完了，收尾一下", "expected_top1": "system.task_closure", "source": "manual", "note": "收尾 keyword"}
+{"query": "收敛 extract_feishu.py 的 13 项 pyright 类型错误，改完验证后结束任务", "expected_top1": "system.task_closure", "source": "history", "note": "history#40 真实 query"}
+{"query": "帮我总结一下", "expected_top1": "system.task_closure", "source": "manual", "note": "总结一下 keyword 归收尾非日报"}
+{"query": "清理 temp 文件夹：分类整理清单给用户审核，然后全部删除到回收站", "expected_top1": "system.temp_cleanup", "source": "history", "note": "history#34 真实 query"}
+{"query": "把 temp 文件夹清理一下，删掉不需要的临时文件", "expected_top1": "system.temp_cleanup", "source": "history", "note": "history#45 真实 query"}
+{"query": "temp 太乱了", "expected_top1": "system.temp_cleanup", "source": "manual", "note": "keyword 命中"}
+{"query": "整理一下 temp", "expected_top1": "system.temp_cleanup", "source": "manual", "note": "串台对：与 doc_sync 的 整理一下 区分"}
+{"query": "把 temp/feishu_transfer 里其他平台的工作合并回本机仓库", "expected_top1": "system.temp_cleanup", "source": "history", "note": "history#35 真实命中（temp 路径相关）"}
+{"query": "帮我创建一个新 skill", "expected_top1": "dev.skill_creation", "source": "manual", "note": "创建 skill keyword"}
+{"query": "用 skill-creator 做个技能", "expected_top1": "dev.skill_creation", "source": "manual", "note": "skill-creator keyword"}
+{"query": "写一个 HTML 调试页面", "expected_top1": "dev.html_debug", "source": "manual", "note": "keyword 命中"}
+{"query": "做个可视化 Dashboard 页面", "expected_top1": "dev.html_debug", "source": "manual", "note": "Dashboard keyword"}
+{"query": "帮我操作电脑，点一下开始菜单", "expected_top1": "dev.computer_use", "source": "manual", "note": "操作电脑 keyword"}
+{"query": "截个图看看屏幕上是什么", "expected_top1": "dev.computer_use", "source": "manual", "note": "截图 keyword"}
+{"query": "登录网站下载今天的报表", "expected_top1": "adhoc.browser_automation", "source": "manual", "note": "登录网站+下载报表"}
+{"query": "用浏览器自动填这个表单", "expected_top1": "adhoc.browser_automation", "source": "manual", "note": "填表 keyword"}
+{"query": "任务跑完自动关机", "expected_top1": "adhoc.auto_shutdown", "source": "manual", "note": "自动关机 keyword"}
+{"query": "挂机下载完自动关机", "expected_top1": "adhoc.auto_shutdown", "source": "manual", "note": "挂机关机 keyword"}
+{"query": "起一个后台 agent 让它自己跑这个定时任务", "expected_top1": "adhoc.headless_session", "source": "manual", "note": "后台 agent keyword"}
+{"query": "headless session 跑个无头任务", "expected_top1": "adhoc.headless_session", "source": "manual", "note": "keyword 命中"}
+{"query": "给客户端新增一个面板", "expected_top1": "dev.client_dev", "source": "manual", "note": "新增面板 keyword"}
+{"query": "PySide6 界面卡顿，优化一下", "expected_top1": "dev.client_dev", "source": "manual", "note": "PySide6+面板卡顿"}
+{"query": "修这个 bug", "expected_top1": "dev.anti_hallucination", "source": "manual", "note": "小修补 6 步流程"}
+{"query": "这段代码什么意思", "expected_top1": "dev.anti_hallucination", "source": "manual", "note": "理解代码 keyword"}
+{"query": "做个新功能，让 agent 自己跑", "expected_top1": "dev.goal_engineering", "source": "manual", "note": "做个功能+让 agent 自己跑"}
+{"query": "帮我定义目标", "expected_top1": "dev.goal_engineering", "source": "manual", "note": "keyword 命中"}
+{"query": "讲讲 Commander's Intent 心法", "expected_top1": "dev.leader", "source": "manual", "note": "keyword 命中"}
+{"query": "帮我写目标任务书", "expected_top1": "dev.leader", "source": "manual", "note": "目标任务书结构 keyword"}
+{"query": "我想开发一个小游戏，不过跟本仓库无关", "expected_top1": "dev.cross_workspace_advisor", "source": "manual", "note": "开发游戏+无关开发"}
+{"query": "这个需求该在哪个工作区做", "expected_top1": "dev.cross_workspace_advisor", "source": "manual", "note": "跨工作区决策"}
+{"query": "用 TDD 流程实现这个函数", "expected_top1": "dev.tdd", "source": "manual", "note": "TDD keyword（短英文）"}
+{"query": "先写测试再实现", "expected_top1": "dev.tdd", "source": "manual", "note": "测试先行 keyword"}
+{"query": "这个模块的架构设计需要评审", "expected_top1": "dev.codebase_design", "source": "manual", "note": "架构设计 keyword"}
+{"query": "讲讲 deep module 的设计思想", "expected_top1": "dev.codebase_design", "source": "manual", "note": "deep module keyword"}
+{"query": "帮我们建领域模型和术语表", "expected_top1": "dev.domain_modeling", "source": "manual", "note": "领域模型+术语表"}
+{"query": "这个变更要不要写 ADR", "expected_top1": "dev.domain_modeling", "source": "manual", "note": "ADR keyword（短英文）"}
+{"query": "合并冲突了，帮我解决", "expected_top1": "dev.resolving_merge_conflicts", "source": "manual", "note": "合并冲突 keyword"}
+{"query": "rebase 冲突处理", "expected_top1": "dev.resolving_merge_conflicts", "source": "manual", "note": "rebase 冲突 keyword"}
+{"query": "把刚才的讨论整理成 spec", "expected_top1": "dev.to_spec", "source": "manual", "note": "写 spec keyword"}
+{"query": "出一份 PRD", "expected_top1": "dev.to_spec", "source": "manual", "note": "出 PRD keyword"}
+{"query": "把 spec 拆成 tickets", "expected_top1": "dev.to_tickets", "source": "manual", "note": "spec 转 ticket keyword"}
+{"query": "帮我做任务拆解", "expected_top1": "dev.to_tickets", "source": "manual", "note": "任务拆解 keyword"}
+{"query": "用 wayfinder 把这个陌生模块画个地图", "expected_top1": "dev.wayfinder", "source": "manual", "note": "wayfinder keyword"}
+{"query": "这个模块战争迷雾太重，先探索一下", "expected_top1": "dev.wayfinder", "source": "manual", "note": "战争迷雾 keyword"}
+{"query": "做个原型试几种 UI 方案", "expected_top1": "dev.prototype", "source": "manual", "note": "原型+UI 选项"}
+{"query": "prototype 一下设计变体", "expected_top1": "dev.prototype", "source": "manual", "note": "keyword 命中"}
+{"query": "领取 ticket 开始实现", "expected_top1": "dev.implement", "source": "manual", "note": "领取 ticket keyword"}
+{"query": "执行这个 ticket", "expected_top1": "dev.implement", "source": "manual", "note": "执行 ticket keyword"}
+{"query": "分诊这批 issue", "expected_top1": "dev.triage", "source": "manual", "note": "分诊 keyword"}
+{"query": "bug 分类和 feature request 分类", "expected_top1": "dev.triage", "source": "manual", "note": "bug 分类 keyword"}
+{"query": "对这个 PR 做 code review", "expected_top1": "dev.code_review", "source": "manual", "note": "code review keyword"}
+{"query": "审查一下这次改动", "expected_top1": "dev.code_review", "source": "manual", "note": "审查 keyword（与 triage 的 审查issue 区分）"}
+{"query": "grill me，压力测试我的计划", "expected_top1": "dev.grill_me", "source": "manual", "note": "keyword 命中"}
+{"query": "帮我找这个方案的漏洞", "expected_top1": "dev.grill_me", "source": "manual", "note": "找漏洞 keyword"}
+{"query": "开始 grilling 深度追问", "expected_top1": "dev.grilling", "source": "manual", "note": "keyword 命中"}
+{"query": "反复拷问这个设计", "expected_top1": "dev.grilling", "source": "manual", "note": "反复拷问 keyword"}
+{"query": "边拷问边沉淀 ADR 文档", "expected_top1": "dev.grill_with_docs", "source": "manual", "note": "边拷问边出 ADR"}
+{"query": "grill-with-docs 模式走一轮", "expected_top1": "dev.grill_with_docs", "source": "manual", "note": "keyword 命中"}
+{"query": "这个前端设计要按 impeccable 标准打磨", "expected_top1": "dev.impeccable", "source": "manual", "note": "keyword 命中"}
+{"query": "audit 一下这个页面的 UI 设计", "expected_top1": "dev.impeccable", "source": "manual", "note": "audit UI keyword"}
+{"query": "这个页面 AI 味太重，redesign 一下", "expected_top1": "dev.hallmark", "source": "manual", "note": "redesign keyword"}
+{"query": "audit 一下这段文案的 AI slop", "expected_top1": "dev.hallmark", "source": "manual", "note": "AI slop keyword"}
+{"query": "教我这个概念", "expected_top1": "daily.teach", "source": "manual", "note": "教我 keyword"}
+{"query": "我想学一下 Rust 所有权", "expected_top1": "daily.teach", "source": "manual", "note": "学一下 keyword"}
+{"query": "把这本书蒸馏成方法论 skill", "expected_top1": "daily.cangjie_extraction", "source": "manual", "note": "蒸馏+把书做成 skill"}
+{"query": "拆书提取方法论", "expected_top1": "daily.cangjie_extraction", "source": "manual", "note": "拆书 keyword"}
+{"query": "用苏格拉底提问帮我想清楚", "expected_top1": "daily.socratic_questioning", "source": "manual", "note": "苏格拉底提问 keyword"}
+{"query": "我到底想问什么，帮我澄清困惑", "expected_top1": "daily.socratic_questioning", "source": "manual", "note": "澄清困惑 keyword"}
+{"query": "用双层解释法给我讲讲 Transformer", "expected_top1": "daily.dual_layer_explanation", "source": "manual", "note": "keyword 命中"}
+{"query": "我听不懂这个概念，来一版小白解释", "expected_top1": "daily.dual_layer_explanation", "source": "manual", "note": "听不懂的概念 keyword"}
+{"query": "反向拆解这个优秀开源项目好在哪", "expected_top1": "daily.reverse_decomposition", "source": "manual", "note": "keyword 命中"}
+{"query": "拆解这个产品学习它", "expected_top1": "daily.reverse_decomposition", "source": "manual", "note": "拆解这个产品 keyword"}
+{"query": "核查一下这个说法是否可信", "expected_top1": "daily.fact_checking", "source": "manual", "note": "核查说法 keyword"}
+{"query": "帮我事实核查这篇文章", "expected_top1": "daily.fact_checking", "source": "manual", "note": "事实核查 keyword"}
+{"query": "请几个专家会诊这个技术选型", "expected_top1": "daily.expert_consultation", "source": "manual", "note": "专家会诊 keyword"}
+{"query": "用多专家视角分析一下", "expected_top1": "daily.expert_consultation", "source": "manual", "note": "多专家视角 keyword"}
+{"query": "用第一性原理重新推导这个方案", "expected_top1": "daily.first_principles", "source": "manual", "note": "keyword 命中"}
+{"query": "拆到本质，别打补丁", "expected_top1": "daily.first_principles", "source": "manual", "note": "拆到本质 keyword"}
+{"query": "看看其他行业怎么解决这个问题的", "expected_top1": "daily.cross_domain_borrowing", "source": "manual", "note": "其他行业怎么解决 keyword"}
+{"query": "用跨界类比找思路", "expected_top1": "daily.cross_domain_borrowing", "source": "manual", "note": "跨界借解变体"}
+{"query": "两个 offer 选哪个，帮我做双向钢人论证", "expected_top1": "daily.steel_man_decision", "source": "manual", "note": "双向钢人 keyword"}
+{"query": "我犹豫不决，钢人一下两个选项", "expected_top1": "daily.steel_man_decision", "source": "manual", "note": "钢人 keyword"}
+{"query": "别空想了，设计一个最小可行实验", "expected_top1": "daily.minimal_experiment", "source": "manual", "note": "最小可行实验 keyword"}
+{"query": "低成本验证这个假设", "expected_top1": "daily.minimal_experiment", "source": "manual", "note": "低成本验证 keyword"}
+{"query": "帮我挖掘一下隐藏天赋", "expected_top1": "daily.talent_mining", "source": "manual", "note": "隐藏天赋 keyword"}
+{"query": "我的天赋是什么", "expected_top1": "daily.talent_mining", "source": "manual", "note": "keyword 命中"}
+{"query": "人生重大决策，走一遍决策协议", "expected_top1": "daily.decision_protocol", "source": "manual", "note": "重大决策 keyword"}
+{"query": "这是重要选择，按重大决策流程来", "expected_top1": "daily.decision_protocol", "source": "manual", "note": "重要选择 keyword"}
+{"query": "生成记忆", "expected_top1": "recurring.memory_generation", "source": "manual", "note": "keyword 命中"}
+{"query": "做一次记忆维护", "expected_top1": "recurring.memory_generation", "source": "manual", "note": "记忆维护 keyword"}
+{"query": "wip 太多了，把完成的归档成记忆", "expected_top1": "system.wip_archive", "source": "manual", "note": "wip 太多+转记忆"}
+{"query": "归档 wip", "expected_top1": "system.wip_archive", "source": "manual", "note": "keyword 命中"}
+{"query": "打包给朋友", "expected_top1": "system.public_distribution", "source": "manual", "note": "keyword 命中；与发版严格区分"}
+{"query": "做一个脱敏的公开发布 ZIP", "expected_top1": "system.public_distribution", "source": "manual", "note": "公开发布 keyword"}
+{"query": "发版", "expected_top1": "system.release", "source": "manual", "note": "keyword 命中"}
+{"query": "出版本号，归档 CHANGELOG", "expected_top1": "system.release", "source": "manual", "note": "出版本号 keyword"}
+{"query": "给项目做一次全面复审", "expected_top1": "system.project_audit", "source": "manual", "note": "全面复审 keyword"}
+{"query": "项目体检一下", "expected_top1": "system.project_audit", "source": "manual", "note": "项目体检 keyword"}
+{"query": "发现录制", "expected_top1": "recording.discover", "source": "history", "note": "history#27 真实 query"}
+{"query": "看一下录制", "expected_top1": "recording.discover", "source": "history", "note": "history#26 真实 query"}
+{"query": "把 GitHub 仓库 claw-codes/wx4py 加到 gh mirror 监控列表并正常监控", "expected_top1": "recurring.gh_mirror_monitor", "source": "history", "note": "history#32 真实 query"}
+{"query": "把这几个飞书文档存档成md", "expected_top1": "adhoc.web_archive", "source": "history", "note": "history#36；语义修正：存档成 md 归 web_archive（历史命中 wip_tracking 是次优）"}
+{"query": "任务做完了帮我清理上下文并收尾", "expected_top1": "system.task_closure", "source": "manual", "note": "串台对：收尾 vs 清理temp"}

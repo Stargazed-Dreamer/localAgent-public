@@ -1,5 +1,6 @@
 """客户端全局常量"""
 
+import sys
 from pathlib import Path
 
 # 密钥文件路径从 lib/secret 获取（单一真源，禁止硬编码 "data/llm/keys.json"）
@@ -26,16 +27,33 @@ START_BAT_PATH = PROJECT_ROOT / "start.bat"
 FAKE_PROXY_SCRIPT_PATH = PROJECT_ROOT / "tools" / "fake_llm_proxy.py"
 FAKE_PROXY_LOG_PATH = PROJECT_ROOT / "temp" / "fake_llm.log"
 
+# 拉起子进程（fake proxy 等）用的解释器，与 tools_manifest.json 的 command 保持一致
+VENV_PYTHON_PATH = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+
+
+def resolve_launch_python() -> str:
+    """子进程启动解释器：优先 .venv，缺失时回退当前解释器。
+
+    不能直接用 sys.executable —— 项目工具依赖（fastapi/uvicorn 等）只装在 .venv 里，
+    若 client 由系统 Python 启动，子进程会 ModuleNotFoundError 秒退且不留痕迹。
+    """
+    if VENV_PYTHON_PATH.exists():
+        return str(VENV_PYTHON_PATH)
+    return sys.executable
+
 # 轮询周期
 BACKEND_POLL_INTERVAL_MS = 3000      # /health 3s（缩短以更快恢复）
 FAKE_PROXY_POLL_INTERVAL_MS = 10000  # fake proxy 10s
 TODOS_POLL_INTERVAL_MS = 60000       # /todos/due 60s
 
 # HTTP 超时
-HTTP_TIMEOUT_S = 3.0
+# 通用面板请求超时。3s 过短：后端部分写操作（如 /apikey/keys 添加前会同步跑一次
+# 连通性测试，最长 ~15s）会在客户端超时→面板误报"后端返回错误"，但服务端随后仍完成写入。
+# 提到 8s 覆盖绝大多数常规请求；确知更慢的增/测类调用在面板侧单独传更大 timeout。
+HTTP_TIMEOUT_S = 8.0
 
 # 后端状态检测防抖动参数
-BACKEND_HEALTH_TIMEOUT_S = 5.0       # /health 专用超时（比通用 3s 长，容忍偶发慢请求）
+BACKEND_HEALTH_TIMEOUT_S = 5.0       # /health 专用超时（比通用 8s 短，快速探测后端掉线）
 BACKEND_RETRY_DELAY_MS = 800         # 单次失败后快速重试间隔
 BACKEND_FAIL_THRESHOLD = 2           # 连续失败多少次才切 offline（含重试）
 

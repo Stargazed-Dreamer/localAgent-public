@@ -90,11 +90,12 @@ class DesktopTransactionItem(BaseSchema):
     y: int | None = None
     text: str | None = None
     keys: list[str] | None = None
-    direction: str | None = "down"
-    amount: int | None = 3
-    dx: int | None = 0
-    dy: int | None = 0
-    wait: float | None = 0.0  # action="wait" 时的等待秒数
+    direction: str = "down"
+    amount: int = 3
+    dx: int = 0
+    dy: int = 0
+    button: str = "left"  # mouse_down/mouse_up 的按键（left | right）
+    wait: float = 0.0  # action="wait" 时的等待秒数
     element_text: str | None = None
     snapshot_id: str | None = None
     label: str | None = None  # 步骤标签（如"点击下载按钮"），便于日志和回滚
@@ -138,7 +139,7 @@ class DesktopTransactionItemResult(BaseSchema):
 class DesktopTransactionResponse(BaseSchema):
     success: bool  # 事务是否整体成功（所有动作发送 + 事务级 expected 后验通过）
     # 第三轮评估 P1-1：dry_run 是"预演通过"，不是失败。编排器应优先用 status + dry_run 字段判断
-    status: str  # committed | postcondition_failed | aborted | rolled_back | rollback_failed | dry_run | emergency_stopped
+    status: str  # committed | committed_unverified | postcondition_failed | aborted | rolled_back | rollback_failed | dry_run | emergency_stopped
     dry_run: bool = False  # True=本次为 dry_run 预演（未投递键鼠），success=True 仅表示预演通过前置校验
     total_steps: int
     executed_steps: int
@@ -147,7 +148,7 @@ class DesktopTransactionResponse(BaseSchema):
     rollback_executed: bool = False
     rollback_steps_succeeded: int = 0
     rollback_results: list[DesktopTransactionItemResult] = []
-    transaction_postcondition: str  # verified | failed | error | not_checked
+    transaction_postcondition: str  # verified | failed | error | unavailable | not_checked
     elapsed_ms: int
     results: list[DesktopTransactionItemResult]
     canonical_window: dict | None = None
@@ -356,7 +357,7 @@ def desktop_transaction(req: DesktopTransactionRequest):
         ok, errmsg = _validate_action_params(
             item.action, item.x, item.y, item.text, item.keys,
             direction=item.direction, amount=item.amount,
-            dx=item.dx, dy=item.dy,
+            dx=item.dx, dy=item.dy, button=item.button,
         )
         if not ok:
             results.append(DesktopTransactionItemResult(
@@ -470,7 +471,7 @@ def desktop_transaction(req: DesktopTransactionRequest):
                 action=item.action, x=item.x, y=item.y,
                 text=item.text, keys=item.keys,
                 direction=item.direction, amount=item.amount,
-                dx=item.dx, dy=item.dy,
+                dx=item.dx, dy=item.dy, button=item.button,
             )
             # 焦点漂移检测
             delivery = "unknown"
@@ -586,6 +587,10 @@ def desktop_transaction(req: DesktopTransactionRequest):
         tx_status = "aborted"
     elif transaction_postcondition == "verified":
         tx_status = "committed"
+    elif transaction_postcondition == "unavailable":
+        # OCR 模型被存活管理器拒绝（压力/卸载/冷却）≠ 后验失败：
+        # 动作已真实执行，验证器暂时不可用 → 提交但不回滚（design §6 消费者矩阵）
+        tx_status = "committed_unverified"
     elif transaction_postcondition == "failed":
         tx_status = "postcondition_failed"
         aborted = True  # 后验失败也算失败，触发回滚
@@ -623,7 +628,7 @@ def desktop_transaction(req: DesktopTransactionRequest):
             ok, errmsg = _validate_action_params(
                 rb_item.action, rb_item.x, rb_item.y, rb_item.text, rb_item.keys,
                 direction=rb_item.direction, amount=rb_item.amount,
-                dx=rb_item.dx, dy=rb_item.dy,
+                dx=rb_item.dx, dy=rb_item.dy, button=rb_item.button,
             )
             if not ok:
                 rollback_results.append(DesktopTransactionItemResult(
@@ -647,7 +652,7 @@ def desktop_transaction(req: DesktopTransactionRequest):
                     action=rb_item.action, x=rb_item.x, y=rb_item.y,
                     text=rb_item.text, keys=rb_item.keys,
                     direction=rb_item.direction, amount=rb_item.amount,
-                    dx=rb_item.dx, dy=rb_item.dy,
+                    dx=rb_item.dx, dy=rb_item.dy, button=rb_item.button,
                 )
                 canonical_info_rb = None
                 if target_hwnd and focus_protection_enabled:
@@ -694,7 +699,7 @@ def desktop_transaction(req: DesktopTransactionRequest):
                 break
 
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
-    success = (tx_status == "committed")
+    success = (tx_status in ("committed", "committed_unverified"))
     msg = f"事务 {tx_status}：{executed_steps}/{len(req.actions)} 步执行"
     if aborted and failed_reason:
         msg += f" | 失败原因: {failed_reason}"

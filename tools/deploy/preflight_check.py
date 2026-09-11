@@ -113,7 +113,7 @@ def check_python_version():
                     return (
                         FAIL,
                         f".venv Python {major}.{minor}（需 ≥ {min_str}）",
-                        f"删除 .venv 后 `uv sync` 重建",
+                        "删除 .venv 后 `uv sync` 重建",
                     )
         except (subprocess.TimeoutExpired, OSError, ValueError):
             pass
@@ -241,7 +241,7 @@ def check_placeholders():
                 continue
             fp = os.path.join(dirpath, name)
             try:
-                with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                with open(fp, encoding="utf-8", errors="ignore") as f:
                     content = f.read()
             except OSError:
                 continue

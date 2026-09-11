@@ -12,7 +12,6 @@
 import json
 import os
 import re
-from typing import Optional
 
 import requests
 
@@ -84,7 +83,7 @@ def _render_conflict_section(conflicts: list) -> str:
 
 
 def _build_prompt(sample_files: list, all_files: list, categories: list,
-                  content_map: Optional[dict] = None,
+                  content_map: dict | None = None,
                   conflicts: list = None, source_context: str = "") -> str:
     """构建发送给 LLM 的提示词
 
@@ -236,7 +235,7 @@ def _rule_based_predict(files: list, categories: list) -> list:
     return result
 
 
-def _call_llm(prompt: str, timeout: int = 180, model: Optional[str] = None) -> Optional[str]:
+def _call_llm(prompt: str, timeout: int = 180, model: str | None = None) -> str | None:
     """调用后端 LLM 池（简化版）
 
     Args:
@@ -273,8 +272,8 @@ def _call_llm(prompt: str, timeout: int = 180, model: Optional[str] = None) -> O
 def predict_categories(sample_files: list, all_files: list, categories: list,
                        use_llm: bool = True,
                        progress_callback=None,
-                       model: Optional[str] = None,
-                       content_map: Optional[dict] = None,
+                       model: str | None = None,
+                       content_map: dict | None = None,
                        item_callback=None,
                        should_stop=None,
                        source_dir: str = "",
@@ -405,7 +404,7 @@ def load_categories(config_path: str) -> list:
     Returns:
         分类配置列表
     """
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         data = json.load(f)
     return data.get("categories", [])
 
@@ -446,7 +445,7 @@ def load_sample(sample_path: str) -> dict:
     Returns:
         {"source_dir": ..., "categories": ..., "sample_files": ...}
     """
-    with open(sample_path, "r", encoding="utf-8") as f:
+    with open(sample_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -471,8 +470,8 @@ def _is_vague_filename(filename: str) -> bool:
 
 def classify_with_disposition(sample_files: list, all_files: list, categories: list,
                                user_preferences: dict = None,
-                               model: Optional[str] = None,
-                               content_map: Optional[dict] = None) -> list:
+                               model: str | None = None,
+                               content_map: dict | None = None) -> list:
     """预测文件分类并附加 disposition 字段（供 Loop 下载监控调用）
 
     在 predict_categories 基础上，为每个预测附加 disposition：
@@ -777,7 +776,7 @@ def _rule_based_folder_predict(folder_info: dict, categories: list) -> dict:
 
 def classify_folder(folder_path: str, categories: list,
                     llm_caller=None,
-                    model: Optional[str] = None,
+                    model: str | None = None,
                     progress_callback=None) -> dict:
     """文件夹分类主入口（类交互式无状态协议）
 

@@ -85,6 +85,7 @@ class BrowserActionRequest(BaseSchema):
     """
     session_id: str | None = None
     url_pattern: str | None = None
+    tab_id: str | None = None  # 无会话模式：CDP target id 精确消歧
     target: BrowserActionTarget
     action: str  # click/double_click/fill/type/press/select/check/uncheck/hover/scroll_into_view
     # action 参数（按 action 类型使用）
@@ -300,7 +301,7 @@ async def browser_action(req: BrowserActionRequest):
             if t.css:
                 loc = page.locator(t.css)
             elif t.role:
-                loc = page.get_by_role(t.role, name=t.name) if t.name else page.get_by_role(t.role)
+                loc = page.get_by_role(t.role, name=t.name) if t.name else page.get_by_role(t.role)  # type: ignore[arg-type]
             elif t.label:
                 loc = page.get_by_label(t.label)
             elif t.placeholder:
@@ -364,9 +365,9 @@ async def browser_action(req: BrowserActionRequest):
             loc_first = loc.first
             timeout_ms = int(req.timeout * 1000)
             if req.action == "click":
-                await loc_first.click(timeout=timeout_ms, button=req.button)
+                await loc_first.click(timeout=timeout_ms, button=req.button)  # type: ignore[arg-type]
             elif req.action == "double_click":
-                await loc_first.dblclick(timeout=timeout_ms, button=req.button)
+                await loc_first.dblclick(timeout=timeout_ms, button=req.button)  # type: ignore[arg-type]
             elif req.action == "fill":
                 if req.clear_first:
                     await loc_first.fill('')
@@ -415,8 +416,28 @@ async def browser_action(req: BrowserActionRequest):
             )
 
     # 无 session：走 exec_python 子进程模型（冷启动）
+    # 修复幽灵参数：无会话模式支持 tab_id 精确消歧。先把 CDP target id 解析为 URL，
+    # 再作为精确匹配传给子进程 _find_page(tab_id=url)，避免多同域 tab 触发
+    # AMBIGUOUS_TAB 且调用方无法消解。
+    _tab_id_url = None
+    if req.tab_id:
+        from .routes import _resolve_tab_id_to_url
+        _tab_id_url = await asyncio.to_thread(_resolve_tab_id_to_url, req.tab_id)
+        if _tab_id_url is None:
+            _elapsed = int((_time.perf_counter() - start) * 1000)
+            return BrowserActionResponse(
+                success=False, action=req.action, matched_count=0,
+                elapsed_ms=_elapsed, error=BrowserErrorResponse(
+                    error_code="TAB_NOT_FOUND",
+                    error_message=BROWSER_ERROR_CODES["TAB_NOT_FOUND"],
+                    phase="locate",
+                    debug_detail=f"tab_id {req.tab_id} 无法解析为 URL（可能已关闭或调试浏览器未运行）",
+                    elapsed_ms=_elapsed,
+                ),
+            )
     params = {
         "url_pattern": req.url_pattern,
+        "tab_id": _tab_id_url,
         "target": req.target.model_dump(),
         "action": req.action,
         "value": req.value,
@@ -442,7 +463,6 @@ async def main():
         if not page:
             print('ERROR:TAB_NOT_FOUND')
             return
-        await Stealth().apply_stealth_async(page)
         url_before = page.url
         try:
             t = _PARAMS["target"]

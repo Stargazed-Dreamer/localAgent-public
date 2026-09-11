@@ -31,3 +31,15 @@ entries_var = "GUIDE_REGISTRY_ENTRIES"
 file = "SKILL.md"
 task_type = "recurring.wuwa_gacha"
 index_section = "components"
+
+[backup]
+# 备份声明（与 [watch] 解耦）：仅含个人抽卡记录，由 WorkspaceBackupAction loop 调度
+# "raw/" 是目录 → 备份时打 zip（raw_YYYYMMDD_HHMMSS.zip），含原始 API 响应（不可再生）
+# 消费方：tools/backup_workspace.py → backups/workspace/wuwa_gacha/<basename>_<ts>.<ext|zip>
+# 备份频次见 config.toml [loops.workspace_backup]
+paths = ["wuwa_gacha_database.json", "wuwa_gacha_summary.json", "raw/"]
+
+[tests]
+# 自动化测试声明：当前无自动化测试
+enabled = false
+paths = []

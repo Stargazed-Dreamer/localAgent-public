@@ -16,8 +16,8 @@ on:
       - 'workspace/disk_manager/**'
       - 'workspace/recorder/**'
       - 'workspace/modelscope_model_update/**'
-      - 'tests/test_release_public.py'
-      - 'tests/test_release_policy.py'
+      - 'tests/release_ci/test_release_public.py'
+      - 'tests/release_ci/test_release_policy.py'
       - 'release/audience/public.toml'
       - 'release/profiles/public-full.toml'
       - 'pyproject.toml'
@@ -125,7 +125,7 @@ jobs:
 
       - name: Run public test suite
         run: |
-          uv run python -m pytest tests/test_release_public.py tests/test_release_policy.py -v --tb=short
+          uv run python -m pytest tests/release_ci/test_release_public.py tests/release_ci/test_release_policy.py -v --tb=short
 
       - name: Verify SBOM in artifact
         run: |

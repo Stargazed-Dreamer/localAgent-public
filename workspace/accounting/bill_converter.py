@@ -31,12 +31,12 @@ from pathlib import Path
 import openpyxl
 
 # === 路径配置 ===
-PROJECT_DIR = Path(r"F:\<project_root>")
+PROJECT_DIR = Path(r"<project_root>")
 INPUT_DIR = PROJECT_DIR / "workspace" / "accounting" / "账单"
 # bill_review*.txt/json 是含个人消费记录的私有产出，挪到 private_vault/accounting/（obsidian vault，不进 release）
 OUTPUT_DIR = PROJECT_DIR / "private_vault" / "accounting"
 MAPPING_FILE = PROJECT_DIR / "workspace" / "accounting" / "name_mapping.json"
-ACCOUNTING_DIR = Path(r"E:\<data_drive>:\<system_data_root>\Obsidian\Task\Task\main\记账")
+ACCOUNTING_DIR = Path(r"<data_drive>:\<system_data_root>\Obsidian\Task\Task\main\记账")
 
 REVIEW_FILE = "bill_review.txt"
 REVIEW_FILLED_FILE = "bill_review_filled.txt"

@@ -27,6 +27,7 @@ import lib.component_manifest as _lib_cm
 from lib.component_manifest import (  # noqa: F401
     # dataclasses（不可变，静态 re-export 安全）
     AgentGuideEntry,
+    BackupEntry,
     ClientPanelEntry,
     ConfigSchemaEntry,
     HealthCheckEntry,

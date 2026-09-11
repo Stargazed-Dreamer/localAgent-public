@@ -30,6 +30,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
@@ -96,7 +97,7 @@ class RemoteVLClient:
         # 429 日志目录：None=用项目根 data/activity/，测试可注入 tmp_path 避免污染生产文件
         self._log_dir: Path | None = None
         # VL 配额管理器覆盖（测试注入）：None=用全局 vl_quota 单例
-        self._vl_quota_override: object | None = None
+        self._vl_quota_override: Any | None = None  # VLQuotaManager（启动时注入），object 桩无配额方法
         # 全局编码参数（从 [vision] 段读取，默认值见模块顶部）
         self._max_image_edge: int = _DEFAULT_MAX_IMAGE_EDGE
         self._jpeg_quality: int = _DEFAULT_JPEG_QUALITY
@@ -419,7 +420,7 @@ class RemoteVLClient:
         longest = max(w, h)
         if longest > self._max_image_edge:
             scale = self._max_image_edge / longest
-            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=self._jpeg_quality)
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")

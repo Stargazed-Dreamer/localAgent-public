@@ -119,11 +119,8 @@ print(f'变化比例: {ratio:.3f} ({'已变化' if ratio > 0.1 else '未变化'}
     },
 
     # ========== Browser 模板 ==========
-    # 注：原 browser_navigate_and_wait / browser_extract_article 模板已重写，
-    # 旧版用 /browser/open + /browser/wait_for_load + /browser/extract_text
-    # 这 3 个 legacy 端点已在 browser use 重构中删除（2026-08-05），
-    # 现改用 browser_session_create + browser_wait_for + browser_evaluate。
-    # 详见 temp/sdd/browser-use-refactor/spec.md 与 docs/api-reference.md 浏览器段。
+    # 基于 browser use 三件套（browser_session_create + browser_wait_for + browser_evaluate），
+    # 端点语义见 docs/api-reference.md 浏览器段。
     {
         "name": "browser_navigate_and_wait",
         "category": "browser",
@@ -202,7 +199,6 @@ else:
         ],
         "template": '''import asyncio
 from playwright.async_api import async_playwright
-from playwright_stealth import Stealth
 
 async def main():
     async with async_playwright() as p:
@@ -215,7 +211,6 @@ async def main():
                 page = pg; break
         if not page:
             print('ERROR: no matching tab'); return
-        await Stealth().apply_stealth_async(page)
         collected = []
         seen = set()
         for i in range({scroll_count}):
@@ -611,7 +606,8 @@ async def template_tool(req: TemplateExecRequest):
     t0 = _time.perf_counter()
     try:
         from server.exec import ExecRequest, exec_python
-        result = await exec_python(ExecRequest(code=code, timeout=120))
+        # 注：ExecRequest 已无 timeout 字段（extra="forbid"），内联等待由全局配置承担
+        result = await exec_python(ExecRequest(code=code))
         elapsed = int((_time.perf_counter() - t0) * 1000)
         return TemplateExecResponse(
             success=result.success,

@@ -1,6 +1,6 @@
 """MindForge 集成路由 - 子进程调用 MindForge 文档处理和知识库搜索
 
-MindForge 是外部项目（默认 F:\\codex\\MindForge），提供：
+MindForge 是外部项目（默认 <external_project_root>\\MindForge），提供：
   - 文档转 Markdown + LLM 结构化摘要（pipeline）
   - FAISS + BM25 混合知识库搜索（kb_search）
 
@@ -14,6 +14,7 @@ import logging
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -30,7 +31,7 @@ def get_mindforge_config() -> dict:
     mf = config.get("mindforge", {})
     return {
         "enabled": mf.get("enabled", False),
-        "path": mf.get("path", r"F:\<external_project_root>\MindForge"),
+        "path": mf.get("path", r"<external_project_root>\MindForge"),
         "python_executable": mf.get("python_executable", ""),  # 空=自动检测
     }
 
@@ -79,17 +80,23 @@ class SearchEngineManager:
     """管理 MindForge HybridSearcher 的加载/卸载/常驻
 
     HybridSearcher 加载需要读取 FAISS 索引 + sentence-transformers 模型，
-    首次加载约 10-30 秒。keep_models=True 时模型常驻内存，后续搜索秒级响应。
+    首次加载约 10-30 秒。常驻策略（原 keep_models 死旋钮）已迁移到
+    ModelLifecycleManager 的 per-model restore_preload 配置（design §9 写回链）。
     """
 
     def __init__(self):
-        self._searcher = None
-        self._index_dir = None  # 当前加载的索引目录，用于检测索引是否更新
-        self._index_mtime = None  # 索引 meta.json 的修改时间
-        self.keep_models = True
+        # HybridSearcher 从 kb_search 目录动态 import（无法静态解析），用 Any 承载
+        self._searcher: Any = None
+        self._index_dir: Path | None = None  # 当前加载的索引目录，用于检测索引是否更新
+        self._index_mtime: float | None = None  # 索引 meta.json 的修改时间
+        # keep_models 死旋钮已迁移到 ModelLifecycleManager（design §9 写回链）
+        # —— 见 keep_models property
 
-    def get_searcher(self, index_dir: Path):
-        """获取搜索引擎实例，如果索引已更新则自动重载"""
+    def get_searcher(self, index_dir: Path) -> Any:
+        """获取搜索引擎实例，如果索引已更新则自动重载
+
+        HybridSearcher 从 kb_search 目录动态 import，无法静态解析 → 返回 Any。
+        """
         meta_path = index_dir / "meta.json"
         current_mtime = meta_path.stat().st_mtime if meta_path.exists() else None
 
@@ -107,7 +114,7 @@ class SearchEngineManager:
             if kb_search_dir not in sys.path:
                 sys.path.insert(0, kb_search_dir)
 
-            from search_engine import HybridSearcher
+            from search_engine import HybridSearcher  # type: ignore[import-not-found]
             logger.info(f"正在加载 MindForge 搜索引擎 ({index_dir})...")
             t0 = time.perf_counter()
             self._searcher = HybridSearcher(index_dir, force_cpu=True)
@@ -134,6 +141,20 @@ class SearchEngineManager:
     @property
     def index_dir(self) -> Path | None:
         return self._index_dir
+
+    @property
+    def keep_models(self) -> bool:
+        """keep_models 读出口（design §9 写回链）。
+
+        语义所有权已迁移到 ModelLifecycleManager；此处回读管理器 per-model
+        配置（restore_preload），供 /health.mindforge 等消费者拿到生效值。
+        管理器未注册时回退 True（与旧行为一致）。
+        """
+        try:
+            from server.model_manager import get_model_manager
+            return get_model_manager().keep_models("mindforge_searcher")
+        except Exception:
+            return True
 
 
 search_engine = SearchEngineManager()
@@ -181,8 +202,18 @@ class ConverterDaemon:
             return False
 
         # 等待 ready 信号
+        proc = self._proc
+        if proc is None:
+            logger.error("守护进程进程句柄不可用")
+            await self.stop()
+            return False
+        stdout = proc.stdout
+        if stdout is None:
+            logger.error("守护进程 stdout 不可用")
+            await self.stop()
+            return False
         try:
-            ready_line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=30)
+            ready_line = await asyncio.wait_for(stdout.readline(), timeout=30)
             ready = json.loads(ready_line.decode().strip())
             if ready.get("status") != "ready":
                 logger.error(f"守护进程未返回 ready: {ready}")
@@ -205,7 +236,8 @@ class ConverterDaemon:
 
     async def convert(self, source_path: str, output_dir: str = "") -> dict:
         """发送转换请求到守护进程"""
-        if self._proc is None or self._proc.returncode is not None:
+        proc = self._proc
+        if proc is None or proc.returncode is not None:
             return {"status": "error", "detail": "守护进程未运行"}
 
         req = json.dumps({
@@ -215,10 +247,14 @@ class ConverterDaemon:
         }, ensure_ascii=False) + "\n"
 
         try:
-            self._proc.stdin.write(req.encode())
-            await self._proc.stdin.drain()
+            stdin = proc.stdin
+            stdout = proc.stdout
+            if stdin is None or stdout is None:
+                return {"status": "error", "detail": "守护进程 IO 不可用"}
+            stdin.write(req.encode())
+            await stdin.drain()
 
-            resp_line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=300)
+            resp_line = await asyncio.wait_for(stdout.readline(), timeout=300)
             return json.loads(resp_line.decode().strip())
         except TimeoutError:
             return {"status": "error", "detail": "转换超时（300s）"}
@@ -227,31 +263,39 @@ class ConverterDaemon:
 
     async def ping(self) -> dict:
         """检查守护进程状态"""
-        if self._proc is None or self._proc.returncode is not None:
+        proc = self._proc
+        if proc is None or proc.returncode is not None:
             return {"status": "not_running", "models_loaded": False}
 
         req = json.dumps({"action": "ping"}) + "\n"
         try:
-            self._proc.stdin.write(req.encode())
-            await self._proc.stdin.drain()
-            resp_line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=5)
+            stdin = proc.stdin
+            stdout = proc.stdout
+            if stdin is None or stdout is None:
+                return {"status": "not_responding", "models_loaded": False}
+            stdin.write(req.encode())
+            await stdin.drain()
+            resp_line = await asyncio.wait_for(stdout.readline(), timeout=5)
             return json.loads(resp_line.decode().strip())
         except Exception:
             return {"status": "not_responding", "models_loaded": False}
 
     async def stop(self):
         """停止守护进程"""
-        if self._proc is not None and self._proc.returncode is None:
+        proc = self._proc
+        if proc is not None and proc.returncode is None:
             try:
-                req = json.dumps({"action": "shutdown"}) + "\n"
-                self._proc.stdin.write(req.encode())
-                await self._proc.stdin.drain()
-                await asyncio.wait_for(self._proc.wait(), timeout=5)
+                stdin = proc.stdin
+                if stdin is not None:
+                    req = json.dumps({"action": "shutdown"}) + "\n"
+                    stdin.write(req.encode())
+                    await stdin.drain()
+                await asyncio.wait_for(proc.wait(), timeout=5)
             except Exception:
                 pass
             finally:
-                if self._proc.returncode is None:
-                    self._proc.kill()
+                if proc.returncode is None:
+                    proc.kill()
                 self._proc = None
                 self._ready = False
                 logger.info("MindForge 转换守护进程已停止")
@@ -449,7 +493,8 @@ async def run_pipeline(req: PipelineRequest):
         if proc.returncode == 0:
             logger.info("MindForge pipeline 完成 (PID=%s)", task_id)
         else:
-            stderr = await proc.stderr.read()
+            stderr_reader = proc.stderr
+            stderr = await stderr_reader.read() if stderr_reader is not None else b""
             logger.error(f"MindForge pipeline 失败 (PID={task_id}): {stderr.decode(errors='ignore')[:500]}")
 
     asyncio.create_task(_watch())
@@ -483,15 +528,21 @@ async def search_knowledge_base(req: SearchRequest):
     if not (index_dir / "meta.json").exists():
         raise HTTPException(status_code=404, detail="知识库索引不存在，请先运行 build-index")
 
-    try:
+    # 搜索引擎首次加载 10-30s（FAISS + sentence-transformers），searcher.search 也可能
+    # 触发模型推理，两者均为同步阻塞调用。包到线程里避免阻塞事件循环。
+    # （design §5.3 / T4-2）
+    def _do_search():
         searcher = search_engine.get_searcher(index_dir)
-        results = searcher.search(
+        return searcher.search(
             query=req.query,
             top_k=req.top_k,
             mode=req.mode,
             dense_weight=req.dense_weight,
             bm25_weight=req.bm25_weight,
         )
+
+    try:
+        results = await asyncio.to_thread(_do_search)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ImportError as e:
@@ -561,7 +612,8 @@ async def build_index(req: BuildIndexRequest):
         if proc.returncode == 0:
             logger.info(f"MindForge build-index 完成 (PID={task_id})")
         else:
-            stderr = await proc.stderr.read()
+            stderr_reader = proc.stderr
+            stderr = await stderr_reader.read() if stderr_reader is not None else b""
             logger.error(f"MindForge build-index 失败 (PID={task_id}): {stderr.decode(errors='ignore')[:500]}")
 
     asyncio.create_task(_watch())
@@ -575,31 +627,43 @@ async def build_index(req: BuildIndexRequest):
 
 @router.post("/preload", operation_id="mindforge_preload")
 async def preload_search_engine():
-    """预加载搜索引擎到内存（首次搜索前调用，避免搜索时等待 10-30s）"""
+    """预加载搜索引擎到内存（首次搜索前调用，避免搜索时等待 10-30s）
+
+    design §10 兼容委托：经管理器 manual_load（受压力态约束 + 失败冷却）。
+    """
+    if search_engine.loaded:
+        return {"status": "already_loaded", "message": "搜索引擎已在内存中"}
+    # 先做 index_dir 存在性检查，保持原有 403/404 错误码
     mf_dir = _resolve_mindforge_dir()
     if mf_dir is None:
         raise HTTPException(status_code=503, detail="MindForge 项目目录不存在")
-
     index_dir = mf_dir / "kb_search" / "index_store"
     if not (index_dir / "meta.json").exists():
         raise HTTPException(status_code=404, detail="知识库索引不存在，请先运行 build-index")
-
-    if search_engine.loaded:
-        return {"status": "already_loaded", "message": "搜索引擎已在内存中"}
-
-    try:
-        search_engine.get_searcher(index_dir)
+    # 委托管理器（manual_load 经驱动 load → search_engine.get_searcher）
+    from server.model_manager import get_model_manager
+    result = await get_model_manager().manual_load("mindforge_searcher")
+    status = result.get("status", "error")
+    if status == "ok":
         return {"status": "loaded", "message": "搜索引擎已加载到内存"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"搜索引擎加载失败: {e}") from None
+    if status == "refused":
+        raise HTTPException(status_code=503, detail=f"加载被拒绝: {result.get('reason')}")
+    detail = result.get("detail", "搜索引擎加载失败")
+    raise HTTPException(status_code=500, detail=detail) from None
 
 
 @router.post("/unload", operation_id="mindforge_unload")
 async def unload_search_engine():
-    """卸载搜索引擎，释放内存（FAISS 索引 + sentence-transformers 约 1-2GB）"""
+    """卸载搜索引擎，释放内存（FAISS 索引 + sentence-transformers 约 1-2GB）
+
+    design §10 兼容委托：经管理器 manual_unload（走线程 + 超时保护）。
+    """
     if not search_engine.loaded:
         return {"status": "not_loaded", "message": "搜索引擎未加载"}
-    search_engine.unload()
+    from server.model_manager import get_model_manager
+    result = await get_model_manager().manual_unload("mindforge_searcher")
+    if result.get("status") == "error":
+        return {"status": "error", "message": result.get("detail", "卸载失败")}
     return {"status": "unloaded", "message": "搜索引擎已卸载"}
 
 

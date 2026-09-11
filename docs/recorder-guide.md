@@ -488,7 +488,7 @@ rec_YYYYMMDD_HHMMSS/
 ### 自动化冒烟测试（3 秒）
 
 ```bash
-uv run pytest tests/test_recorder_smoke.py -v
+uv run pytest workspace/recorder/tests/test_recorder_smoke.py -v
 ```
 
 用 MockSensor 模拟键鼠事件 + 假截图 + 假音频，3 秒后自动停止，验证所有数据文件可解析：

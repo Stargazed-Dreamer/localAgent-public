@@ -19,9 +19,12 @@
 - on_click_callback: click 事件时回调（默认 None，由集成层注入 ScreenCaptureSensor.trigger_burst）
 """
 
+import logging
 import threading
 from collections.abc import Callable
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # 拖拽检测阈值（像素）——位移小于此值视为单击，大于等于视为拖拽
 DEFAULT_DRAG_THRESHOLD = 5.0
@@ -83,8 +86,9 @@ class MouseSensor:
             raise RuntimeError("MouseSensor.controller 未注入")
         self._started = True
         if self._listener_factory is not None:
-            self._listener = self._listener_factory()
-            self._listener.start()
+            listener = self._listener_factory()
+            self._listener = listener
+            listener.start()
 
     def stop(self) -> None:
         """停止 listener。幂等。"""
@@ -151,7 +155,7 @@ class MouseSensor:
             "dx": int(dx),
             "dy": int(dy),
         }
-        self.controller.emit_event("mouse_scroll", payload)
+        self._safe_emit("mouse_scroll", payload)
 
     def _on_move(self, x: int, y: int) -> None:
         """鼠标移动回调（仅拖拽时记录轨迹）。"""
@@ -162,6 +166,18 @@ class MouseSensor:
                 self._drag_track.append((int(x), int(y)))
 
     # ========== 事件发射 ==========
+
+    def _safe_emit(self, kind: str, payload: dict[str, Any]) -> None:
+        """发事件到 controller，IO 异常兜底不崩调用线程。
+
+        pynput 回调线程里 controller.emit_event 抛 IO 异常（磁盘满/权限）
+        会沿回调冒泡，导致 pynput listener 静默停止，后续鼠标事件全丢；
+        此处与 clipboard/screen sensor 同款保护。
+        """
+        try:
+            self.controller.emit_event(kind, payload)
+        except Exception:
+            logger.exception("mouse 事件 %s 写入失败", kind)
 
     def _emit_click(self, button: str, x: int, y: int) -> None:
         """发 mouse_click 事件。
@@ -175,7 +191,7 @@ class MouseSensor:
             "x": x,
             "y": y,
         }
-        self.controller.emit_event("mouse_click", payload)
+        self._safe_emit("mouse_click", payload)
 
     def _emit_drag(
         self,
@@ -191,4 +207,4 @@ class MouseSensor:
             "end": {"x": end[0], "y": end[1]},
             "track": [{"x": p[0], "y": p[1]} for p in track],
         }
-        self.controller.emit_event("mouse_drag", payload)
+        self._safe_emit("mouse_drag", payload)

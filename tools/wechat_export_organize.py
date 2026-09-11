@@ -17,7 +17,6 @@ temp/收藏整理/
 └── 2025/
     └── ...
 """
-import os
 import re
 import shutil
 import sys
@@ -28,9 +27,9 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 源目录
-SRC_ROOT = Path(r"F:\<project_root>\temp\微信收藏导出")
+SRC_ROOT = Path(r"<project_root>\temp\微信收藏导出")
 # 输出目录
-DST_ROOT = Path(r"F:\<project_root>\temp\收藏整理")
+DST_ROOT = Path(r"<project_root>\temp\收藏整理")
 
 # 子文件夹映射：源文件夹名 → 输出子文件夹名 + 推断年份
 SUBFOLDERS = {

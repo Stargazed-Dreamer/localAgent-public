@@ -15,8 +15,10 @@ import logging
 import subprocess
 import sys
 import time
+from typing import Any
 
 from server.screen.focus import resolve_canonical_window
+from server.screen.uia import get_pattern
 from server.screen.windows import _enum_windows, _force_focus_window
 
 logger = logging.getLogger("localagent.screen")
@@ -754,7 +756,7 @@ def _uia_click_dont_save_button(dialog_hwnd: int) -> dict:
                 if ctrl_type == "ButtonControl" and _match(name):
                     # 找到目标按钮 → invoke
                     try:
-                        invoke_pat = node.GetInvokePattern()
+                        invoke_pat = get_pattern(node, "InvokePattern")
                         if invoke_pat is not None:
                             invoke_pat.Invoke()
                             return {"clicked": True,
@@ -775,9 +777,11 @@ def _uia_click_dont_save_button(dialog_hwnd: int) -> dict:
             # 遍历子元素
             try:
                 children = node.GetChildren() if hasattr(node, 'GetChildren') else []
-                # GetChildren 可能返回 list（uiautomation 真实库）或带 .Count 的容器
-                if hasattr(children, 'Count'):
-                    count = children.Count
+                # GetChildren 可能返回 list（uiautomation 真实库）或带 .Count 的容器，
+                # stub 类型只有 list，动态属性用 Any 承载
+                children_dynamic: Any = children
+                if hasattr(children_dynamic, 'Count'):
+                    count = children_dynamic.Count
                 elif isinstance(children, list):
                     count = len(children)
                 else:

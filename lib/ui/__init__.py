@@ -15,6 +15,6 @@ patterns.md / agent-cookbook.md）。
 """
 
 from lib.ui import tokens  # noqa: F401
-from lib.ui.controls import icon_button  # noqa: F401
+from lib.ui.controls import EmptyState, icon_button  # noqa: F401
 from lib.ui.icons import available_icons, icon, icon_pixmap  # noqa: F401
 from lib.ui.theme import apply_theme, build_qss  # noqa: F401

@@ -1,7 +1,7 @@
 # skill_creator - Skill 创建精华
 
 > 整合自 anthropics/skills 的 skill-creator。
-> **注意**：本项目已有强化版 `f:\<project_root>\.agents\skills\skill-creator.md`（含 pushy description / 500 行软上限 / evals 机制 / 反模式）。
+> **注意**：本项目已有强化版 `<project_root>\.agents\skills\skill-creator.md`（含 pushy description / 500 行软上限 / evals 机制 / 反模式）。
 > 本文件补充 anthropic 版的精华（不重复本项目已有的），聚焦 anthropic 独有的 evals 设施 + description 优化器。
 
 ## 1. 概述
@@ -377,7 +377,7 @@ LLM 改写时通常做：
 
 ## 8. 与本项目 skill-creator 对比
 
-本项目 `f:\<project_root>\.agents\skills\skill-creator.md` 已强化含以下内容（不在此重复）：
+本项目 `<project_root>\.agents\skills\skill-creator.md` 已强化含以下内容（不在此重复）：
 
 | 已吸收内容 | 本项目实现位置 |
 |----------|---------------|
@@ -430,6 +430,6 @@ LLM 改写时通常做：
 
 - **anthropics/skills skill-creator**：`https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md`
 - **anthropics/skills 完整仓库**：`https://github.com/anthropics/skills/tree/main/skills`
-- **LocalAgent 项目强化版 skill-creator**：`f:\<project_root>\.agents\skills\skill-creator.md`
+- **LocalAgent 项目强化版 skill-creator**：`<project_root>\.agents\skills\skill-creator.md`
 - **evals 模板（本工具包）**：`workspace/dev_toolkit/evals_template.json`
-- **LocalAgent 项目 _index.md**：`f:\<project_root>\.agents\skills\_index.md`
+- **LocalAgent 项目 _index.md**：`<project_root>\.agents\skills\_index.md`

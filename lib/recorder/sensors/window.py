@@ -12,11 +12,14 @@
 - stop() 设置 stop_event + join 线程
 """
 
+import logging
 import threading
 from collections.abc import Callable
 
 import win32gui
 import win32process
+
+logger = logging.getLogger(__name__)
 
 # 轮询间隔默认值（秒）
 DEFAULT_POLL_INTERVAL_DETAILED = 0.3  # 详细模式 300ms
@@ -67,7 +70,12 @@ class WindowFocusSensor:
             except Exception:
                 hwnd = 0
             if hwnd != self._last_hwnd:
-                self._emit_focus_change(hwnd)
+                # 单次发事件失败不退出轮询线程（daemon 线程异常即静默死亡，
+                # 后续 focus 事件全丢）；与 clipboard/screen sensor 同款保护
+                try:
+                    self._emit_focus_change(hwnd)
+                except Exception:
+                    logger.exception("focus_change 事件发送失败")
                 self._last_hwnd = hwnd
             # 用 wait 代替 sleep，便于响应 stop_event
             self._stop_event.wait(self.poll_interval)

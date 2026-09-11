@@ -75,7 +75,7 @@ class MyWindow(QMainWindow):
 ```python
 import os, sys
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-sys.path.insert(0, r"f:/<project_root>")
+sys.path.insert(0, r"<project_root>")
 from PySide6.QtWidgets import QApplication
 from lib.ui import apply_theme
 # from xxx import MyWindow                       # ← 改成你的窗口
@@ -83,7 +83,7 @@ app = QApplication([])
 apply_theme(app)
 w = MyWindow()                                    # ← 改成你的窗口
 w.show(); app.processEvents()
-w.grab().save(r"f:/<project_root>/temp/_ui_check.png")
+w.grab().save(r"<project_root>/temp/_ui_check.png")
 print("saved", w.size())
 # DPI 检查：QSplashScreen 前加 os.environ["QT_SCALE_FACTOR"] = "1.25" 再跑一次
 ```
@@ -118,7 +118,7 @@ print("saved", w.size())
 - [ ] 每个动作有可见反馈（patterns §13）
 
 ### 工程质量
-- [ ] `pytest tests/test_ui_theme.py` 通过
+- [ ] `pytest tests/client_ui/test_ui_theme.py` 通过
 - [ ] 新增功能涉及路由/模型/目录 → 对照 `.agents/rules/project_rules.md` 清单
 - [ ] CHANGELOG.md 已更新
 
@@ -136,7 +136,7 @@ print("saved", w.size())
    不要再给 groupbox 加 `padding-top: 0`。
 6. **Windows emoji**：按钮文本里出现 ✓⚠ 等符号一律换成 `lib.ui.icon()`。
 7. **offscreen 渲染崩溃**：先建 `QApplication` 再碰 `QPixmap`
-   （参见 tests/test_ui_theme.py 的 session fixture）。
+   （参见 tests/client_ui/test_ui_theme.py 的 session fixture）。
 8. **窗口总在最前/Tool 标志**：悬浮工具窗用 `WindowStaysOnTopHint | Tool | Frameless`，
    但**必须**提供拖动区域（空白处 mousePress/mouseMove 实现拖动）和明显关闭手段。
 

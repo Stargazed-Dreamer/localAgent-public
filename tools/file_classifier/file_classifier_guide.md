@@ -203,8 +203,8 @@
 ```json
 {
   "categories": [
-    {"name": "文档", "path": "F:\\<data_drive>:\Documents", "extensions": [".pdf", ".doc", ".docx", ".txt", ".md"]},
-    {"name": "图片", "path": "F:\\<data_drive>:\Pictures", "extensions": [".jpg", ".png", ".gif", ".bmp", ".webp"]},
+    {"name": "文档", "path": "<data_drive>:\<data_drive>:\Documents", "extensions": [".pdf", ".doc", ".docx", ".txt", ".md"]},
+    {"name": "图片", "path": "<data_drive>:\<data_drive>:\Pictures", "extensions": [".jpg", ".png", ".gif", ".bmp", ".webp"]},
     {"name": "暂存", "path": "", "extensions": []}
   ]
 }

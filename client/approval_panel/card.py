@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import requests
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from lib.ui import tokens as T
@@ -45,7 +46,7 @@ class ApprovalCard(QFrame):
     card_closed = Signal(str)
     activity_occurred = Signal(str)
 
-    def __init__(self, item: dict, parent: QObject | None = None):
+    def __init__(self, item: dict, parent: QWidget | None = None):
         super().__init__(parent)
         self._approval_id = item["approval_id"]
         self._item_type = item.get("type", "shell")

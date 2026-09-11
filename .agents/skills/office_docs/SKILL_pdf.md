@@ -41,7 +41,7 @@ PDF 与 docx/xlsx/pptx 不同——它是终端输出格式，不是可编辑格
    - 文件名规范：`{内容描述}_{YYYYMMDD}.pdf`
 
 2. **读对应 references**
-   - 基础元素 → [references/pdf_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pdf_basic.md)
+   - 基础元素 → [references/pdf_basic.md](file:///<project_root>/.agents/skills/office_docs/references/pdf_basic.md)
    - 所有 PDF 操作（创建 + 操作 + 提取）都在 basic.md 中
 
 3. **增量构建（结构 → 内容 → 格式）**
@@ -143,7 +143,7 @@ PDF 与 docx/xlsx/pptx 不同——它是终端输出格式，不是可编辑格
 
 所有 PDF 操作的详细工作流、设计规范、反模式见 `references/`：
 
-- [references/pdf_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pdf_basic.md) - 基础元素参考（创建 + 操作 + 提取）
+- [references/pdf_basic.md](file:///<project_root>/.agents/skills/office_docs/references/pdf_basic.md) - 基础元素参考（创建 + 操作 + 提取）
 
 ## 与现有 skill 的集成
 

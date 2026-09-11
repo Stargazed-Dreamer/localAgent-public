@@ -47,7 +47,7 @@ python tools/media_classifier/count_segments.py
 
 ```bat
 :: 分析 MuseArc 库中的歌词
-python tools/media_classifier/mimo_lrc_analyze.py --musearc-db F:\<external_project_root>\MuseArc\realLib\db\musearc.db --musearc-lib F:\<external_project_root>\MuseArc\realLib
+python tools/media_classifier/mimo_lrc_analyze.py --musearc-db <external_project_root>\MuseArc\realLib\db\musearc.db --musearc-lib <external_project_root>\MuseArc\realLib
 
 :: 分析独立 LRC 文件
 python tools/media_classifier/mimo_lrc_analyze.py --test-dir "E:\<data_drive>:\<projects_root>\歌曲分类\测试文件"

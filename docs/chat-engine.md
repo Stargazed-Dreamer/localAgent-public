@@ -2,7 +2,7 @@
 
 本文档描述 client 端 v6-lite 对话引擎的核心组件、数据存储、与 GUI 面板的桥接机制。引擎设计真源是 `temp/sdd/chat-panel-v2/decisions.md`（D1-D47）和 `temp/sdd/chat-engine-safety-fixes/spec.md`，本档是持久化摘要。
 
-> **范围说明**：v6-lite 是 v6 全量 13 文档的"砍范围开工"版本，EventStore 砍到 4 张核心表 + 后续安全修复阶段扩到 7 张表。详见 [ADR 0006](file:///f:/<project_root>/docs/adr/0006-v6-lite-scope-cut.md)。
+> **范围说明**：v6-lite 是 v6 全量 13 文档的"砍范围开工"版本，EventStore 砍到 4 张核心表 + 后续安全修复阶段扩到 7 张表。详见 [ADR 0006](file:///<project_root>/docs/adr/0006-v6-lite-scope-cut.md)。
 
 ## 1. 概述
 
@@ -18,32 +18,32 @@ v6-lite 对话引擎是 client 端的 LLM agent 运行时，负责：
 
 ## 2. 核心组件
 
-所有组件位于 [client/core/agent/](file:///f:/<project_root>/client/core/agent/) 目录。
+所有组件位于 [client/core/agent/](file:///<project_root>/client/core/agent/) 目录。
 
 | 组件 | 文件 | 类名 | 一句话职责 |
 |------|------|------|------------|
-| 会话运行器 | [runner.py](file:///f:/<project_root>/client/core/agent/runner.py) | `SessionRunner` | 对话主循环（纯逻辑，所有 I/O 通过 deps 注入）。持有 `has_attempted_reactive_compact`/`has_attempted_nudge` 防死循环标志位（retry 不重置），跨工具追踪 terminal。`run()` 是 wrapper，try/finally 确保 terminal 清理 + 捕获 CancelledError 写 `user_interrupted` transition |
-| 事件存储 | [event_store.py](file:///f:/<project_root>/client/core/agent/event_store.py) | `EventStore` | SQLite 持久化对话事件。`threading.Lock` 串行化所有 DB 操作，WAL 模式，`check_same_thread=False` 跨线程访问。建表/迁移幂等（CREATE TABLE IF NOT EXISTS + ALTER TABLE ADD COLUMN） |
-| 上下文压缩器 | [compactor.py](file:///f:/<project_root>/client/core/agent/compactor.py) | `Compactor` | L2 上下文压缩。`should_compact()` 估算 token 超 85% 阈值时返回 True；`compact_with_result()` 调 LLM 生成摘要 + 保留最近 `tail_keep` 条原貌，返回 `CompactionResult`（含 `compaction_occurred` 标记防 fail-open 误判） |
-| 工具注册表 | [tool_registry.py](file:///f:/<project_root>/client/core/agent/tool_registry.py) | `ToolRegistry` | 从 server `/openapi.json` 物化工具 catalog，4 类分桶存储（builtin/core_mcp/localagent_sub/other_mcp/REST）。加载 `data/client/tool_specs.yaml` 说明书配置，`refresh()` fail-open 保留旧 catalog |
-| LLM 网关 | [llm_pool_gateway.py](file:///f:/<project_root>/client/core/agent/llm_pool_gateway.py) | `LLMPoolGateway` | 经 server `/llm/pool/chat-tools` 调用 LLM。实现 `LLMGateway` 协议（`async def call`），不自建 provider client——key 轮换/重试/熔断由 server pool 处理。内置看门狗配置（`stream_idle_timeout_secs`/`stall_detection_window_secs`） |
-| 启动恢复器 | [reconciler.py](file:///f:/<project_root>/client/core/agent/reconciler.py) | `reconcile()` 函数 | 扫描 `streaming/awaiting_tools` 状态 session → 标记 `interrupted`；扫描 `pending/running` tool_calls → 无对应 tool_result 时补 `is_error=true` 的 tool_result（yieldMissingToolResultBlocks，防 provider 400）；扫描未合并 streaming 事件 → 合并为完整 Message。幂等可重复运行 |
-| 会话门面 | [facade.py](file:///f:/<project_root>/client/core/agent/facade.py) | `SessionFacade` | 纯 Python Facade 封装 SessionRunner。GUI worker 通过它调用引擎，核心逻辑不依赖 Qt。一个 facade 实例对应一次 `run()`。提供 `start/steer/interrupt/events` 接口，`_start_lock` 串行化 start 防并发，保存 `_runner_task` 供 interrupt 时 `task.cancel()` |
-| 死循环检测器 | [doom_loop.py](file:///f:/<project_root>/client/core/agent/doom_loop.py) | `DoomLoopDetector` | thinking_delta 尾重复检测。滑动窗口 O(n²) 算法，命中后 mid-stream abort + retry budget disarm + backoff + 重新请求（注入"避免重复"提示）。非线程安全（单 session 单线程使用） |
+| 会话运行器 | [runner.py](file:///<project_root>/client/core/agent/runner.py) | `SessionRunner` | 对话主循环（纯逻辑，所有 I/O 通过 deps 注入）。持有 `has_attempted_reactive_compact`/`has_attempted_nudge` 防死循环标志位（retry 不重置），跨工具追踪 terminal。`run()` 是 wrapper，try/finally 确保 terminal 清理 + 捕获 CancelledError 写 `user_interrupted` transition |
+| 事件存储 | [event_store.py](file:///<project_root>/client/core/agent/event_store.py) | `EventStore` | SQLite 持久化对话事件。`threading.Lock` 串行化所有 DB 操作，WAL 模式，`check_same_thread=False` 跨线程访问。建表/迁移幂等（CREATE TABLE IF NOT EXISTS + ALTER TABLE ADD COLUMN） |
+| 上下文压缩器 | [compactor.py](file:///<project_root>/client/core/agent/compactor.py) | `Compactor` | L2 上下文压缩。`should_compact()` 估算 token 超 85% 阈值时返回 True；`compact_with_result()` 调 LLM 生成摘要 + 保留最近 `tail_keep` 条原貌，返回 `CompactionResult`（含 `compaction_occurred` 标记防 fail-open 误判） |
+| 工具注册表 | [tool_registry.py](file:///<project_root>/client/core/agent/tool_registry.py) | `ToolRegistry` | 从 server `/openapi.json` 物化工具 catalog，4 类分桶存储（builtin/core_mcp/localagent_sub/other_mcp/REST）。加载 `data/client/tool_specs.yaml` 说明书配置，`refresh()` fail-open 保留旧 catalog |
+| LLM 网关 | [llm_pool_gateway.py](file:///<project_root>/client/core/agent/llm_pool_gateway.py) | `LLMPoolGateway` | 经 server `/llm/pool/chat-tools` 调用 LLM。实现 `LLMGateway` 协议（`async def call`），不自建 provider client——key 轮换/重试/熔断由 server pool 处理。内置看门狗配置（`stream_idle_timeout_secs`/`stall_detection_window_secs`） |
+| 启动恢复器 | [reconciler.py](file:///<project_root>/client/core/agent/reconciler.py) | `reconcile()` 函数 | 扫描 `streaming/awaiting_tools` 状态 session → 标记 `interrupted`；扫描 `pending/running` tool_calls → 无对应 tool_result 时补 `is_error=true` 的 tool_result（yieldMissingToolResultBlocks，防 provider 400）；扫描未合并 streaming 事件 → 合并为完整 Message。幂等可重复运行 |
+| 会话门面 | [facade.py](file:///<project_root>/client/core/agent/facade.py) | `SessionFacade` | 纯 Python Facade 封装 SessionRunner。GUI worker 通过它调用引擎，核心逻辑不依赖 Qt。一个 facade 实例对应一次 `run()`。提供 `start/steer/interrupt/events` 接口，`_start_lock` 串行化 start 防并发，保存 `_runner_task` 供 interrupt 时 `task.cancel()` |
+| 死循环检测器 | [doom_loop.py](file:///<project_root>/client/core/agent/doom_loop.py) | `DoomLoopDetector` | thinking_delta 尾重复检测。滑动窗口 O(n²) 算法，命中后 mid-stream abort + retry budget disarm + backoff + 重新请求（注入"避免重复"提示）。非线程安全（单 session 单线程使用） |
 
 **辅助组件**：
 
 | 组件 | 文件 | 类名 | 用途 |
 |------|------|------|------|
-| L0 大结果落盘 | [l0_artifact_store.py](file:///f:/<project_root>/client/core/agent/l0_artifact_store.py) | `L0ArtifactStore` | content > 8KB 阈值时落盘到 `<artifacts_dir>/<session_id>/<tool_call_id>.txt`，返回 preview+path 提示 |
-| 模板存储 | [template_store.py](file:///f:/<project_root>/client/core/agent/template_store.py) | `Template` | 对话模板 CRUD（`data/chat_templates.json`）。字段：id/name/prompt/skills/created_at/updated_at |
-| 内置工具执行器 | [builtin_tool_executor.py](file:///f:/<project_root>/client/core/agent/builtin_tool_executor.py) | `BuiltinToolExecutor` | 注册 10 个内置工具（file_read/write/edit/grep/glob/ls/delete + web_search/web_fetch + ask_user），按 name 路由执行 |
-| HTTP 工具执行器 | [http_client_tool_executor.py](file:///f:/<project_root>/client/core/agent/http_client_tool_executor.py) | `HttpClientToolExecutor` | 经 HTTP 调用 server 端点执行工具。`_denied_cache`：用户拒绝审批后同 (tool_name, args) 再次调用直接返回缓存 |
-| 数据类型 | [types.py](file:///f:/<project_root>/client/core/agent/types.py) | `Message`/`Event`/`Session`/`LLMRequest`/`LLMResponse`/`ToolCall`/`ToolResult`/`ToolExecutor`/`LLMGateway`/`RunnerDeps`/`RunnerConfig`/`RunOutcome` | 引擎所有核心数据类型 + Protocol 定义 |
+| L0 大结果落盘 | [l0_artifact_store.py](file:///<project_root>/client/core/agent/l0_artifact_store.py) | `L0ArtifactStore` | content > 8KB 阈值时落盘到 `<artifacts_dir>/<session_id>/<tool_call_id>.txt`，返回 preview+path 提示 |
+| 模板存储 | [template_store.py](file:///<project_root>/client/core/agent/template_store.py) | `Template` | 对话模板 CRUD（`data/chat_templates.json`）。字段：id/name/prompt/skills/created_at/updated_at |
+| 内置工具执行器 | [builtin_tool_executor.py](file:///<project_root>/client/core/agent/builtin_tool_executor.py) | `BuiltinToolExecutor` | 注册 10 个内置工具（file_read/write/edit/grep/glob/ls/delete + web_search/web_fetch + ask_user），按 name 路由执行 |
+| HTTP 工具执行器 | [http_client_tool_executor.py](file:///<project_root>/client/core/agent/http_client_tool_executor.py) | `HttpClientToolExecutor` | 经 HTTP 调用 server 端点执行工具。`_denied_cache`：用户拒绝审批后同 (tool_name, args) 再次调用直接返回缓存 |
+| 数据类型 | [types.py](file:///<project_root>/client/core/agent/types.py) | `Message`/`Event`/`Session`/`LLMRequest`/`LLMResponse`/`ToolCall`/`ToolResult`/`ToolExecutor`/`LLMGateway`/`RunnerDeps`/`RunnerConfig`/`RunOutcome` | 引擎所有核心数据类型 + Protocol 定义 |
 
 ## 3. EventStore Schema
 
-当前 `_SCHEMA_VERSION = 9`（[event_store.py L65](file:///f:/<project_root>/client/core/agent/event_store.py)）。完整 schema 定义在 `_SCHEMA_SQL` 常量（L68-L185）。
+当前 `_SCHEMA_VERSION = 9`（[event_store.py L65](file:///<project_root>/client/core/agent/event_store.py)）。完整 schema 定义在 `_SCHEMA_SQL` 常量（L68-L185）。
 
 > **版本演进**：v5（chat-panel-v2 T01）→ v6（chat-engine-safety-fixes 加 events 表预留字段）→ v7（client_message_ids 幂等去重）→ v8（runner_state 持久化）→ v9（compactions 审计表）
 
@@ -91,7 +91,7 @@ v6-lite 对话引擎是 client 端的 LLM agent 运行时，负责：
 
 ## 4. chat-panel-v2 关键设计
 
-实现位于 [client/panels/chat.py](file:///f:/<project_root>/client/panels/chat.py)。设计真源是 `temp/sdd/chat-panel-v2/decisions.md` D1-D47。
+实现位于 [client/panels/chat.py](file:///<project_root>/client/panels/chat.py)。设计真源是 `temp/sdd/chat-panel-v2/decisions.md` D1-D47。
 
 ### 开始页 `_StartPage`
 
@@ -133,7 +133,7 @@ runner 运行中输入框上方显示 3 tab，单一发送键按当前 tab 触�
 
 ### QThread worker 架构
 
-文件：[client/panels/chat.py](file:///f:/<project_root>/client/panels/chat.py)
+文件：[client/panels/chat.py](file:///<project_root>/client/panels/chat.py)
 
 - **`_ChatWorker(QThread)`**：后台线程跑 `SessionRunner.run()`（经 SessionFacade 封装）
   - worker 线程内创建自己的 `EventStore`（写）+ `LLMPoolGateway` + `ToolRegistry` + `HttpClientToolExecutor` + `SessionFacade`
@@ -162,7 +162,7 @@ runner 运行中输入框上方显示 3 tab，单一发送键按当前 tab 触�
 
 ### 6.1 DoomLoopDetector 触发条件
 
-文件：[doom_loop.py](file:///f:/<project_root>/client/core/agent/doom_loop.py)
+文件：[doom_loop.py](file:///<project_root>/client/core/agent/doom_loop.py)
 
 **配置**（`DoomLoopConfig`）：
 
@@ -184,7 +184,7 @@ runner 运行中输入框上方显示 3 tab，单一发送键按当前 tab 触�
 
 ### 6.2 Reconciler 启动恢复
 
-文件：[reconciler.py](file:///f:/<project_root>/client/core/agent/reconciler.py)
+文件：[reconciler.py](file:///<project_root>/client/core/agent/reconciler.py)
 
 GUI 启动时在 `ChatPanel._init_read_store` 中 `store.init()` 后调用 `reconcile()`：
 
@@ -192,11 +192,11 @@ GUI 启动时在 `ChatPanel._init_read_store` 中 `store.init()` 后调用 `reco
 2. 扫描 `pending/running` tool_calls → 无对应 tool_result 时补 `is_error=true` 的 tool_result（防 provider 400）
 3. 扫描未合并 streaming 事件 → 合并为完整 Message → 标记 `invalidated`
 
-幂等可重复运行。详见 [ADR 0012](file:///f:/<project_root>/docs/adr/0012-session-manager-in-memory-only.md)。
+幂等可重复运行。详见 [ADR 0012](file:///<project_root>/docs/adr/0012-session-manager-in-memory-only.md)。
 
 ### 6.3 Compactor 压缩策略
 
-文件：[compactor.py](file:///f:/<project_root>/client/core/agent/compactor.py)
+文件：[compactor.py](file:///<project_root>/client/core/agent/compactor.py)
 
 - `should_compact()`：估算 token 超 85% 阈值时返回 True
 - `compact_with_result()`：调 LLM 生成摘要 + 保留最近 `tail_keep` 条原貌
@@ -208,9 +208,9 @@ GUI 启动时在 `ChatPanel._init_read_store` 中 `store.init()` 后调用 `reco
 
 | ADR | 标题 | 核心决策 |
 |-----|------|----------|
-| [ADR 0006](file:///f:/<project_root>/docs/adr/0006-v6-lite-scope-cut.md) | v6-lite 砍范围开工 | v6 全量 13 文档降级为参考库，EventStore 砍到 4 表，6 周垂直切片替代 P0-P6 |
-| [ADR 0012](file:///f:/<project_root>/docs/adr/0012-session-manager-in-memory-only.md) | 会话管理层纯内存不持久化 | SessionManager 授权状态纯内存，后端重启重置为 NO_PERMISSION（防幽灵授权） |
-| [ADR 0016](file:///f:/<project_root>/docs/adr/0016-chat-engine-bookkeeping-only.md) | chat 引擎只记账不控制 | 删 cost 字段（dead field），新增 `total_tokens` 仅记账，`wall_clock_budget_secs` 是唯一预算控制 |
+| [ADR 0006](file:///<project_root>/docs/adr/0006-v6-lite-scope-cut.md) | v6-lite 砍范围开工 | v6 全量 13 文档降级为参考库，EventStore 砍到 4 表，6 周垂直切片替代 P0-P6 |
+| [ADR 0012](file:///<project_root>/docs/adr/0012-session-manager-in-memory-only.md) | 会话管理层纯内存不持久化 | SessionManager 授权状态纯内存，后端重启重置为 NO_PERMISSION（防幽灵授权） |
+| [ADR 0016](file:///<project_root>/docs/adr/0016-chat-engine-bookkeeping-only.md) | chat 引擎只记账不控制 | 删 cost 字段（dead field），新增 `total_tokens` 仅记账，`wall_clock_budget_secs` 是唯一预算控制 |
 
 ## 8. 架构图
 
@@ -263,10 +263,10 @@ flowchart TB
 
 ## 9. 相关文档
 
-- [ADR 0006 - v6-lite 砍范围开工](file:///f:/<project_root>/docs/adr/0006-v6-lite-scope-cut.md)
-- [ADR 0012 - 会话管理层纯内存不持久化](file:///f:/<project_root>/docs/adr/0012-session-manager-in-memory-only.md)
-- [ADR 0016 - chat 引擎只记账不控制](file:///f:/<project_root>/docs/adr/0016-chat-engine-bookkeeping-only.md)
-- [agent-guide.md](file:///f:/<project_root>/docs/agent-guide.md) — 任务路由系统
-- [todos-wip.md](file:///f:/<project_root>/docs/todos-wip.md) — 待办与 WIP 系统
+- [ADR 0006 - v6-lite 砍范围开工](file:///<project_root>/docs/adr/0006-v6-lite-scope-cut.md)
+- [ADR 0012 - 会话管理层纯内存不持久化](file:///<project_root>/docs/adr/0012-session-manager-in-memory-only.md)
+- [ADR 0016 - chat 引擎只记账不控制](file:///<project_root>/docs/adr/0016-chat-engine-bookkeeping-only.md)
+- [agent-guide.md](file:///<project_root>/docs/agent-guide.md) — 任务路由系统
+- [todos-wip.md](file:///<project_root>/docs/todos-wip.md) — 待办与 WIP 系统
 - `temp/sdd/chat-panel-v2/decisions.md` — chat-panel-v2 设计真源（D1-D47）
 - `temp/sdd/chat-engine-safety-fixes/spec.md` — 引擎安全修复设计真源

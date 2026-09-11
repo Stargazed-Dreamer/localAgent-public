@@ -104,7 +104,7 @@ description: >
 （已知未解决的）
 ```
 
-详细模板见 [sites/_template.md](file:///f:/<project_root>/.agents/skills/browser_lessons/sites/_template.md)。
+详细模板见 [sites/_template.md](file:///<project_root>/.agents/skills/browser_lessons/sites/_template.md)。
 
 ## 跨网站通用浏览器踩坑（项目级）
 

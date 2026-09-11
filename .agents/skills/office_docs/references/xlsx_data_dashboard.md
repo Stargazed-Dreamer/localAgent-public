@@ -1,6 +1,6 @@
 # Excel 数据仪表盘参考 (data_dashboard)
 
-本文件是 [office_xlsx skill](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md) 的数据仪表盘场景参考。借鉴 OfficeCli 项目的设计哲学（QA Delivery Gate / Incremental Execution），用 openpyxl 实现 KPI 卡 + chart + sparkline + conditional formatting 的数据可视化。
+本文件是 [office_xlsx skill](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md) 的数据仪表盘场景参考。借鉴 OfficeCli 项目的设计哲学（QA Delivery Gate / Incremental Execution），用 openpyxl 实现 KPI 卡 + chart + sparkline + conditional formatting 的数据可视化。
 
 ## 何时用此 skill
 
@@ -13,8 +13,8 @@ trigger 关键词：
 
 | 场景 | 路由 |
 |---|---|
-| 单表 CSV + 格式化 tracker（≤1 chart） | [basic.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/basic.md) |
-| 3-statement / DCF / LBO | [financial_model.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/financial_model.md) |
+| 单表 CSV + 格式化 tracker（≤1 chart） | [basic.md](file:///<project_root>/.agents/skills/office_xlsx/references/basic.md) |
+| 3-statement / DCF / LBO | [financial_model.md](file:///<project_root>/.agents/skills/office_xlsx/references/financial_model.md) |
 | 周报 ≤1 chart <10 行 | basic.md |
 | 多 KPI + 多 chart + sparkline + CF | **本文件** |
 
@@ -660,9 +660,9 @@ ws['B2'] = '=SUMPRODUCT((Data!A2:A97="2026-07")*Data!C2:C97*Data!D2:D97)'
 ## 参考
 
 - [openpyxl 官方文档](https://openpyxl.readthedocs.io/)
-- [SKILL.md](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md)
-- [basic.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/basic.md) - 基础元素
-- [conditional_formatting.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md) - KPI 状态指示器
-- [financial_model.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/financial_model.md) - financial model dashboard
+- [SKILL.md](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md)
+- [basic.md](file:///<project_root>/.agents/skills/office_xlsx/references/basic.md) - 基础元素
+- [conditional_formatting.md](file:///<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md) - KPI 状态指示器
+- [financial_model.md](file:///<project_root>/.agents/skills/office_xlsx/references/financial_model.md) - financial model dashboard
 
 **说明**：OfficeCli 是 .NET CLI 项目，本项目用 openpyxl 等价实现其设计哲学。OfficeCli 的 CLI 命令已翻译为 openpyxl API 调用。QA Delivery Gate / Incremental Execution / 反模式 D-1..D-17 方法论保留自 OfficeCli 项目。

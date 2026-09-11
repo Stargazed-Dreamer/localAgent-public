@@ -6,11 +6,14 @@ import logging
 import threading
 import time
 from collections import deque
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
 
 from lib.async_http import get_async_client, get_sync_client
+from lib.llm_usage import collect_usage, collect_usage_anthropic, text_from_messages
+from server.llm_pool.opencode import build_opencode_headers, derive_session_id
 from server.llm_pool.stats import _resolve_default_stats_file
 
 # v12: USE_CASE_REGISTRY 从 types.py 导入（原从 key_store.py lazy import，引发循环依赖）
@@ -20,6 +23,12 @@ logger = logging.getLogger("localagent.llm_pool")
 
 # 近期调用历史的最大保留条数（环形缓冲）
 RECENT_CALL_HISTORY_MAX = 200
+
+# 透传原则：temperature / max_tokens 默认 None =「不写进请求体」，由 provider 用自己的
+# 默认值（OpenAI 兼容协议两者都是可选字段）。调用方想约束就显式传值，池不替调用方决定。
+# 唯一例外是 Anthropic —— /v1/messages 把 max_tokens 列为必填字段，省略会 400，
+# 因此该协议下未指定时回退到此常量。取值与项目内其他 reasoning 场景一致（16384）。
+ANTHROPIC_REQUIRED_MAX_TOKENS = 16384
 
 
 def _is_model_free(model_name: str, privacy_warning: str) -> bool:
@@ -330,6 +339,74 @@ def _anthropic_tool_use_to_openai_tool_calls(content_blocks: list) -> list[dict]
     return out
 
 
+def _build_anthropic_messages(messages: list[dict]) -> tuple[str, list[dict]]:
+    """OpenAI messages → (system_text, user_messages) for Anthropic /v1/messages.
+
+    非流式 `_call_anthropic` 与原生流式 `_stream_anthropic_sse` 共用，避免重复：
+    - system 消息提取到顶层 system（多条以空行拼接）
+    - content 为 list（多模态）时取 text 分片拼接
+    - role=tool → user 消息含 tool_result 块
+    - role=assistant 且带 tool_calls → content 含 tool_use 块
+    - 保证至少一条 user 消息
+    返回 (system_text, user_messages)。
+    """
+    system_text = ""
+    user_messages: list[dict] = []
+    for m in messages:
+        role = m.get("role", "user")
+        content_val = m.get("content", "")
+        # content 可以是 str 或 list（多模态），先转 str 兜底
+        if isinstance(content_val, list):
+            # 提取 text 块拼接
+            parts = []
+            for block in content_val:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif isinstance(block, str):
+                    parts.append(block)
+            content_str = "\n".join(parts)
+        else:
+            content_str = str(content_val) if content_val else ""
+
+        if role == "system":
+            # 累积 system 消息（可能有多条）
+            if system_text:
+                system_text += "\n\n" + content_str
+            else:
+                system_text = content_str
+        elif role == "tool":
+            # T05+: OpenAI tool 结果消息 → Anthropic user 消息含 tool_result 块
+            tool_call_id = m.get("tool_call_id", "")
+            blocks = [{"type": "tool_result", "tool_use_id": tool_call_id, "content": content_str}]
+            user_messages.append({"role": "user", "content": blocks})
+        elif role == "assistant" and m.get("tool_calls"):
+            # T05+: OpenAI assistant tool_calls → Anthropic content 含 tool_use 块
+            blocks: list[dict] = []
+            if content_str:
+                blocks.append({"type": "text", "text": content_str})
+            for tc in m["tool_calls"]:
+                fn = tc.get("function") or {}
+                args_raw = fn.get("arguments", "{}")
+                try:
+                    args_obj = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+                except (TypeError, ValueError):
+                    args_obj = {}
+                blocks.append({
+                    "type": "tool_use",
+                    "id": tc.get("id", ""),
+                    "name": fn.get("name", ""),
+                    "input": args_obj,
+                })
+            user_messages.append({"role": "assistant", "content": blocks})
+        else:
+            user_messages.append({"role": role, "content": content_str})
+
+    # Anthropic 要求 messages 至少含一条 user 消息
+    if not user_messages:
+        user_messages = [{"role": "user", "content": "(empty)"}]
+    return system_text, user_messages
+
+
 # =====================================================================
 # v6-lite-streaming-gui T00: 真流式支持
 # =====================================================================
@@ -346,7 +423,7 @@ def _safe_next_line(it):
         return _STREAM_SENTINEL
 
 
-async def _iter_lines_async(resp) -> "asyncio.AsyncIterator[str]":
+async def _iter_lines_async(resp) -> AsyncIterator:
     """把 requests.Response.iter_lines 桥接为 async iterator。
 
     用 run_in_executor 逐行在线程池读取（requests 是同步阻塞 IO），
@@ -1195,19 +1272,28 @@ class LLMPool:
         delay = max(delay, policy.rate_limit_cooldown_seconds)
         return min(delay, policy.rate_limit_max_cooldown)
 
-    def call(self, messages: list[dict], temperature: float = 0.3,
-             max_tokens: int = 4096, timeout: int = 120,
+    def call(self, messages: list[dict], temperature: float | None = None,
+             max_tokens: int | None = None, timeout: int = 120,
              retries: int | None = None, project: str = "default",
              model: str | None = None, response_format: dict | None = None,
              use_case: str | None = None, tier=None,
              session_id: str | None = None,
              tools: list[dict] | None = None,
-             tool_choice: str | dict | None = None) -> dict:
+             tool_choice: str | dict | None = None,
+             top_p: float | None = None,
+             stop: str | list[str] | None = None,
+             presence_penalty: float | None = None,
+             frequency_penalty: float | None = None,
+             seed: int | None = None,
+             parallel_tool_calls: bool | None = None) -> dict:
         """
         统一 LLM 调用接口。
         自动选择 key、重试、冷却切换。
 
         Args:
+            temperature: None = 不下发该字段，用 provider 默认；要约束就显式传值。
+            max_tokens: 同上。Anthropic 协议下该字段为 API 必填，未指定时回退
+                        ANTHROPIC_REQUIRED_MAX_TOKENS。
             project: 项目标签，用于 per-project token 统计
             model: 软偏好——优先选含此 model 的 key；同 tier 内若无此 model 自动 fallback
             use_case: 指定 use_case 筛选 key（敏感用途自动排除 privacy_warning key）
@@ -1219,6 +1305,9 @@ class LLMPool:
                   失败（HTTP 500/timeout/exception）不清理粘性（保留可能可恢复的会话）。
             tools: T05+ 工具定义列表（OpenAI 格式），传入后 LLM 可返回 tool_calls
             tool_choice: T05+ 工具选择策略（"auto"/"none"/specific tool dict）
+            top_p/stop/presence_penalty/frequency_penalty/seed/parallel_tool_calls:
+                  A 档采样参数透传（2026-09-08 白名单扩展）：None = 不下发。
+                  Anthropic 协议仅支持 top_p/stop（stop→stop_sequences），其余不下发。
 
         Returns:
             {"ok": True, "content": str, "usage": dict, "model": str, "key_name": str,
@@ -1335,6 +1424,11 @@ class LLMPool:
                         attempt_start_ts=attempt_start_ts, attempt=attempt,
                         failed_models=failed_models, project=project,
                         tools=tools, tool_choice=tool_choice,
+                        top_p=top_p, stop=stop,
+                        presence_penalty=presence_penalty,
+                        frequency_penalty=frequency_penalty,
+                        seed=seed, parallel_tool_calls=parallel_tool_calls,
+                        session_id=session_id,
                     )
                 else:
                     call_result = self._call_openai(
@@ -1344,6 +1438,11 @@ class LLMPool:
                         attempt_start_ts=attempt_start_ts, attempt=attempt,
                         failed_models=failed_models, project=project,
                         tools=tools, tool_choice=tool_choice,
+                        top_p=top_p, stop=stop,
+                        presence_penalty=presence_penalty,
+                        frequency_penalty=frequency_penalty,
+                        seed=seed, parallel_tool_calls=parallel_tool_calls,
+                        session_id=session_id,
                     )
 
                 # call_result 是 dict，含状态码：
@@ -1404,14 +1503,26 @@ class LLMPool:
 
     # ==================== v6-lite-streaming-gui T00: 真 SSE 流式 ====================
 
-    async def stream(self, messages: list[dict], temperature: float = 0.3,
-                     max_tokens: int = 4096, timeout: int = 120,
+    async def stream(self, messages: list[dict], temperature: float | None = None,
+                     max_tokens: int | None = None, timeout: int = 120,
                      project: str = "default", model: str | None = None,
                      use_case: str | None = None, tier=None,
                      session_id: str | None = None,
                      tools: list[dict] | None = None,
-                     tool_choice: str | dict | None = None):
+                     tool_choice: str | dict | None = None,
+                     response_format: dict | None = None,
+                     top_p: float | None = None,
+                     stop: str | list[str] | None = None,
+                     presence_penalty: float | None = None,
+                     frequency_penalty: float | None = None,
+                     seed: int | None = None,
+                     parallel_tool_calls: bool | None = None):
         """真 SSE 流式调用（D02/D03/D04/D14）。
+
+        temperature / max_tokens 同 call()：None = 不下发，用 provider 默认。
+        response_format: 流式此前恒传 None（签名里根本没有该参数），客户端传了会被
+            静默丢弃；现补上入参并透传给 OpenAI 协议分支。
+        top_p 等 A 档采样参数同 call()：None = 不下发（2026-09-08 白名单扩展）。
 
         对接 provider stream=True，透传 SSE 事件。yield dict 事件（D03 7 种类型）：
         - {"type": "text_delta", "delta": "..."}
@@ -1422,7 +1533,7 @@ class LLMPool:
         - {"type": "done", "finish_reason": "..."}
 
         OpenAI 协议：真流式（httpx.AsyncClient.stream + aiter_lines，T07 后原 requests 桥接已移除）。
-        Anthropic 协议：降级为伪流式（call + 一次性 yield，后续可扩展真流式）。
+        Anthropic 协议：真流式（原生 event-stream 解析，message_start/message_delta 采集 usage）。
 
         try/finally 确保 key/semaphore 释放（D14）。不做重试（单次调用，失败 yield error）。
         """
@@ -1433,8 +1544,11 @@ class LLMPool:
             if uc:
                 resolved_range = uc.default_tier
 
-        key = self._acquire(model=model, use_case=use_case, tier=resolved_range,
-                            session_id=session_id)
+        # _acquire 用 threading.Condition.wait() 阻塞等槽位（最长 timeout 秒）。
+        # stream() 的消费方在事件循环里，必须挪到工作线程等，否则并发流超过
+        # provider max_concurrency 时，排队中的流会冻死整个服务的事件循环。
+        key = await asyncio.to_thread(self._acquire, model=model, use_case=use_case,
+                                      tier=resolved_range, session_id=session_id)
         if key is None:
             yield {"type": "provider_error", "error": "no available keys"}
             yield {"type": "done", "finish_reason": "error"}
@@ -1458,68 +1572,123 @@ class LLMPool:
 
         attempt_start_ts = time.time()
         success = False
+        captured_usage: dict | None = None  # 流式 usage 事件捕获，供 finally 回填池统计
         protocol = (key.protocol or "openai").lower()
+        # OpenAI 与 Anthropic 均走各自原生 SSE 生成器，共用「持有 key → 捕获 usage
+        # 事件 → finally 统一 release+record」模型。此前 Anthropic 走 call() 伪流式并
+        # 提前 release（key 置 None 避免 call() 内部二次记账）；改原生后不再需要该特例。
+        if protocol == "anthropic":
+            gen = self._stream_anthropic_sse(
+                key=key, req_model=req_model, messages=messages,
+                temperature=temperature, max_tokens=max_tokens, timeout=timeout,
+                project=project, attempt_start_ts=attempt_start_ts,
+                tools=tools, tool_choice=tool_choice,
+                top_p=top_p, stop=stop,
+                presence_penalty=presence_penalty,
+                frequency_penalty=frequency_penalty,
+                seed=seed, parallel_tool_calls=parallel_tool_calls,
+                session_id=session_id,
+            )
+        else:
+            gen = self._stream_openai_sse(
+                key=key, req_model=req_model, messages=messages,
+                temperature=temperature, max_tokens=max_tokens, timeout=timeout,
+                response_format=response_format, project=project,
+                attempt_start_ts=attempt_start_ts,
+                tools=tools, tool_choice=tool_choice,
+                top_p=top_p, stop=stop,
+                presence_penalty=presence_penalty,
+                frequency_penalty=frequency_penalty,
+                seed=seed, parallel_tool_calls=parallel_tool_calls,
+                session_id=session_id,
+            )
         try:
-            if protocol == "anthropic":
-                # Anthropic 降级为伪流式（call + 一次性 yield）
-                # 先 release 当前 key，避免 call() 内部 _acquire 时死锁（单 key 池场景）
-                self._release(key, success=True, model=req_model,
-                              duration_ms=int((time.time() - attempt_start_ts) * 1000))
-                key = None  # 标记已 release，finally 不再 release
-                async for event in self._stream_anthropic_fallback(
-                    messages=messages, model=req_model,
-                    temperature=temperature, max_tokens=max_tokens, timeout=timeout,
-                    project=project, tools=tools, tool_choice=tool_choice,
-                    tier=resolved_range, use_case=use_case, session_id=session_id,
-                ):
-                    if event.get("type") == "done" and event.get("finish_reason") != "error":
-                        success = True
-                    yield event
-            else:
-                # OpenAI 真流式
-                async for event in self._stream_openai_sse(
-                    key=key, req_model=req_model, messages=messages,
-                    temperature=temperature, max_tokens=max_tokens, timeout=timeout,
-                    response_format=None, project=project,
-                    attempt_start_ts=attempt_start_ts,
-                    tools=tools, tool_choice=tool_choice,
-                ):
-                    if event.get("type") == "done" and event.get("finish_reason") not in ("error", None):
-                        success = True
-                    yield event
+            async for event in gen:
+                # 可观测性（纯附加，不改选路/控制流）：把实际选中的 key/model 附到事件上，
+                # 供入站网关等在日志中记录「兜底后真实走的 key 与模型」。老消费方忽略未知字段。
+                event.setdefault("key_name", key.name)
+                event.setdefault("model", req_model)
+                if event.get("type") == "usage":
+                    captured_usage = event
+                if event.get("type") == "done" and event.get("finish_reason") not in ("error", None):
+                    success = True
+                yield event
         finally:
-            if key is not None:
-                self._release(key, success=success, model=req_model,
-                              duration_ms=int((time.time() - attempt_start_ts) * 1000))
+            # 流式 token 记账：把 usage 事件的 total 回填到 key/model 统计（此前恒 0）。
+            # OpenAI 与 Anthropic 原生流式都走这里（与非流式 call() 的 _record_usage 对齐）。
+            tokens = int(captured_usage.get("total_tokens") or 0) if (success and captured_usage) else 0
+            self._release(key, success=success, model=req_model,
+                          duration_ms=int((time.time() - attempt_start_ts) * 1000),
+                          tokens=tokens)
+            if success and captured_usage and project:
+                self._record_usage(project, {
+                    "prompt_tokens": int(captured_usage.get("prompt_tokens") or 0),
+                    "completion_tokens": int(captured_usage.get("completion_tokens") or 0),
+                    "total_tokens": int(captured_usage.get("total_tokens") or 0),
+                })
 
     async def _stream_openai_sse(self, *, key, req_model, messages, temperature,
                                   max_tokens, timeout, response_format, project,
-                                  attempt_start_ts, tools=None, tool_choice=None):
+                                  attempt_start_ts, tools=None, tool_choice=None,
+                                  top_p=None, stop=None,
+                                  presence_penalty=None, frequency_penalty=None,
+                                  seed=None, parallel_tool_calls=None,
+                                  session_id: str | None = None
+                                  ) -> AsyncIterator[dict]:
         """OpenAI 协议真 SSE 流式（D02/D03/D04）。
 
         T07：用 httpx.AsyncClient.stream 原生异步流式（替代 requests.post + _iter_lines_async 桥接）。
         解析 OpenAI SSE chunk，yield D03 事件。tool_call 半包累积（D04）。
+        A 档采样参数（top_p/stop/penalties/seed/parallel_tool_calls）：None = 不下发。
         """
         url = key.base_url.rstrip("/") + "/chat/completions"
         request_body: dict = {
             "model": req_model,
             "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
             "stream": True,  # 真流式（D02，原 _call_openai 是 False）
             "stream_options": {"include_usage": True},  # 请求 usage（部分 provider 支持）
         }
+        # 透传：None 表示调用方未指定，不下发字段，交给 provider 自己的默认值
+        if temperature is not None:
+            request_body["temperature"] = temperature
+        if max_tokens is not None:
+            request_body["max_tokens"] = max_tokens
         if response_format:
             request_body["response_format"] = response_format
         if tools:
             request_body["tools"] = tools
             if tool_choice is not None:
                 request_body["tool_choice"] = tool_choice
+        # A 档采样参数透传（2026-09-08 白名单扩展）
+        if top_p is not None:
+            request_body["top_p"] = top_p
+        if stop is not None:
+            request_body["stop"] = stop
+        if presence_penalty is not None:
+            request_body["presence_penalty"] = presence_penalty
+        if frequency_penalty is not None:
+            request_body["frequency_penalty"] = frequency_penalty
+        if seed is not None:
+            request_body["seed"] = seed
+        if parallel_tool_calls is not None:
+            request_body["parallel_tool_calls"] = parallel_tool_calls
 
         headers = {
             "Authorization": f"Bearer {key.key}",
             "Content-Type": "application/json",
         }
+        # opencode 端点会话亲和（2026-09-06 上游强制 x-opencode-session，缺失即 400）。
+        # session_id 缺省时内容派生兜底，保证内部调用方（不走入站网关）同样合规。
+        headers.update(build_opencode_headers(
+            key.base_url,
+            session_id or derive_session_id(messages, namespace=project),
+        ))
+        # 流式 usage 采集：prompt 文本用于精确字符数；completion_parts 累积输出文本
+        # （content + thinking + tool 参数）；provider_usage 记住最后一条**非零** usage
+        # chunk（兼容代理常在流里塞全零 usage chunk，须过滤，见 lib/llm_usage 说明）。
+        prompt_text = text_from_messages(messages)
+        completion_parts: list[str] = []
+        provider_usage: dict | None = None
         client = get_async_client()
         try:
             # httpx 原生 async stream：context manager 自动管理连接释放
@@ -1550,7 +1719,7 @@ class LLMPool:
                     return
 
                 accumulator = ToolCallAccumulator()
-                usage_emitted = False
+                stream_finish_reason: str | None = None
                 # httpx aiter_lines 原生异步迭代，无需 run_in_executor 桥接
                 async for raw_line in resp.aiter_lines():
                     line = raw_line.strip() if isinstance(raw_line, str) else ""
@@ -1564,31 +1733,30 @@ class LLMPool:
                     except json.JSONDecodeError:
                         continue
 
-                    if chunk.get("model"):
-                        chunk["model"]
-
-                    # usage（部分 provider 在 stream 结束时发 usage chunk，choices 为空）
-                    if chunk.get("usage"):
-                        u = chunk["usage"]
-                        yield {"type": "usage",
-                               "prompt_tokens": u.get("prompt_tokens", 0),
-                               "completion_tokens": u.get("completion_tokens", 0),
-                               "total_tokens": u.get("total_tokens", 0)}
-                        usage_emitted = True
+                    # usage chunk（OpenAI 规范：usage 常在 finish_reason **之后**另发一条
+                    # choices 为空的独立尾 chunk；也有 provider 直接挂在 finish_reason chunk
+                    # 上）。只记非零值，兼容代理的全零 usage chunk 忽略；多条时取最后一条。
+                    # 关键：不能一看到 finish_reason 就 break，否则读不到尾部 usage chunk，
+                    # 会把明明给了 provider usage 的流式误记成 provider_missing（历史 bug）。
+                    u = chunk.get("usage")
+                    if u and (u.get("prompt_tokens") or u.get("completion_tokens")
+                              or u.get("total_tokens")):
+                        provider_usage = u
 
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
                     delta = choices[0].get("delta", {}) or {}
-                    finish_reason = choices[0].get("finish_reason")
 
                     # text delta
                     if delta.get("content"):
+                        completion_parts.append(delta["content"])
                         yield {"type": "text_delta", "delta": delta["content"]}
 
                     # thinking delta（DeepSeek-R1 用 reasoning_content，xAI 用 thinking）
                     thinking = delta.get("reasoning_content") or delta.get("thinking")
                     if thinking:
+                        completion_parts.append(thinking)
                         yield {"type": "thinking_delta", "delta": thinking}
 
                     # tool_call delta（半包累积 D04，流结束时一次性 yield）
@@ -1596,16 +1764,25 @@ class LLMPool:
                         for tc_delta in delta["tool_calls"]:
                             accumulator.on_delta(tc_delta)
 
-                    if finish_reason:
-                        # 流结束，yield 累积的 tool_calls（D04 完整后才 yield）
-                        for tc in accumulator.build_all():
-                            yield {"type": "tool_call_delta", "tool_call": tc}
-                        # 若 provider 未发 usage chunk，用 finish_reason 兜底
-                        if not usage_emitted:
-                            yield {"type": "usage", "prompt_tokens": 0,
-                                   "completion_tokens": 0, "total_tokens": 0}
-                        yield {"type": "done", "finish_reason": finish_reason}
-                        break
+                    fr = choices[0].get("finish_reason")
+                    if fr:
+                        stream_finish_reason = fr
+                        # 快速路径：usage 已随 finish_reason chunk 一起到达 → 立即收尾。
+                        # 否则继续读到 [DONE]/流结束，以捕获独立的尾部 usage chunk（OpenAI 标准姿势）。
+                        if provider_usage is not None:
+                            break
+                # 统一收尾（[DONE]、快速路径 break 或流自然结束都走这里）：先吐累积完整的
+                # tool_calls（D04），再 emit 一条 usage（provider 给了用实测，否则
+                # provider_missing 记 0），最后 emit done。
+                for tc in accumulator.build_all():
+                    completion_parts.append(
+                        str((tc.get("function") or {}).get("arguments") or ""))
+                    yield {"type": "tool_call_delta", "tool_call": tc}
+                usage_evt = {"type": "usage", "raw": provider_usage}
+                usage_evt.update(collect_usage(
+                    provider_usage, prompt_text, "".join(completion_parts)))
+                yield usage_evt
+                yield {"type": "done", "finish_reason": stream_finish_reason or "stop"}
         except httpx.TimeoutException:
             yield {"type": "provider_error", "error": f"timeout after {timeout}s"}
             yield {"type": "done", "finish_reason": "error"}
@@ -1615,61 +1792,205 @@ class LLMPool:
             yield {"type": "done", "finish_reason": "error"}
             return
 
-    async def _stream_anthropic_fallback(self, *, messages, model, temperature,
-                                          max_tokens, timeout, project,
-                                          tools=None, tool_choice=None,
-                                          tier=None, use_case=None, session_id=None):
-        """Anthropic 降级伪流式（call + 一次性 yield）。
+    async def _stream_anthropic_sse(self, *, key, req_model, messages, temperature,
+                                     max_tokens, timeout, project, attempt_start_ts,
+                                     tools=None, tool_choice=None,
+                                     top_p=None, stop=None,
+                                     presence_penalty=None, frequency_penalty=None,
+                                     seed=None, parallel_tool_calls=None,
+                                     session_id: str | None = None) -> AsyncIterator[dict]:
+        """Anthropic 协议原生 SSE 流式（真增量 + usage 采集）。
 
-        Anthropic SSE 格式与 OpenAI 不同（event-stream），真流式实现复杂。
-        本次 SDD 降级为非流式调用后一次性 yield（client 侧 fast 档仍可见增量渲染）。
-        后续可扩展为真流式（参考 _stream_openai_sse）。
+        Anthropic /v1/messages（stream=true）事件（按 data JSON 的 type 字段分派）：
+        - message_start：message.usage.input_tokens（prompt 侧权威值，部分也带 output）
+        - content_block_start：tool_use 块给出 id/name
+        - content_block_delta：text_delta（正文）/ thinking_delta（思考）/
+          input_json_delta（tool_use 参数半包，累积后在收尾一次性吐）
+        - message_delta：usage.output_tokens 为**累计**值（取最新非零）+ delta.stop_reason
+        - message_stop：终止
 
-        注意：stream() 已在调用前 release key，此处 call() 自行 acquire/release。
+        usage 采集口径（纯采集器，不估算）：input=output 各自取流中出现的非零值，
+        两者皆缺 → provider_missing（记 0）。与非流式 `_call_anthropic` 保持同一键名。
         """
-        result = await asyncio.to_thread(
-            self.call,
-            messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=timeout,
-            retries=1,
-            project=project,
-            model=model,
-            use_case=use_case,
-            tier=tier,
-            session_id=session_id,
-            tools=tools,
-            tool_choice=tool_choice,
-        )
-        if not result.get("ok"):
-            yield {"type": "provider_error", "error": result.get("error", "unknown")}
+        system_text, user_messages = _build_anthropic_messages(messages)
+        base = key.base_url.rstrip("/")
+        url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
+        body: dict = {
+            "model": req_model,
+            "messages": user_messages,
+            # Anthropic 把 max_tokens 列为必填（省略直接 400），未指定时回退常量
+            "max_tokens": (max_tokens if max_tokens is not None
+                           else ANTHROPIC_REQUIRED_MAX_TOKENS),
+            "stream": True,
+        }
+        if temperature is not None:
+            body["temperature"] = temperature
+        if system_text:
+            body["system"] = system_text
+        # A 档采样参数协议适配（2026-09-08 白名单扩展）：Anthropic 仅支持
+        # top_p / stop_sequences；presence/frequency_penalty、seed、parallel_tool_calls
+        # 无对应概念，不下发（OpenAI 独有，Anthropic 上游静默忽略也不合规，干脆不发）。
+        if top_p is not None:
+            body["top_p"] = top_p
+        if stop is not None:
+            # OpenAI stop（str | list[str]）→ Anthropic stop_sequences（list[str]）
+            body["stop_sequences"] = [stop] if isinstance(stop, str) else list(stop)
+        if tools:
+            anth_tools = _openai_tools_to_anthropic(tools)
+            if anth_tools:
+                body["tools"] = anth_tools
+                anth_choice = _openai_tool_choice_to_anthropic(tool_choice)
+                if anth_choice is not None:
+                    body["tool_choice"] = anth_choice
+
+        headers = {
+            "x-api-key": key.key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        # opencode 端点会话亲和（与 _stream_openai_sse 同口径，见 opencode.py）
+        headers.update(build_opencode_headers(
+            key.base_url,
+            session_id or derive_session_id(messages, namespace=project),
+        ))
+        # usage 采集：prompt 文本用于精确字符数；completion_parts 累积输出文本
+        prompt_text = text_from_messages(messages)
+        completion_parts: list[str] = []
+        input_tokens = 0
+        output_tokens = 0
+        # cache_read_input_tokens：prompt 缓存命中（message_start 给初始值，
+        # message_delta 的 usage 可能带累计值，取最新非零，与 output_tokens 同口径）
+        cache_read_tokens: int | None = None
+        # cache_creation_input_tokens：缓存写入（计费 1.25x/2x），同口径取最新非空
+        cache_creation_tokens: int | None = None
+        # 原始 usage 合并视图（message_start/message_delta 键不重叠，update 合并），
+        # 随 usage 事件透出供网关 usage_json 落库兜底
+        raw_usage_merged: dict = {}
+        stop_reason = ""
+        # tool_use 半包累积：content block index → {"id","name","json"}
+        tool_blocks: dict[int, dict] = {}
+        client = get_async_client()
+        try:
+            async with client.stream(
+                "POST", url, headers=headers, json=body, timeout=timeout
+            ) as resp:
+                if resp.status_code != 200:
+                    try:
+                        await resp.aread()
+                        err_body = resp.text[:300]
+                    except Exception:
+                        err_body = "(unreadable)"
+                    yield {"type": "provider_error",
+                           "error": f"HTTP {resp.status_code}: {err_body}"}
+                    yield {"type": "done", "finish_reason": "error"}
+                    return
+
+                async for raw_line in resp.aiter_lines():
+                    line = raw_line.strip() if isinstance(raw_line, str) else ""
+                    # Anthropic SSE 有 "event: xxx" 行，只需带 JSON 的 "data:" 行
+                    if not line or not line.startswith("data:"):
+                        continue
+                    payload = line[len("data:"):].strip()
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    et = data.get("type")
+
+                    if et == "message_start":
+                        u = ((data.get("message") or {}).get("usage")) or {}
+                        if u.get("input_tokens"):
+                            input_tokens = int(u["input_tokens"])
+                        if u.get("output_tokens"):
+                            output_tokens = int(u["output_tokens"])
+                        if u.get("cache_read_input_tokens") is not None:
+                            cache_read_tokens = int(u["cache_read_input_tokens"])
+                        if u.get("cache_creation_input_tokens") is not None:
+                            cache_creation_tokens = int(u["cache_creation_input_tokens"])
+                        raw_usage_merged.update(u)
+                    elif et == "content_block_start":
+                        blk = data.get("content_block") or {}
+                        if blk.get("type") == "tool_use":
+                            tool_blocks[data.get("index", 0)] = {
+                                "id": blk.get("id", ""),
+                                "name": blk.get("name", ""),
+                                "json": "",
+                            }
+                    elif et == "content_block_delta":
+                        delta = data.get("delta") or {}
+                        dtype = delta.get("type")
+                        if dtype == "text_delta":
+                            t = delta.get("text") or ""
+                            if t:
+                                completion_parts.append(t)
+                                yield {"type": "text_delta", "delta": t}
+                        elif dtype == "thinking_delta":
+                            th = delta.get("thinking") or ""
+                            if th:
+                                completion_parts.append(th)
+                                yield {"type": "thinking_delta", "delta": th}
+                        elif dtype == "input_json_delta":
+                            tb = tool_blocks.setdefault(
+                                data.get("index", 0), {"id": "", "name": "", "json": ""})
+                            tb["json"] += delta.get("partial_json") or ""
+                    elif et == "message_delta":
+                        u = data.get("usage") or {}
+                        if u.get("input_tokens"):
+                            input_tokens = int(u["input_tokens"])
+                        if u.get("output_tokens"):  # 累计值，最新即最大
+                            output_tokens = int(u["output_tokens"])
+                        if u.get("cache_read_input_tokens") is not None:
+                            cache_read_tokens = int(u["cache_read_input_tokens"])
+                        if u.get("cache_creation_input_tokens") is not None:
+                            cache_creation_tokens = int(u["cache_creation_input_tokens"])
+                        raw_usage_merged.update(u)
+                        stop_reason = (data.get("delta") or {}).get("stop_reason") or stop_reason
+                    elif et == "message_stop":
+                        break
+                    elif et == "error":
+                        err = data.get("error") or {}
+                        yield {"type": "provider_error",
+                               "error": f"{err.get('type', 'error')}: {err.get('message', '')}"[:300]}
+                        yield {"type": "done", "finish_reason": "error"}
+                        return
+
+                # 统一收尾（正常 message_stop 或流自然结束都走这里）：
+                # 先吐完整的 tool_calls（半包累积完毕），再吐 usage + done。
+                for idx in sorted(tool_blocks):
+                    tb = tool_blocks[idx]
+                    completion_parts.append(tb["json"])
+                    yield {"type": "tool_call_delta", "tool_call": {
+                        "id": tb["id"], "type": "function",
+                        "function": {"name": tb["name"], "arguments": tb["json"] or "{}"}}}
+                usage_evt = {"type": "usage", "raw": raw_usage_merged or None}
+                usage_evt.update(collect_usage_anthropic(
+                    input_tokens, output_tokens, prompt_text, "".join(completion_parts),
+                    cached_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens))
+                yield usage_evt
+                yield {"type": "done", "finish_reason": stop_reason or "stop"}
+        except httpx.TimeoutException:
+            yield {"type": "provider_error", "error": f"timeout after {timeout}s"}
+            yield {"type": "done", "finish_reason": "error"}
+            return
+        except Exception as e:
+            yield {"type": "provider_error", "error": f"{type(e).__name__}: {str(e)[:200]}"}
             yield {"type": "done", "finish_reason": "error"}
             return
 
-        content = result.get("content", "") or ""
-        tool_calls = result.get("tool_calls", []) or []
-        usage = result.get("usage", {}) or {}
-        finish_reason = result.get("finish_reason", "stop")
-
-        # 一次性 yield 全部 text（不分片，client 侧 fast 档会一次性渲染）
-        if content:
-            yield {"type": "text_delta", "delta": content}
-        for tc in tool_calls:
-            yield {"type": "tool_call_delta", "tool_call": tc}
-        yield {"type": "usage",
-               "prompt_tokens": usage.get("prompt_tokens", 0),
-               "completion_tokens": usage.get("completion_tokens", 0),
-               "total_tokens": usage.get("total_tokens", 0)}
-        yield {"type": "done", "finish_reason": finish_reason}
 
     def _call_openai(self, *, key, req_model, messages, temperature, max_tokens,
                      timeout, response_format, attempt_start_ts, attempt,
                      failed_models, project="default",
-                     tools=None, tool_choice=None) -> dict:
+                     tools=None, tool_choice=None,
+                     top_p=None, stop=None,
+                     presence_penalty=None, frequency_penalty=None,
+                     seed=None, parallel_tool_calls=None,
+                     session_id: str | None = None) -> dict:
         """OpenAI 协议调用（POST {base_url}/chat/completions）
 
         T05+ 支持 tools/tool_choice 参数，解析 tool_calls 响应。
+        A 档采样参数（top_p/stop/penalties/seed/parallel_tool_calls）：None = 不下发。
 
         返回 dict：
         - {"status": "ok", "content", "usage", "model", "tokens", "tool_calls", "finish_reason"}
@@ -1682,21 +2003,42 @@ class LLMPool:
         request_body: dict = {
             "model": req_model,
             "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
             "stream": False,
             **({"response_format": response_format} if response_format is not None else {}),
         }
+        # 透传：None = 调用方未指定 → 不下发，用 provider 默认（与流式分支同口径）
+        if temperature is not None:
+            request_body["temperature"] = temperature
+        if max_tokens is not None:
+            request_body["max_tokens"] = max_tokens
         if tools:
             request_body["tools"] = tools
             if tool_choice is not None:
                 request_body["tool_choice"] = tool_choice
+        # A 档采样参数透传（2026-09-08 白名单扩展）
+        if top_p is not None:
+            request_body["top_p"] = top_p
+        if stop is not None:
+            request_body["stop"] = stop
+        if presence_penalty is not None:
+            request_body["presence_penalty"] = presence_penalty
+        if frequency_penalty is not None:
+            request_body["frequency_penalty"] = frequency_penalty
+        if seed is not None:
+            request_body["seed"] = seed
+        if parallel_tool_calls is not None:
+            request_body["parallel_tool_calls"] = parallel_tool_calls
         # T07：同步 httpx.Client（连接池复用），call() 调用方已在 asyncio.to_thread 中
+        _oc_headers = build_opencode_headers(
+            key.base_url,
+            session_id or derive_session_id(messages, namespace=project),
+        )
         resp = get_sync_client().post(
             url,
             headers={
                 "Authorization": f"Bearer {key.key}",
                 "Content-Type": "application/json",
+                **_oc_headers,
             },
             json=request_body,
             timeout=timeout,
@@ -1779,6 +2121,8 @@ class LLMPool:
 
         actual_model = data.get("model", req_model)
         finish_reason = (choices[0].get("finish_reason", "") if choices else "")
+        # 思考内容（DeepSeek reasoning_content / xAI thinking），与流式采集口径对齐
+        thinking = message.get("reasoning_content") or message.get("thinking") or ""
         # v12：解析 OpenAI 风格响应头饱和信号
         saturation = _parse_openai_rate_limit_saturation(resp.headers)
         self._release(key, success=True, tokens=tokens, model=req_model, saturation=saturation,
@@ -1791,7 +2135,10 @@ class LLMPool:
             "status": "ok",
             "ok": True,
             "content": content or "",
+            "thinking": thinking,
             "usage": usage,
+            # provider 原始 usage 原样透出（网关 usage_json 落库兜底，新字段离线可查）
+            "usage_raw": usage,
             "model": actual_model,
             "key_name": key.name,
             "finish_reason": finish_reason,
@@ -1799,9 +2146,13 @@ class LLMPool:
         }
 
     def _call_anthropic(self, *, key, req_model, messages, temperature, max_tokens,
-                         timeout, response_format, attempt_start_ts, attempt,
-                         failed_models, project="default",
-                         tools=None, tool_choice=None) -> dict:
+                        timeout, response_format, attempt_start_ts, attempt,
+                        failed_models, project="default",
+                        tools=None, tool_choice=None,
+                        top_p=None, stop=None,
+                        presence_penalty=None, frequency_penalty=None,
+                        seed=None, parallel_tool_calls=None,
+                        session_id: str | None = None) -> dict:
         """Anthropic 协议调用（POST {base_url}/v1/messages 或 {base_url}/messages）
 
         Anthropic API 特点：
@@ -1811,73 +2162,12 @@ class LLMPool:
         - content 是数组（[{"type": "text", "text": "..."}]）
         - usage: {input_tokens, output_tokens}
         - T05+: tools 格式转换（OpenAI → Anthropic input_schema）+ tool_use 响应解析
+        - A 档采样参数：仅 top_p/stop（→stop_sequences）可映射，其余 OpenAI 独有不下发
 
         返回 dict 结构与 _call_openai 一致（含 tool_calls 字段，OpenAI 格式）。
         """
-        # Anthropic API 要求 system 消息从 messages 中提取到顶层
-        # T05+: 同时处理 tool_calls（assistant）和 tool_result（role=tool）的格式转换
-        system_text = ""
-        user_messages: list[dict] = []
-        for m in messages:
-            role = m.get("role", "user")
-            content_val = m.get("content", "")
-            # content 可以是 str 或 list（多模态），先转 str 兜底
-            if isinstance(content_val, list):
-                # 提取 text 块拼接
-                parts = []
-                for block in content_val:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        parts.append(block.get("text", ""))
-                    elif isinstance(block, str):
-                        parts.append(block)
-                content_str = "\n".join(parts)
-            else:
-                content_str = str(content_val) if content_val else ""
-
-            if role == "system":
-                # 累积 system 消息（可能有多条）
-                if system_text:
-                    system_text += "\n\n" + content_str
-                else:
-                    system_text = content_str
-            elif role == "tool":
-                # T05+: OpenAI tool 结果消息 → Anthropic user 消息含 tool_result 块
-                # OpenAI: {"role": "tool", "content": "...", "tool_call_id": "call_xxx"}
-                # Anthropic: {"role": "user", "content": [{"type": "tool_result",
-                #           "tool_use_id": "call_xxx", "content": "..."}]}
-                tool_call_id = m.get("tool_call_id", "")
-                blocks = [{"type": "tool_result", "tool_use_id": tool_call_id, "content": content_str}]
-                user_messages.append({"role": "user", "content": blocks})
-            elif role == "assistant" and m.get("tool_calls"):
-                # T05+: OpenAI assistant tool_calls → Anthropic content 含 tool_use 块
-                # OpenAI: {"role": "assistant", "content": "text", "tool_calls": [
-                #   {"id": "...", "type": "function", "function": {"name": "...", "arguments": "<json>"}}]}
-                # Anthropic: {"role": "assistant", "content": [
-                #   {"type": "text", "text": "..."},
-                #   {"type": "tool_use", "id": "...", "name": "...", "input": {...}}]}
-                blocks: list[dict] = []
-                if content_str:
-                    blocks.append({"type": "text", "text": content_str})
-                for tc in m["tool_calls"]:
-                    fn = tc.get("function") or {}
-                    args_raw = fn.get("arguments", "{}")
-                    try:
-                        args_obj = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
-                    except (TypeError, ValueError):
-                        args_obj = {}
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": tc.get("id", ""),
-                        "name": fn.get("name", ""),
-                        "input": args_obj,
-                    })
-                user_messages.append({"role": "assistant", "content": blocks})
-            else:
-                user_messages.append({"role": role, "content": content_str})
-
-        # Anthropic 要求 messages 至少含一条 user 消息
-        if not user_messages:
-            user_messages = [{"role": "user", "content": "(empty)"}]
+        # system 提取 + tool_calls/tool_result 格式转换，与非流式共用同一 helper
+        system_text, user_messages = _build_anthropic_messages(messages)
 
         # 构造 endpoint：若 base_url 已含 /v1 则追加 /messages，否则追加 /v1/messages
         base = key.base_url.rstrip("/")
@@ -1887,11 +2177,21 @@ class LLMPool:
         body: dict = {
             "model": req_model,
             "messages": user_messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            # Anthropic 把 max_tokens 列为必填（省略直接 400），未指定时回退常量
+            "max_tokens": (max_tokens if max_tokens is not None
+                           else ANTHROPIC_REQUIRED_MAX_TOKENS),
         }
+        if temperature is not None:
+            body["temperature"] = temperature
         if system_text:
             body["system"] = system_text
+        # A 档采样参数协议适配（2026-09-08 白名单扩展，与 _stream_anthropic_sse 同口径）：
+        # Anthropic 仅支持 top_p / stop_sequences；penalties/seed/parallel_tool_calls 不下发
+        if top_p is not None:
+            body["top_p"] = top_p
+        if stop is not None:
+            # OpenAI stop（str | list[str]）→ Anthropic stop_sequences（list[str]）
+            body["stop_sequences"] = [stop] if isinstance(stop, str) else list(stop)
         # T05+: tools/tool_choice 透传（OpenAI 格式 → Anthropic 格式）
         if tools:
             anth_tools = _openai_tools_to_anthropic(tools)
@@ -1902,12 +2202,17 @@ class LLMPool:
                     body["tool_choice"] = anth_choice
 
         # T07：同步 httpx.Client（连接池复用），call() 调用方已在 asyncio.to_thread 中
+        _oc_headers = build_opencode_headers(
+            key.base_url,
+            session_id or derive_session_id(messages, namespace=project),
+        )
         resp = get_sync_client().post(
             url,
             headers={
                 "x-api-key": key.key,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
+                **_oc_headers,
             },
             json=body,
             timeout=timeout,
@@ -1963,22 +2268,39 @@ class LLMPool:
         # Anthropic 响应：content 是数组 [{"type": "text", "text": "..."}]
         content_blocks = data.get("content") or []
         parts: list[str] = []
+        think_parts: list[str] = []
         for block in content_blocks:
-            if isinstance(block, dict) and block.get("type") == "text":
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
                 t = block.get("text", "")
                 if t:
                     parts.append(t)
+            elif block.get("type") == "thinking":
+                # extended thinking 思考块：此前被静默丢弃（客户端非流式拿不到思考内容、
+                # completion_chars 少记），现与流式 thinking_delta 采集口径对齐
+                th = block.get("thinking", "")
+                if th:
+                    think_parts.append(th)
         content = "".join(parts)
+        thinking = "".join(think_parts)
         # T05+: 解析 tool_use 块 → OpenAI 兼容 tool_calls
         tool_calls = _anthropic_tool_use_to_openai_tool_calls(content_blocks)
         # usage 转换：{input_tokens, output_tokens} → OpenAI 风格 {prompt_tokens, completion_tokens, total_tokens}
         raw_usage = data.get("usage", {}) or {}
         input_tokens = int(raw_usage.get("input_tokens", 0))
         output_tokens = int(raw_usage.get("output_tokens", 0))
+        # cache_read_input_tokens → 顶层 cached_tokens（collect_usage 兼容此形态透传）
+        cache_raw = raw_usage.get("cache_read_input_tokens")
+        # cache_creation_input_tokens → cache_creation_tokens（缓存写入，计费 1.25x/2x，
+        # 此前被丢弃导致成本核算偏低）
+        ccreate_raw = raw_usage.get("cache_creation_input_tokens")
         usage = {
             "prompt_tokens": input_tokens,
             "completion_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
+            "cached_tokens": int(cache_raw) if cache_raw is not None else None,
+            "cache_creation_tokens": int(ccreate_raw) if ccreate_raw is not None else None,
         }
         tokens = usage["total_tokens"]
 
@@ -2015,7 +2337,10 @@ class LLMPool:
             "status": "ok",
             "ok": True,
             "content": content or "",
+            "thinking": thinking,
             "usage": usage,
+            # provider 原始 usage 原样透出（网关 usage_json 落库兜底，与 _call_openai 同口径）
+            "usage_raw": raw_usage,
             "model": actual_model,
             "key_name": key.name,
             "finish_reason": stop_reason,
@@ -2023,12 +2348,14 @@ class LLMPool:
         }
 
     def call_simple(self, prompt: str, system_prompt: str | None = None,
-                    temperature: float = 0.3, max_tokens: int = 4096,
+                    temperature: float | None = None, max_tokens: int | None = None,
                     timeout: int = 120, retries: int | None = None,
                     project: str = "default", model: str | None = None,
                     use_case: str | None = None, tier=None,
                     session_id: str | None = None) -> str | None:
         """简化调用：传入 prompt 文本，返回结果文本（失败返回 None）
+
+        temperature / max_tokens 同 call()：None = 不下发，用 provider 默认。
 
         tier 参数同 call()，支持 int(1-5)/str/tuple(min,max)。
         session_id 参数同 call() v12，传入后会启用 LKGP 会话粘性。

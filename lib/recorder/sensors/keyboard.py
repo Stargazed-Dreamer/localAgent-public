@@ -26,11 +26,14 @@
 - uia_snapshot_fn: 返回 {value, is_password} 或 None（默认用 lib.uia.take_focused_value_snapshot）
 """
 
+import logging
 import threading
 from collections.abc import Callable
 from typing import Any
 
 from lib.uia import take_focused_value_snapshot
+
+logger = logging.getLogger(__name__)
 
 # 默认时间窗口（秒）
 DEFAULT_TIME_WINDOW = 0.3  # 300ms
@@ -133,8 +136,9 @@ class KeyboardSensor:
         self._started = True
         # lazy 创建 listener（测试可不传 factory，直接调 _on_press）
         if self._listener_factory is not None:
-            self._listener = self._listener_factory()
-            self._listener.start()
+            listener = self._listener_factory()
+            self._listener = listener
+            listener.start()
 
     def stop(self) -> None:
         """停止 listener + cancel timer + flush 当前块。幂等。"""
@@ -261,6 +265,18 @@ class KeyboardSensor:
 
     # ========== 事件发射 ==========
 
+    def _safe_emit(self, kind: str, payload: dict[str, Any]) -> None:
+        """发事件到 controller，IO 异常兜底不崩调用线程。
+
+        pynput 回调线程 / Timer 线程里 controller.emit_event 抛 IO 异常
+        （磁盘满/权限）会沿回调冒泡，导致 pynput listener 静默停止，
+        后续按键全部丢失；此处与 clipboard/screen sensor 同款保护。
+        """
+        try:
+            self.controller.emit_event(kind, payload)
+        except Exception:
+            logger.exception("keyboard 事件 %s 写入失败", kind)
+
     def _emit_keyboard_input(
         self,
         physical_keys: list[str],
@@ -294,7 +310,7 @@ class KeyboardSensor:
                 "physical_keys": [],  # 不记录密码内容
                 "detection_method": "password_masked",
             }
-            self.controller.emit_event("password_masked", payload)
+            self._safe_emit("password_masked", payload)
             return
 
         # 文字检测（Strategy 2: UIA ValuePattern 差值）
@@ -329,7 +345,7 @@ class KeyboardSensor:
             "keys": keys,
             "combo": combo,  # "copy" / "paste" / "cut"
         }
-        self.controller.emit_event("hotkey", payload)
+        self._safe_emit("hotkey", payload)
 
     def _emit_ime_switch(self, keys: list[str]) -> None:
         """发 ime_switch 事件（Shift+Space / Ctrl+Space）。"""
@@ -337,4 +353,4 @@ class KeyboardSensor:
             "keys": keys,
             "physical_keys": keys,
         }
-        self.controller.emit_event("ime_switch", payload)
+        self._safe_emit("ime_switch", payload)

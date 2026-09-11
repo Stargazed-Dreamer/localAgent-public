@@ -1,7 +1,7 @@
 # LocalAgent UI 设计系统（docs/ui/）
 
 > **一句话**：本项目所有 PySide6 GUI 的唯一视觉/交互标准。写任何界面代码之前，先读本目录。
-> 配套代码实现在 `lib/ui/`（tokens / theme / icons），测试在 `tests/test_ui_theme.py`。
+> 配套代码实现在 `lib/ui/`（tokens / theme / icons），测试在 `tests/client_ui/test_ui_theme.py`。
 
 ## 为什么存在
 

@@ -133,7 +133,7 @@ task_type: adhoc.deep_research
 
 > **仅当研究对象是行业/公司/商业产品时执行此步**，并融入第 3、4 步的叙事中。这一步来自行业研究实战范式，是本 skill 相对纯横纵分析法的核心增量。
 
-详见 [references/industry_research_toolkit.md](file:///f:/<project_root>/.agents/skills/deep_research/references/industry_research_toolkit.md)。核心动作：
+详见 [references/industry_research_toolkit.md](file:///<project_root>/.agents/skills/deep_research/references/industry_research_toolkit.md)。核心动作：
 
 1. **商业模式拆解**：这个行业/公司/产品靠什么赚钱？赚的是辛苦钱、技术钱、还是牌照钱？合理利润率是什么水平？什么因素会影响它赚钱？（把"商业模式"这个不接地气的词翻译成"靠什么赚钱"）
 2. **收入结构拆解**：把总收入拆成 2-N 个业务板块（如机场 = 航空性收入 + 非航空性收入），算清各板块占比和毛利率差异，找出真正赚钱的业务
@@ -213,9 +213,9 @@ task_type: adhoc.deep_research
 
 **复用 `office_pdf` skill 的方法论**，不要本 skill 自带 PDF 脚本（避免重复造轮子）：
 
-参考 [.agents/skills/office_pdf/references/basic.md](file:///f:/<project_root>/.agents/skills/office_pdf/references/basic.md) 用 reportlab 现场实现，脚本写到 `temp/`，输入 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.md`，输出 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.pdf`。
+参考 [.agents/skills/office_pdf/references/basic.md](file:///<project_root>/.agents/skills/office_pdf/references/basic.md) 用 reportlab 现场实现，脚本写到 `temp/`，输入 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.md`，输出 `workspace/deep_research/{研究对象}_研究报告_{YYYYMMDD}.pdf`。
 
-> 若 `office_pdf` skill 的默认 PDF 样式不满足研究报告需求（如需要封面页、特定配色），参考 [references/pdf_report_style.md](file:///f:/<project_root>/.agents/skills/deep_research/references/pdf_report_style.md) 的封面页模板，用 `exec_python` 调 reportlab 现场实现，脚本写到 `temp/`。
+> 若 `office_pdf` skill 的默认 PDF 样式不满足研究报告需求（如需要封面页、特定配色），参考 [references/pdf_report_style.md](file:///<project_root>/.agents/skills/deep_research/references/pdf_report_style.md) 的封面页模板，用 `exec_python` 调 reportlab 现场实现，脚本写到 `temp/`。
 
 ## 写作风格
 

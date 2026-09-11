@@ -41,6 +41,12 @@ from client.widgets.key_form import KeyForm, _BatchEditModelsDialog, _scope_to_t
 from lib.ui import icon_button, tokens
 from lib.ui.theme import set_text_role
 
+# 添加/测试/健康检查类调用超时（秒）。
+# 后端 /apikey/keys 添加、/apikey/keys/{id}/test、/apikey/keys/health-check-all
+# 都会同步跑真实连通性测试（服务端 httpx timeout=15），必须给客户端比 15s 更长的
+# 读超时，否则客户端先超时→面板误报"后端返回错误"而 key 实际已写入成功。
+_KEY_OP_TIMEOUT_S = 20.0
+
 # 状态颜色
 _STATUS_COLORS = {
     "ok": tokens.SUCCESS_TEXT,
@@ -202,7 +208,7 @@ class KeysPanel(PanelBase):
         top_bar.addWidget(self._health_check_btn)
 
         self._unmasked_btn = QPushButton(
-            "隐藏key细节" if self._unmasked else "展示key"
+            "隐藏 key 细节" if self._unmasked else "显示 key 细节"
         )
         self._unmasked_btn.setCheckable(True)
         self._unmasked_btn.setChecked(self._unmasked)
@@ -340,11 +346,12 @@ class KeysPanel(PanelBase):
         self._reload_thread.start()
 
     def _on_reload_done(self) -> None:
-        if self._reload_thread.keys is None:
+        thread = self._reload_thread
+        if thread is None or thread.keys is None:
             self._summary_label.setText("加载失败（后端不可达）")
             return
-        self._keys = self._reload_thread.keys.get("keys", [])
-        self._usage_data = self._reload_thread.usage or {}
+        self._keys = thread.keys.get("keys", [])
+        self._usage_data = thread.usage or {}
         self._fill_tree()
         self._apply_filters()
 
@@ -556,6 +563,8 @@ class KeysPanel(PanelBase):
         # 只同步顶层 Key 开关；模型开关保留各自状态
         for i in range(self._tree.topLevelItemCount()):
             top = self._tree.topLevelItem(i)
+            if top is None:
+                continue
             data = top.data(0, Qt.ItemDataRole.UserRole) or {}
             if data.get("id") == key_id:
                 # 顶层 key 行的 checkbox
@@ -624,6 +633,8 @@ class KeysPanel(PanelBase):
 
         for i in range(self._tree.topLevelItemCount()):
             top = self._tree.topLevelItem(i)
+            if top is None:
+                continue
             k = self._keys[i] if i < len(self._keys) else {}
             # scope 筛选
             hidden = False
@@ -693,7 +704,7 @@ class KeysPanel(PanelBase):
         result = KeyForm.open_dialog(self, edit_mode="full")
         if result is None:
             return
-        worker = self._make_worker("post", "/apikey/keys", json=result)
+        worker = self._make_worker("post", "/apikey/keys", json=result, timeout=_KEY_OP_TIMEOUT_S)
         worker.done.connect(self._on_add_done)
         worker.failed.connect(lambda _err: self._on_add_done(None))
         worker.start()
@@ -778,7 +789,7 @@ class KeysPanel(PanelBase):
         result = KeyForm.open_dialog(self, existing=existing, edit_mode="full")
         if result is None:
             return
-        worker = self._make_worker("post", "/apikey/keys", json=result)
+        worker = self._make_worker("post", "/apikey/keys", json=result, timeout=_KEY_OP_TIMEOUT_S)
         worker.done.connect(self._on_copy_done)
         worker.failed.connect(lambda _err: self._on_copy_done(None))
         worker.start()
@@ -826,7 +837,9 @@ class KeysPanel(PanelBase):
                 self.result = None
 
             def run(self):
-                self.result = self._http.post(f"/apikey/keys/{self._kid}/test")
+                self.result = self._http.post(
+                    f"/apikey/keys/{self._kid}/test", timeout=_KEY_OP_TIMEOUT_S
+                )
 
         self._test_thread = TestThread(self._http, key_id)
         self._test_thread.finished.connect(
@@ -836,6 +849,8 @@ class KeysPanel(PanelBase):
         # 更新状态为"测试中"
         for i in range(self._tree.topLevelItemCount()):
             top = self._tree.topLevelItem(i)
+            if top is None:
+                continue
             data = top.data(0, Qt.ItemDataRole.UserRole) or {}
             if data.get("id") == key_id:
                 top.setText(COL_STATUS, "测试中...")
@@ -864,7 +879,7 @@ class KeysPanel(PanelBase):
         self._reload_keys_async()
 
     def _on_health_check_all_clicked(self) -> None:
-        worker = self._make_worker("post", "/apikey/keys/health-check-all")
+        worker = self._make_worker("post", "/apikey/keys/health-check-all", timeout=_KEY_OP_TIMEOUT_S)
         worker.done.connect(self._on_health_check_started)
         worker.failed.connect(lambda _err: self._on_health_check_started(None))
         worker.start()
@@ -894,5 +909,5 @@ class KeysPanel(PanelBase):
     def _on_toggle_unmasked(self) -> None:
         self._unmasked = self._unmasked_btn.isChecked()
         # 不持久化展示状态，每次启动默认隐藏（安全考虑）
-        self._unmasked_btn.setText("隐藏key细节" if self._unmasked else "展示key")
+        self._unmasked_btn.setText("隐藏 key 细节" if self._unmasked else "显示 key 细节")
         self._reload_keys_async()

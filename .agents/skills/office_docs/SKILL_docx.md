@@ -33,10 +33,10 @@ task_type: adhoc.office_docx
    - 文件名规范：`{内容描述}_{YYYYMMDD}.docx`
 
 2. **读对应 references**
-   - 基础元素 → [references/docx_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_basic.md)
-   - 学术论文 → [references/docx_academic_paper.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_academic_paper.md)
-   - Word 表单/SDT → [references/docx_word_form.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_word_form.md)
-   - Report 配方 → [references/docx_report_recipes.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_report_recipes.md)
+   - 基础元素 → [references/docx_basic.md](file:///<project_root>/.agents/skills/office_docs/references/docx_basic.md)
+   - 学术论文 → [references/docx_academic_paper.md](file:///<project_root>/.agents/skills/office_docs/references/docx_academic_paper.md)
+   - Word 表单/SDT → [references/docx_word_form.md](file:///<project_root>/.agents/skills/office_docs/references/docx_word_form.md)
+   - Report 配方 → [references/docx_report_recipes.md](file:///<project_root>/.agents/skills/office_docs/references/docx_report_recipes.md)
    - **不要一次读所有 references**——按用户场景读对应的一个
 
 3. **增量构建（结构 → 内容 → 格式）**
@@ -137,10 +137,10 @@ task_type: adhoc.office_docx
 
 每种场景的详细工作流、设计规范、反模式见 `references/`：
 
-- [references/docx_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_basic.md) - 基础元素参考（headings/paragraphs/lists/tables/<data_drive>:\Pictures/headers-footers/page-breaks/fields）
-- [references/docx_academic_paper.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_academic_paper.md) - 学术论文场景（APA/Chicago/IEEE/MLA Citation、OMML 公式、SEQ+PAGEREF 交叉引用）
-- [references/docx_word_form.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_word_form.md) - Word 表单（SDT 7 types、MERGEFIELD、documentProtection 4 modes）
-- [references/docx_report_recipes.md](file:///f:/<project_root>/.agents/skills/office_docs/references/docx_report_recipes.md) - Report 配方（封面/Page X of Y/表头/财务表/SWOT/TOC）
+- [references/docx_basic.md](file:///<project_root>/.agents/skills/office_docs/references/docx_basic.md) - 基础元素参考（headings/paragraphs/lists/tables/<data_drive>:\Pictures/headers-footers/page-breaks/fields）
+- [references/docx_academic_paper.md](file:///<project_root>/.agents/skills/office_docs/references/docx_academic_paper.md) - 学术论文场景（APA/Chicago/IEEE/MLA Citation、OMML 公式、SEQ+PAGEREF 交叉引用）
+- [references/docx_word_form.md](file:///<project_root>/.agents/skills/office_docs/references/docx_word_form.md) - Word 表单（SDT 7 types、MERGEFIELD、documentProtection 4 modes）
+- [references/docx_report_recipes.md](file:///<project_root>/.agents/skills/office_docs/references/docx_report_recipes.md) - Report 配方（封面/Page X of Y/表头/财务表/SWOT/TOC）
 
 ## 与现有 skill 的集成
 

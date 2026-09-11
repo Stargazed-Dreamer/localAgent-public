@@ -235,7 +235,3 @@ async def agent_chat(req: ChatRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM调用失败: {e}") from None
-
-
-# community/summarize 端点已移除：社群总结改由 workspace/community_review/community_llm.py
-# 直接调 /llm/pool/call 完成，不再注册到主后端

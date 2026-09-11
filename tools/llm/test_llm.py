@@ -1,5 +1,7 @@
 """快速测试 LLM 池是否可用"""
-import requests, json
+
+import requests
+
 payload = {
     "messages": [{"role": "user", "content": "回复OK"}],
     "temperature": 0.1, "max_tokens": 10, "timeout": 30,

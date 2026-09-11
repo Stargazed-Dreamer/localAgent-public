@@ -37,11 +37,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 # 项目根（tools/deploy/diagnose.py → 3 级 parent 到项目根）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # 路径常量从 lib/secret 获取（单一真源，禁止硬编码 "data/llm/keys.json"）
-from lib.secret import get_llm_keys_path, get_config_path
+from lib.secret import get_config_path, get_llm_keys_path
+
 KEYS_FILE = get_llm_keys_path()
 CONFIG_FILE = get_config_path()
 
@@ -109,7 +109,7 @@ def load_keys_json():
     if not KEYS_FILE.exists():
         return None, f"文件不存在: {KEYS_FILE}"
     try:
-        with open(KEYS_FILE, "r", encoding="utf-8") as f:
+        with open(KEYS_FILE, encoding="utf-8") as f:
             return json.load(f), None
     except json.JSONDecodeError as e:
         return None, f"JSON 解析失败 (line {e.lineno} col {e.colno}): {e.msg}"
@@ -177,9 +177,9 @@ def diag_backend(health, base_url):
 
     if "_fetch_error" in health:
         out(f"  {ERR} 后端不可达: {health['_fetch_error']}")
-        out(f"     修复: 启动后端 — .venv\\Scripts\\python.exe -m server.main")
-        out(f"           或运行 start.bat（自动 UAC 提权）")
-        out(f"     检查: 端口 8766 是否被占用 — netstat -ano | findstr :8766")
+        out("     修复: 启动后端 — .venv\\Scripts\\python.exe -m server.main")
+        out("           或运行 start.bat（自动 UAC 提权）")
+        out("     检查: 端口 8766 是否被占用 — netstat -ano | findstr :8766")
         return ERR
 
     version = health.get("version", "?")
@@ -213,7 +213,7 @@ def diag_llm_pool(health):
 
     # 未初始化 - 深入诊断
     out(f"  {ERR} LLM Pool 未初始化 (initialized=false)")
-    out(f"     正在解析 keys.json 定位具体原因...")
+    out("     正在解析 keys.json 定位具体原因...")
     out()
     status, lines = diagnose_keys_json()
     for line in lines:
@@ -231,7 +231,7 @@ def diag_memory(health):
     mem = health.get("memory") or {}
     if not mem.get("available", False):
         out(f"  {ERR} 记忆系统不可用")
-        out(f"     修复: 检查后端日志，可能是数据库迁移失败或权限问题")
+        out("     修复: 检查后端日志，可能是数据库迁移失败或权限问题")
         return ERR
 
     messages = mem.get("messages", 0)
@@ -247,9 +247,9 @@ def diag_memory(health):
         return OK
 
     out(f"  {WARN} 嵌入模型未就绪，语义检索不可用，BM25 兜底可用")
-    out(f"     修复: 检查网络连通性；或在 config.toml [memory] 段配置 hf_mirror = \"https://hf-mirror.com\"")
-    out(f"           (国内用户推荐 hf-mirror.com；海外用户可改回 https://huggingface.co 或留空)")
-    out(f"           模型: BAAI/bge-small-zh-v1.5 (~100MB)")
+    out("     修复: 检查网络连通性；或在 config.toml [memory] 段配置 hf_mirror = \"https://hf-mirror.com\"")
+    out("           (国内用户推荐 hf-mirror.com；海外用户可改回 https://huggingface.co 或留空)")
+    out("           模型: BAAI/bge-small-zh-v1.5 (~100MB)")
     return WARN
 
 
@@ -272,14 +272,16 @@ def diag_vision(health):
         out(f"  {OK} 远程 VL 可用 (provider={vl_provider}, model={vl_model})")
     else:
         out(f"  {WARN} 远程 VL 不可用 (vl_available=false)")
-        out(f"     修复: 检查 config.toml [vision] vl_enabled 配置；确认网络可访问 ModelScope")
-        out(f"           或 API key 是否配置正确（见 data/llm/keys.json）")
+        out("     修复: 检查 config.toml [vision] vl_enabled 配置；确认网络可访问 ModelScope")
+        out("           或 API key 是否配置正确（见 data/llm/keys.json）")
         has_issue = True
 
     if not has_issue:
         return OK
     # 全部不可用算 ❌，部分不可用算 ⚠️
-    if not omni_enabled and not vl_available:
+    # （2026-08-25 修复：OmniParser 已于 2026-07-31 移除，omni_enabled 判断一并删除，
+    #   Vision 可用性现在完全取决于远程 VL）
+    if not vl_available:
         out(f"  {ERR} Vision 模块全部不可用 — UI 元素解析能力完全丧失")
         return ERR
     return WARN
@@ -299,7 +301,7 @@ def diag_screen(health):
 
     if emergency:
         out(f"  {ERR} 紧急停止已触发 (emergency_stopped=true)")
-        out(f"     修复: 调用 /screen/emergency-release 或重启后端")
+        out("     修复: 调用 /screen/emergency-release 或重启后端")
         return ERR
 
     if admin:
@@ -308,8 +310,8 @@ def diag_screen(health):
         return OK
 
     out(f"  {WARN} 非管理员权限 (admin_privileges=false)")
-    out(f"     影响: 键鼠操控会被 Windows UIPI 静默阻止 (SetCursorPos/SetForegroundWindow 失败)")
-    out(f"     修复: 用 start.bat 启动（自动 UAC 提权），或右键以管理员身份运行 PowerShell")
+    out("     影响: 键鼠操控会被 Windows UIPI 静默阻止 (SetCursorPos/SetForegroundWindow 失败)")
+    out("     修复: 用 start.bat 启动（自动 UAC 提权），或右键以管理员身份运行 PowerShell")
     return WARN
 
 
@@ -349,7 +351,7 @@ def diag_loops(health):
         reason = t.get("paused_reason", "(无原因)")
         out(f"  {WARN} 暂停: {tid} — 原因: {reason}")
         if "watch_dir" in reason.lower() or "目录" in reason or "not exist" in reason.lower():
-            out(f"        修复: config.toml 中该 loop 的 watch_dir 路径不存在，请改为有效路径或禁用该 loop")
+            out("        修复: config.toml 中该 loop 的 watch_dir 路径不存在，请改为有效路径或禁用该 loop")
         has_issue = True
 
     # 显示失败次数超阈值的任务
@@ -432,7 +434,7 @@ def main():
         diag_backend(health, base_url)
         out()
         out("=" * 60)
-        out(f"  汇总: 正常 0 项 | 异常 1 项（后端不可达）")
+        out("  汇总: 正常 0 项 | 异常 1 项（后端不可达）")
         out("=" * 60)
         out()
         out("  后端未启动或不可达，无法继续诊断。请先启动后端:")

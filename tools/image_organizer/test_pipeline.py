@@ -1,11 +1,15 @@
 """集成测试：Florence-2(cap+ocr) + LLM池分类，验证全流程。
 用 cuda10 conda 环境运行：
-  E:\<data_drive>:\<miniconda_root>\envs\cuda10\python.exe temp\test_pipeline.py
+  <data_drive>:\<miniconda_root>\\envs\\cuda10\\python.exe temp\test_pipeline.py
 """
-import time, json, requests, torch
-from transformers import AutoModelForCausalLM, AutoProcessor
-from PIL import Image
+import json
+import time
 from pathlib import Path
+
+import requests
+import torch
+from PIL import Image
+from transformers import AutoModelForCausalLM, AutoProcessor
 
 API = "http://127.0.0.1:8766"
 PROJECT = "图片整理测试"

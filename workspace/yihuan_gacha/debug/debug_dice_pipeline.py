@@ -351,7 +351,7 @@ def compose_overview(img_path: Path, img_array: np.ndarray, ocr_json: dict, reco
             scale = min((cell_w - 4) / pil.width, (cell_h - 4) / pil.height)
             new_w = max(1, int(pil.width * scale))
             new_h = max(1, int(pil.height * scale))
-            pil_s = pil.resize((new_w, new_h), Image.LANCZOS)
+            pil_s = pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
             canvas.paste(pil_s, (x + (cell_w - new_w) // 2, y + (cell_h - new_h) // 2))
 
     return canvas

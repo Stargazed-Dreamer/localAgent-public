@@ -76,7 +76,7 @@ GitHub 仓库备份仅限私有。决策 A 于 2026-07-17 确认：friend 产物
 对以下每个子项目，profile 保留 `.py` 脚本，但排除个人数据文件（`.json` / `.md` 报告 / `.pdf` / `.obsidian/`）。排除使用 glob 规则，即使个人数据文件名包含时间戳，也能在多次发布间保持稳定。
 
 - `workspace/accounting/` — 保留 `*.py`、`*.html`、`*.bat`；丢弃 `name_mapping.json`、`review_config.json`（`bill_review.txt` / `bill_review_data.json` 已挪到 `private_vault/accounting/`，整个 `private_vault/` 被 .gitignore 排除，release 时天然不进包）
-- `workspace/web_archive/` — 保留 `extract_web.py`、`analyze_comments.py`、`analyze_sample.py`（3 个通用网页提取脚本）；丢弃 `.obsidian/`、`*.json`、`report.md`（含已抓取的小黑盒/微信帖子标题、URL、时间戳与个人书签 URL）
+- `workspace/web_archive/` — 保留 `extract_web.py`、`extract_feishu.py`、`analyze_comments.py`、`analyze_sample.py`（4 个通用网页提取脚本）；丢弃 `.obsidian/`、`*.json`、`report.md`（含已抓取的小黑盒/微信/飞书帖子标题、URL、时间戳与个人书签 URL）。另有两个回归 harness `feishu_harvest_baseline.py` / `feishu_render_offline.py` 登记在组件 `manifest.toml` 的 `[exports.source]`，但**不进 include_paths**：它们靠与本目录已存档 MD 逐字节比成立，而那些 MD 属个人数据已被排除，朋友拿到也无对象可比
 - `workspace/niuke_review/` — 保留 `nowcoder_review.py`、`nowcoder_embedded.py`（2 个牛客网面经抓取/审核脚本）；丢弃 `*.json`（4 个时间戳 + merged/summarized/progress）、`saved_pdfs/`（5 个含公司名的个人求职 PDF）
 
 ### Dotfile 决策
@@ -91,9 +91,9 @@ GitHub 仓库备份仅限私有。决策 A 于 2026-07-17 确认：friend 产物
 
 | 模块 | 启用时 include | 启用时 exclude（个人数据） | 需要 content_replacements | 当前状态 |
 |------|---------------|---------------------------|--------------------------|---------|
-| `web_archive` | `extract_web.py` / `analyze_comments.py` / `analyze_sample.py` | `.obsidian/`、`*.json`、`report.md` | 无（脚本中 `f:\<project_root>\chrome_debug` 由现有 8 变体规则覆盖；替换后含 `<placeholder>` 被 skip_patterns 跳过） | **开启** (2026-07-21) |
+| `web_archive` | `extract_web.py` / `extract_feishu.py` / `analyze_comments.py` / `analyze_sample.py` | `.obsidian/`、`*.json`、`report.md` | 无（脚本中 `<project_root>\chrome_debug` 由现有 8 变体规则覆盖；替换后含 `<placeholder>` 被 skip_patterns 跳过。`extract_feishu.py` 已核对：无硬编码绝对路径、无个人 doc token，`/space/api/box/stream/download` 为通用 API 路径） | **开启** (2026-07-21) |
 | `niuke_review` | `nowcoder_review.py` / `nowcoder_embedded.py` | `*.json`（4 个时间戳 + merged/summarized/progress）、`saved_pdfs/`（5 个含公司名 PDF） | 无（脚本完全使用 `Path(__file__).parent.parent.parent / "workspace" / "niuke_review"` 相对路径） | **开启** (2026-07-21) |
-| `dev_toolkit` | 整个目录 | `dev_toolkit_v2.zip`（历史打包产物） | 无（`.md` 中 `f:\<project_root>\` 引用由现有规则覆盖；`skill_creator.md` 中 "Alice" 示例有专门规则） | **开启** (2026-07-21) |
+| `dev_toolkit` | 整个目录 | `dev_toolkit_v2.zip`（历史打包产物） | 无（`.md` 中 `<project_root>\` 引用由现有规则覆盖；`skill_creator.md` 中 "Alice" 示例有专门规则） | **开启** (2026-07-21) |
 | `wuwa_gacha` | `*.py`（脚本） | `raw/`、`*.json`（个人抽卡记录） | 无 | **关闭** (2026-07-21 朋友说不要) |
 | `arknights_gacha` | `*.py`、`bwiki_pools*.json`、`prts_limited_pools.json`、`pool_registry.json`、`小黑盒界面*.md/jpg` | `raw/`、`gacha_records.json`、`raw_full.json`、`summary.json` | 无 | **关闭** (2026-07-21 朋友说不要) |
 | `endfield_gacha` | `endfield_gacha.py` | `char_records.json`、`raw/`、`summary.json`、`weapon_records.json` | 无 | **关闭** (2026-07-21 朋友说不要) |
@@ -161,6 +161,40 @@ uv run python -m tools.release.cli scan --profile friend-full
 
 > 注：v2 compiler engine 目前未自动裁剪 pyproject.toml 冗余依赖（旧 `export_release.py --trim-pyproject` 已随 T18 删除）。若需裁剪，按"依赖映射表与裁剪"章节手动应用 `generate_dependency_map.py` 的报告后重新计算 sha256 入 MANIFEST.json。
 
+## 一键编排与持久副本发布（2026-09-12 起）
+
+> 设计：`temp/sdd/release-orchestrator/design.md`。目标是把每轮发布的人工动作收敛为"跑一条命令、看一份增量报告、确认一次"，并让 public 仓库保留版本演进历史。
+
+### release 子命令（两阶段编排）
+
+```bash
+# 第一阶段：prepare + 增量分诊报告（不写快照、不填 approval）
+#   NEW 命中非空 → exit 2，人工 Read 核对后更新 profile 再重跑；
+#   干净 → exit 0 并打印第二阶段命令
+uv run python -m tools.release.cli release --profile public-full
+
+# 第二阶段：快照 scan_digest 锚定校验 → 自动填 [approval] → build →（可选）publish → 写快照
+uv run python -m tools.release.cli release --plan <plan_digest> --approve [--publish] [--tag v0.46.0] [--dry-run]
+```
+
+增量分诊机制：命中按 `(path, rule) → count` 与上一轮**批准快照**（`release/triage/<profile_id>.json`，gitignore）diff——count 未增自动放行（carried），新 key 或 count 增列为 NEW 必须人工看，消失的标 resolved。快照只存 path/rule/count + scan_digest，**绝不存行内容与行号**。第二阶段用 `snapshot.scan_digest == plan.scan_digest` 锚定"批准的确实是这个 plan 的源码"，不匹配即拒绝。digest-bound 审批语义不变（`_verify_profile_digest` 已废弃，自动填 approval 不触发 profile 漂移）。
+
+### publish 持久副本（append-only 历史）
+
+`publish` 不再"临时目录 git init + force push"，改为本地持久 clone（`release/public_repo/`，gitignore）：
+
+1. 首次 `git clone` 远端——**远端已有 commit 即历史基线**（当前 public 仓库的唯一初始 commit）。
+2. 每次发布：清空工作树（保留 .git，校验 origin 指向 `public_repo_url` 防误删）→ 同步 staging（全量，含删除）→ 自动生成/更新 `RELEASE_HISTORY.md` → `git add -A`（git 自动算出真实版本间 diff）→ 一个 commit（`Release <版本> (plan <digest12>)`）→ 可选 tag → push **不带 --force**。
+3. public 历史 = 脱敏快照序列 + tag + 真实 diff，append-only；远端领先时 push 被拒（有意性质，历史不可强推重写）。
+
+### RELEASE_HISTORY.md（发布历史叙事）
+
+每次 publish 自动更新，倒序章节：版本号、相对上次发布的私有仓库 commit 数与日期区间（从上一 commit 的 `release-plan.json.source_commit` 统计）、该版本 CHANGELOG 条目标题。**取材纪律**：CHANGELOG.md 本身在发布物 core_files 中、已过 scan，取材零增量风险；绝不逐条复制 private commit message（未经 scan）。commit 数 + 日期是纯元数据，无泄露风险。
+
+### 教训：core_files_exclude 路径漂移（2026-09-12 修复）
+
+8462d31「测试文件大整理」把 `tests/test_release_{v4,policy}.py`、`tests/test_gh_mirror_release.py` 移入 `tests/release_ci/`，但两个 audience 的 `core_files_exclude` 仍写旧路径——glob 失配导致 `test_release_v4.py`（故意构造敏感样本的文件）进入 file_entries，sensitive-content-scan 以 10 条 HIGH 正确拦截。两个 toml 的三条路径已改为 `tests/release_ci/` 前缀。**移动或重命名被 exclude 的文件时必须同步 audience toml**；`release` 编排第一阶段会在发布前把这类漂移拦下来。
+
 ## 依赖映射表与裁剪
 
 ### 问题背景
@@ -218,8 +252,6 @@ uv run python -m tools.release.cli scan --profile friend-full
   - `python-multipart`/`orjson` → 保留（FastAPI 间接依赖）
   - `setuptools` → 保留（Python 打包工具，可考虑移到 dev 依赖）
   - `akshare`/`pandas` → 保留（stock_advisor 依赖，stock_advisor 未 git-tracked）
-
-> 注：`ultralytics`/`supervision`/`torchvision`/`timm`/`accelerate` 5 个 OmniParser 专用依赖已于 2026-07-31 移除（OmniParser 模块整体移除），不再出现在依赖映射表中。
 
 裁剪效果：当前 friend-full profile 导出时移除 1 个包（pyperclip）。
 
@@ -336,7 +368,7 @@ CI 只跑 release 相关测试（`test_release_public.py` + `test_release_policy
 
 ```bash
 # 1. public.toml 加载
-uv run python -m pytest tests/test_release_public.py::test_public_audience_loads -v
+uv run python -m pytest tests/release_ci/test_release_public.py::test_public_audience_loads -v
 
 # 2. 4 个候选组件 license_class
 uv run python -c "
@@ -349,10 +381,10 @@ print('4 components license_class=apache-2.0')
 "
 
 # 3. 3 个 public 专属 gate
-uv run python -m pytest tests/test_release_public.py -k "license_clearance or no_agpl_import or sbom_generated" -v
+uv run python -m pytest tests/release_ci/test_release_public.py -k "license_clearance or no_agpl_import or sbom_generated" -v
 
 # 4. SBOM 生成
-uv run python -m pytest tests/test_release_public.py -k "spdx_sbom" -v
+uv run python -m pytest tests/release_ci/test_release_public.py -k "spdx_sbom" -v
 
 # 5. publish subcommand
 uv run python -m tools.release.cli publish --help
@@ -361,7 +393,7 @@ uv run python -m tools.release.cli publish --help
 uv run python -m tools.release.cli prepare --profile public-full --source HEAD --audience public
 
 # 7. 全套 public 测试 + v2 回归
-uv run python -m pytest tests/test_release_public.py tests/test_release_compiler.py tests/test_release_engine.py tests/test_release_policy.py -v --tb=short
+uv run python -m pytest tests/release_ci/test_release_public.py tests/release_ci/test_release_compiler.py tests/release_ci/test_release_engine.py tests/release_ci/test_release_policy.py -v --tb=short
 ```
 
 ### 工作流（端到端）

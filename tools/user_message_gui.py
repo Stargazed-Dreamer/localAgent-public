@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """用户消息注入 GUI - 向后端发送补充指令
 
 在 agent 工作期间，用户可以通过此界面发送补充指令。
@@ -9,16 +8,23 @@
 """
 
 import sys
-import requests
-from pathlib import Path
 
+import requests
+from PySide6.QtCore import QEvent, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QFont, QKeyEvent
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTextEdit, QListWidget, QListWidgetItem,
-    QFrame, QMessageBox
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QEvent
-from PySide6.QtGui import QFont, QColor, QKeyEvent
 
 BACKEND_URL = "http://127.0.0.1:8766"
 

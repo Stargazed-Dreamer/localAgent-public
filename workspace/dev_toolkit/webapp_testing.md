@@ -756,6 +756,6 @@ def test_everything(page):
 - **Playwright 官方文档**：`https://playwright.dev/python/`
 - **pytest-playwright**：`https://github.com/microsoft/playwright-python`
 - **anthropics/skills webapp-testing**：`https://github.com/anthropics/skills/blob/main/skills/webapp-testing/SKILL.md`
-- **LocalAgent html-dev-debug skill**：`f:\<project_root>\.agents\skills\html-dev-debug.md`
-- **LocalAgent Chrome 调试实例启动**：`f:\<project_root>\tools\browser\start_debug_chrome.py`
-- **环境兼容性约束（Playwright / Chrome）**：`f:\<project_root>\docs\environment-constraints.md`
+- **LocalAgent html-dev-debug skill**：`<project_root>\.agents\skills\html-dev-debug.md`
+- **LocalAgent Chrome 调试实例启动**：`<project_root>\tools\browser\start_debug_chrome.py`
+- **环境兼容性约束（Playwright / Chrome）**：`<project_root>\docs\environment-constraints.md`

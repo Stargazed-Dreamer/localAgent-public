@@ -478,6 +478,8 @@ class InboxPanel(PanelBase):
     def _clear_list(self) -> None:
         while self._list_layout.count() > 1:
             item = self._list_layout.takeAt(0)
+            if item is None:
+                continue
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -566,10 +568,13 @@ class InboxPanel(PanelBase):
     def _on_invert_select(self) -> None:
         for card in self._cards:
             card.set_checked(not card.is_checked())
-        self._select_all_cb.blockSignals(True)
+        cb = self._select_all_cb
+        if cb is None:
+            return
+        cb.blockSignals(True)
         all_checked = all(c.is_checked() for c in self._cards) if self._cards else False
-        self._select_all_cb.setChecked(all_checked)
-        self._select_all_cb.blockSignals(False)
+        cb.setChecked(all_checked)
+        cb.blockSignals(False)
         self._update_batch_buttons()
 
     def _get_selected_ids(self) -> list[str]:

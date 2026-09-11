@@ -9,6 +9,10 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from playwright.async_api import Dialog, Download, FileChooser, Page
 
 
 @dataclass
@@ -16,7 +20,7 @@ class TabSession:
     """单个标签页的会话句柄。"""
     session_id: str  # uuid4 hex，调用方持有
     tab_id: str  # CDP target id，跨调用稳定
-    page: object  # Playwright Page 对象（运行时类型，避免 import 时拉起 playwright）
+    page: Page  # Playwright Page 对象（TYPE_CHECKING 下标注，运行时仅字符串注解）
     url: str  # 创建时的 URL（运行时 page.url 可能变化）
     title: str = ""
     created_at: float = field(default_factory=time.time)
@@ -46,7 +50,8 @@ class TabSession:
     # 把事件存到队列，wait_for 时消费队列或等待新事件。
     # - dialog: page.on('dialog') 触发时存事件，Playwright 默认会自动 dismiss
     #   （我们不在监听器里 accept/dismiss，让 wait_for 决定如何处理；超时则自动 dismiss）
-    # - popup: page.context.on('page') 触发时存事件
+    # - popup: page.on('popup') 触发时存事件（2026-09-03 从 context 级改为 page 级，
+    #   只收本 session 页面 spawn 的 popup，不再串扰其他 session 的新建页）
     # - filechooser: page.on('filechooser') 触发时存事件
     # 队列上限（防恶意页面持续触发导致内存泄漏，参考 console_logs_max_len）：
     # 超出时丢弃最旧的并累计 dropped_count。
@@ -66,18 +71,21 @@ class TabSession:
     download_event: asyncio.Event = field(default_factory=asyncio.Event)
     # _on_popup 异步收集 task 的 strong reference（避免 asyncio.ensure_future 创建的 task 被 GC）
     _popup_tasks: set = field(default_factory=set)
-    # _on_dialog 回调中存放最新的 Dialog 对象引用（未被自动 dismiss 前 wait_for 可拿到）
-    # 2026-08-06 改造：_on_dialog 不再立即 dismiss，改为存引用 + 启动 5 分钟超时兜底 task。
-    # 在超时前 handle_dialog 可调 dlg.accept(prompt_text)/dlg.dismiss()；
-    # 超时后兜底 task 自动 dismiss 并清空 last_dialog_obj。
-    last_dialog_obj: object = field(default=None, repr=False)
+    # 2026-09-03 popup 归属修复：本 session 页面 spawn 的 popup Page 强引用集合。
+    # close_session(close_page=True) 连坐关闭它们（否则 window.open 的子页成为
+    # 孤儿 tab 泄漏）；popup 自身关闭时经 once("close") 自动移除。
+    popup_pages: set = field(default_factory=set)
+    # _on_dialog 回调中存放最新的 Dialog 对象引用（不被自动 dismiss，wait_for 可拿到）。
+    # dialog 生命周期：触发 → 存引用 + 启动 5 分钟超时兜底 task；超时前 handle_dialog
+    # 可调 dlg.accept(prompt_text)/dlg.dismiss()，超时后兜底 task 自动 dismiss 并清空。
+    last_dialog_obj: Dialog | None = field(default=None, repr=False)
     # 标记最新 dialog 是否已被超时兜底自动 dismiss（handle_dialog 据此返回 DIALOG_ALREADY_DISMISSED）
     dialog_auto_dismissed: bool = False
     # 超时兜底 task 的 strong reference（session close 时全部取消，避免 asyncio task 泄漏）
     _dialog_timeout_tasks: set = field(default_factory=set)
-    last_filechooser_obj: object = field(default=None, repr=False)
+    last_filechooser_obj: FileChooser | None = field(default=None, repr=False)
     # _on_download 回调中存放最新的 Download 对象引用（wait_for 可调 save_as 保存到指定路径）
-    last_download_obj: object = field(default=None, repr=False)
+    last_download_obj: Download | None = field(default=None, repr=False)
 
     def touch(self) -> None:
         self.last_used_at = time.time()
@@ -100,6 +108,18 @@ class TabSession:
         """取出一个未消费的 dialog 事件。"""
         if self.pending_dialogs:
             return self.pending_dialogs.pop(0)
+        return None
+
+    def peek_pending_dialog(self) -> dict | None:
+        """查看队首 dialog 事件但不消费（2026-09-03 修复设计断点）。
+
+        wait_for(dialog) 只报告不处理，改用 peek；handle_dialog 是队列的
+        唯一消费者（pop + 处理 last_dialog_obj）。若 wait_for 用 pop 会把
+        handle_dialog 要消费的事件提前弹掉，导致文档工作流
+        「wait_for 报告 → handle_dialog 收尾」必然 DIALOG_NOT_FOUND。
+        """
+        if self.pending_dialogs:
+            return self.pending_dialogs[0]
         return None
 
     def pop_pending_popup(self) -> dict | None:

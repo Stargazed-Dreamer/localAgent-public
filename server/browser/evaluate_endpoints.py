@@ -17,6 +17,7 @@
 导入本模块即触发 @router.post 注册，无需额外调用。
 """
 
+import asyncio
 import re
 
 from lib.schema import BaseSchema
@@ -42,6 +43,7 @@ class BrowserEvaluateRequest(BaseSchema):
     """
     session_id: str | None = None
     url_pattern: str | None = None
+    tab_id: str | None = None  # 无会话模式：CDP target id 精确消歧
     expression: str
     return_json: bool = True
     max_length: int = 5000
@@ -250,8 +252,25 @@ async def browser_evaluate(req: BrowserEvaluateRequest):
             return BrowserEvaluateResponse(success=False, elapsed_ms=elapsed, error=err)
 
     # 无 session：走 exec_python 子进程模型（冷启动）
+    # 修复幽灵参数：无会话模式支持 tab_id 精确消歧。
+    _tab_id_url = None
+    if req.tab_id:
+        from .routes import _resolve_tab_id_to_url
+        _tab_id_url = await asyncio.to_thread(_resolve_tab_id_to_url, req.tab_id)
+        if _tab_id_url is None:
+            _elapsed = int((_time.perf_counter() - start) * 1000)
+            return BrowserEvaluateResponse(
+                success=False, elapsed_ms=_elapsed, error=BrowserErrorResponse(
+                    error_code="TAB_NOT_FOUND",
+                    error_message=BROWSER_ERROR_CODES["TAB_NOT_FOUND"],
+                    phase="locate",
+                    debug_detail=f"tab_id {req.tab_id} 无法解析为 URL（可能已关闭或调试浏览器未运行）",
+                    elapsed_ms=_elapsed,
+                ),
+            )
     params = {
         "url_pattern": req.url_pattern,
+        "tab_id": _tab_id_url,
         "expression": req.expression,
         "return_json": req.return_json,
         "max_length": req.max_length,
@@ -270,7 +289,6 @@ async def main():
         if not page:
             print('ERROR:TAB_NOT_FOUND')
             return
-        await Stealth().apply_stealth_async(page)
         try:
             if _PARAMS["return_json"]:
                 wrapped = '(function(){ try { return JSON.stringify(eval(' + repr(_PARAMS["expression"]) + ')); } catch(e){ return "ERROR:" + e.message; } })()'

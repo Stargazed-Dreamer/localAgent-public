@@ -4,7 +4,7 @@
 包含：CategoryListWidget（支持作为拖放目标，接收 FileTableWidget 拖来的文件名）
 """
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QListWidget, QAbstractItemView, QTableWidget, QMenu
+from PySide6.QtWidgets import QAbstractItemView, QListWidget, QMenu, QTableWidget
 
 
 class CategoryListWidget(QListWidget):

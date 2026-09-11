@@ -16,6 +16,7 @@ import io
 import time
 
 from lib.schema import BaseSchema
+from server.model_manager.types import ModelUnavailableError
 
 # 截图子模块
 from server.screen.capture import (
@@ -82,16 +83,17 @@ class ActionRequest(BaseSchema):
     text: str | None = None
     element_text: str | None = None  # 目标元素的文字描述，用于安全检查
     keys: list[str] | None = None
-    direction: str | None = "down"
-    amount: int | None = 3
-    dx: int | None = 0
-    dy: int | None = 0
+    direction: str = "down"
+    amount: int = 3
+    dx: int = 0
+    dy: int = 0
+    button: str = "left"  # mouse_down/mouse_up 的按键（left | right）
     window_title: str | None = None
     process_name: str | None = None  # 进程名过滤（避免同名窗口冲突，如"qbittorrent.exe"）
     hwnd: int | None = None  # 直接指定窗口句柄（避免标题歧义）
     require_confirm: bool | None = None  # None 时用 config require_confirm_by_default
     activate_window: bool = True  # 操作前是否自动激活目标窗口（默认 True，避免焦点丢失）
-    screenshot_after: bool | None = None  # [已废弃] 不再返回 base64 截图。如需截图请用 capture_screen(format=inline)；如需画面反馈请用 verify_prompt
+    screenshot_after: bool | None = None  # 已废弃，无效果。截图用 capture_screen(format=inline)；画面反馈用 verify_prompt
     verify_prompt: str | None = None  # 期望状态描述；非空则操作后截图+调 VL 返回 ≤200 字画面描述，无论成败都反馈（batch_actions 不支持此字段）
     # 评估文档 P0：焦点安全 + 坐标绑定 snapshot + 声明式后验
     allow_unfocused_input: bool | None = None  # None 时用 config allow_unfocused_input_default；键盘动作未验证焦点时是否放行（默认 False 强校验）
@@ -103,6 +105,10 @@ class ActionRequest(BaseSchema):
     # 仅在 screen.takeover_confirm_enabled=true 且 overlay 未显示时触发；
     # 用户拒绝或超时 cancel 时返回 status="cancelled"，用户允许或超时 proceed 时进入正常流程。
     task_description: str | None = None
+    # 坐标点击 UIA 融合策略（仅 action="click" 生效）：
+    # auto（默认）= 先 UIA hit-test，命中可点击元素直接后台 invoke（不抢焦点），未命中回退原始键鼠；
+    # event = 强制原始键鼠（旧行为）；uia_only = 必须命中 UIA 元素，否则 blocked 不回退
+    strategy: str = "auto"
 
 class ActionResponse(BaseSchema):
     success: bool
@@ -112,15 +118,12 @@ class ActionResponse(BaseSchema):
     user_reason: str = ""  # 用户在确认窗口输入的反馈(取消时可能填写原因)
     message: str
     # VL 反馈闭环字段（仅当请求带 verify_prompt 时填充，否则全 None；batch_actions 响应始终为 None）
-    # 注：已不再返回 base64 截图（screenshot_after 字段已移除，原 base64 会撑爆 LLM 上下文）。
-    # 如需查看操作后截图，请用 capture_screen(format="inline") 单独获取（返回 ImageContent）。
-    # 如需语义化画面反馈，请传 verify_prompt（服务端自动截图+调 VL，返回 ≤200 字描述）。
     vl_description: str | None = None  # ≤200 字画面描述（状态/观察/建议）
     vl_skipped: bool | None = None  # True=跳过 VL（config 关闭/截图失败/VL 不可用）
     vl_skip_reason: str | None = None  # 跳过原因
     # 评估文档 P0：焦点证据 + 分层状态
     focus_check_status: str | None = None  # focus_verified | unfocused_input_allowed | FOCUS_NOT_VERIFIED | FOCUS_LEAK_PREVENTED | skipped（非键盘动作跳过）
-    transport_status: str | None = None  # sent（已发送键鼠）| not_sent（焦点/坐标校验拦截，零按键）| error（_execute_action 异常）
+    transport_status: str | None = None  # sent（已发送键鼠）| sent_uia_invoke（UIA 融合命中，语义动作执行，零键鼠事件）| not_sent（焦点/坐标校验拦截，零按键）| error（_execute_action 异常）
     delivery_status: str | None = None  # delivered（焦点仍在目标族）| leaked（焦点漂移到非目标）| unknown（未指定 target）| skipped（动作未发送）
     postcondition_status: str | None = None  # verified（expected 检查通过）| failed（expected 检查失败）| error（检查异常）| executed_unverified（未声明 expected）| not_checked（动作未发送）
     foreground_before: dict | None = None  # 操作前焦点证据：{hwnd, title, pid, process_name}
@@ -164,6 +167,7 @@ def _verify_postcondition(expected: dict | None, pil_image) -> str:
         "verified" — 条件满足（ocr_contains 找到 / ocr_not_contains 未找到）
         "failed"   — 条件未满足
         "error"    — OCR 检查异常
+        "unavailable" — OCR 模型被管理器拒绝（压力/卸载/冷却；非错误，动作已执行）
         "executed_unverified" — 未声明 expected
         "not_checked" — 动作未发送（pil_image 为 None 但 expected 提供了，无法后验）
     """
@@ -188,6 +192,9 @@ def _verify_postcondition(expected: dict | None, pil_image) -> str:
             return "verified" if exp_text in ocr_text else "failed"
         else:  # ocr_not_contains
             return "verified" if exp_text not in ocr_text else "failed"
+    except ModelUnavailableError as e:
+        logger.warning(f"expected 后验 OCR 不可用: {e.reason}")
+        return "unavailable"
     except Exception as e:
         logger.warning(f"expected 后验 OCR 失败: {e}")
         return "error"
@@ -207,7 +214,7 @@ def execute_action(req: ActionRequest):
       会校验窗口几何是否变化，变化则返回 STALE_COORDINATES（status=blocked）。
     - 响应包含分层状态：transport（是否发送键鼠）/ delivery（焦点是否仍在目标族）/
       postcondition（OCR 声明式后验是否通过）。
-    - 未声明 expected 时，status="executed_unverified"（不再是 "executed"）。
+    - 未声明 expected 时，status="executed_unverified"。
 
     Tip — 操作前建议先调 screen_match_app(process_name=...) 查询该软件的经验
     （UIA 友好度/快捷键/菜单路径/已知坑），避免重复踩坑；新踩坑可用 screen_write_lesson
@@ -243,10 +250,15 @@ def execute_action(req: ActionRequest):
     ok, errmsg = _validate_action_params(
         req.action, req.x, req.y, req.text, req.keys,
         direction=req.direction, amount=req.amount,
-        dx=req.dx, dy=req.dy,
+        dx=req.dx, dy=req.dy, button=req.button,
     )
     if not ok:
         return ActionResponse(success=False, status="blocked", message=errmsg)
+    if req.strategy not in ("auto", "event", "uia_only"):
+        return ActionResponse(
+            success=False, status="blocked",
+            message=f"未知 strategy='{req.strategy}'。支持: auto（默认，click 命中 UIA 走 invoke 否则回退键鼠）/ event（强制原始键鼠）/ uia_only（必须命中 UIA，否则 blocked）",
+        )
 
     # 1.6 窗口未指定时的警告（不阻止操作，但在 message 中提示）
     window_warning = ""
@@ -360,7 +372,7 @@ def execute_action(req: ActionRequest):
         try:
             from server.overlay_client import overlay_client
             result = overlay_client.confirm_action(
-                screenshot_b64=screenshot_b64,
+                screenshot_b64=screenshot_b64 or "",
                 action=req.action,
                 x=req.x, y=req.y,  # 显示给用户的原始坐标
                 draw_x=draw_x, draw_y=draw_y,  # 截图内画点坐标（双屏修正）
@@ -387,22 +399,54 @@ def execute_action(req: ActionRequest):
                 message=f"确认窗口不可用: {e}",
             )
 
-    # 6. 操作前显示/刷新覆盖层（重置自动隐藏计时器）
+    # 6. 操作前显示覆盖层（若尚未显示）
+    # 新 OverlayClient 设计：overlay 持久显示，文案/颜色/倒计时由 _tick_loop
+    # 每秒自动刷新（无需 poke_overlay）；无自动隐藏计时器（无需 set_overlay_auto_hide_seconds）
     try:
         from server.overlay_client import overlay_client
         if not overlay_client.overlay_visible:
-            overlay_client.set_overlay_auto_hide_seconds(
-                screen_cfg.get("overlay_auto_hide_seconds", 30)
-            )
             overlay_client.show_overlay()
-        else:
-            overlay_client.poke_overlay()
     except Exception:
         pass
 
+    # 6.8 坐标点击 UIA 融合（ZCode computer-use 风格，仅 action="click"）
+    # 命中可点击元素 → 直接 UIA invoke（后台、不抢焦点、不发键鼠事件），跳过第 7 步窗口激活
+    # 与第 8 步真实键鼠；未命中/异常 → auto 静默回退原始键鼠，uia_only 返回 blocked。
+    # danger/takeover/confirm 等前置安全检查不受影响（上方已完成）；expected/verify_prompt
+    # 后验照走（见第 9 步）。
+    fusion_result: dict | None = None
+    fusion_checked = False
+    if (
+        req.action == "click"
+        and req.x is not None and req.y is not None
+        and req.strategy != "event"
+        and screen_cfg.get("coordinate_uia_fusion", True)
+    ):
+        fusion_checked = True
+        try:
+            from server.screen.uia import try_uia_click_fusion
+            fusion_result = try_uia_click_fusion(req.x, req.y)
+        except Exception as e:
+            logger.warning(f"UIA 点击融合异常，回退原始键鼠: {e}")
+            fusion_result = None
+        if fusion_result is None and req.strategy == "uia_only":
+            return ActionResponse(
+                success=False, status="blocked",
+                message=(
+                    "strategy=uia_only: 坐标处未命中可点击 UIA 元素（或 invoke 失败），"
+                    "已按策略拒绝回退原始键鼠。可改用 strategy=\"auto\" 允许回退，"
+                    "或重新截图/做 UIA snapshot 确认目标"
+                ),
+                focus_check_status="skipped",
+                transport_status="not_sent",
+                delivery_status="skipped",
+                postcondition_status="not_checked",
+            )
+
     # 7. 操作前激活窗口（默认 True；只有显式 activate_window=False 才跳过）
+    # UIA 融合命中时跳过——融合的核心收益就是后台 invoke 不抢焦点
     focus_warning = ""
-    if req.activate_window and target_hwnd:
+    if req.activate_window and target_hwnd and fusion_result is None:
         try:
             _force_focus_window(target_hwnd)
             time.sleep(_FOCUS_RETRY_DELAY)
@@ -430,7 +474,7 @@ def execute_action(req: ActionRequest):
     if focus_protection_enabled and req.action in _KEYBOARD_ACTIONS:
         ok, reason, evidence_before = verify_focus_for_input(
             target_hwnd,
-            allow_unfocused_input=req.allow_unfocused_input,
+            allow_unfocused_input=bool(req.allow_unfocused_input),
             protected_processes=protected_processes,
             evidence=evidence_before,
         )
@@ -462,13 +506,20 @@ def execute_action(req: ActionRequest):
     # 7.6 第二轮评估 P1-1：dry-run 模式（不投递键鼠，返回完整校验结果）
     # 通过所有前置校验后立即返回，让 agent 程序化预演动作效果（焦点/坐标/snapshot 新鲜度）
     if req.dry_run:
+        fusion_note = ""
+        if fusion_checked:
+            fusion_note = (
+                "；click 已命中可点击 UIA 元素，真实执行时将走 UIA invoke（不抢焦点）"
+                if fusion_result
+                else "；click 未命中可点击 UIA 元素，真实执行时将走原始键鼠"
+            )
         fg_info = evidence_before.get("foreground") if evidence_before else None
         return ActionResponse(
             success=True,
             status="dry_run",
             message=(
                 f"dry_run=true：已通过所有前置校验（焦点={focus_check_status}，"
-                f"坐标范围=ok，snapshot 新鲜度=ok），未投递任何键鼠事件。"
+                f"坐标范围=ok，snapshot 新鲜度=ok），未投递任何键鼠事件{fusion_note}。"
                 f"如需真实执行请传 dry_run=false。"
             ),
             focus_check_status=focus_check_status,
@@ -482,33 +533,45 @@ def execute_action(req: ActionRequest):
 
     # 8. 执行操作
     transport_status = "sent"
-    try:
-        result = _execute_action(
-            action=req.action, x=req.x, y=req.y,
-            text=req.text, keys=req.keys,
-            direction=req.direction, amount=req.amount,
-            dx=req.dx, dy=req.dy,
-        )
-    except Exception as e:
-        logger.exception(f"_execute_action 异常: {e}")
-        # 第二轮评估 P0-3：动作后刷新 canonical_window（即使异常也要刷新）
-        canonical_info_after = None
-        if target_hwnd and focus_protection_enabled:
-            try:
-                canonical_info_after = resolve_canonical_window(target_hwnd)
-            except Exception:
-                canonical_info_after = canonical_info
-        return ActionResponse(
-            success=False, status="blocked",
-            message=f"键鼠执行异常: {e}",
-            focus_check_status=focus_check_status,
-            transport_status="error",
-            delivery_status="skipped",
-            postcondition_status="not_checked",
-            foreground_before=evidence_before.get("foreground") if evidence_before else None,
-            target_match_before=evidence_before.get("target_match") if evidence_before else None,
-            canonical_window=_canonical_for_response(canonical_info_after or canonical_info),
-        )
+    if fusion_result is not None:
+        # UIA 融合命中：不调 _execute_action（零键鼠事件），结果直接构造。
+        # expected/verify_prompt 后验照走（第 9 步），delivery 判定基于焦点证据照走。
+        result = {
+            "success": True,
+            "message": (
+                f"click 已通过 UIA {fusion_result['action']} 执行（element_role={fusion_result['role']}, "
+                f"name={fusion_result['name']!r}），未发送键鼠事件、未改变窗口焦点"
+            ),
+        }
+        transport_status = fusion_result.get("transport", "sent_uia_invoke")
+    else:
+        try:
+            result = _execute_action(
+                action=req.action, x=req.x, y=req.y,
+                text=req.text, keys=req.keys,
+                direction=req.direction, amount=req.amount,
+                dx=req.dx, dy=req.dy, button=req.button,
+            )
+        except Exception as e:
+            logger.exception(f"_execute_action 异常: {e}")
+            # 第二轮评估 P0-3：动作后刷新 canonical_window（即使异常也要刷新）
+            canonical_info_after = None
+            if target_hwnd and focus_protection_enabled:
+                try:
+                    canonical_info_after = resolve_canonical_window(target_hwnd)
+                except Exception:
+                    canonical_info_after = canonical_info
+            return ActionResponse(
+                success=False, status="blocked",
+                message=f"键鼠执行异常: {e}",
+                focus_check_status=focus_check_status,
+                transport_status="error",
+                delivery_status="skipped",
+                postcondition_status="not_checked",
+                foreground_before=evidence_before.get("foreground") if evidence_before else None,
+                target_match_before=evidence_before.get("target_match") if evidence_before else None,
+                canonical_window=_canonical_for_response(canonical_info_after or canonical_info),
+            )
 
     # 9. 操作后焦点证据 + delivery 判定
     evidence_after = collect_focus_evidence(target_hwnd) if focus_protection_enabled else None
@@ -532,9 +595,6 @@ def execute_action(req: ActionRequest):
             logger.debug(f"动作后 resolve_canonical_window 失败 hwnd={target_hwnd}: {e}")
 
     # 9.5 操作后截图（仅当 verify_prompt 或 expected 需要时采集）
-    # 注：不再返回 base64 截图（原 screenshot_after 字段会撑爆 LLM 上下文）。
-    #     screenshot_after 请求参数已废弃——如需操作后截图请用 capture_screen(format="inline")。
-    #     verify_prompt 提供语义化 VL 反馈（≤200字描述），优于原始 base64。
     vl_pil_image = None  # 给 VL 反馈用（不进响应，服务端调完 VL 即丢弃）
     postcond_pil_image = None  # 给 expected OCR 后验用
     if req.verify_prompt or req.expected:
@@ -596,7 +656,7 @@ def execute_action(req: ActionRequest):
     elif postcondition_status == "failed":
         status = "postcondition_failed"  # 第二轮 P0-3：明确区分动作成功但后验失败
     elif postcondition_status == "executed_unverified":
-        # 评估文档 P0：未声明 expected 时返回 executed_unverified（不再伪称 success）
+        # 评估文档 P0：未声明 expected 时如实返回 executed_unverified
         status = EXECUTED_UNVERIFIED
     elif postcondition_status == "error":
         status = EXECUTED_UNVERIFIED  # 后验异常，按未验证处理（动作已发送）

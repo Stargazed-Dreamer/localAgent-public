@@ -75,7 +75,7 @@ def digest_file(profile_path: Path) -> str:
 
 - SDD 来源：`temp/sdd/release-engine/design-decisions.md` 四.2（fail closed > false positive）+ 四.3（digest 绑定 > 人工审批）+ 三.6（SHA-256 而非 BLAKE3）+ 二.5（审批字段现状）
 - 关键代码：
-  - [tools/release/engine/models.py](file:///f:/<project_root>/tools/release/engine/models.py)（`PreparedRelease.plan_digest` L68 + `Approval.plan_digest` L123，匹配校验注释 L122）
-  - [tools/release/engine/digest.py](file:///f:/<project_root>/tools/release/engine/digest.py)（`hashlib.sha256` 实现，L8 import / L23 obj digest / L32 file digest）
-  - [tools/release/engine/build.py](file:///f:/<project_root>/tools/release/engine/build.py)（`build_release()` 校验 digest 匹配，fail-closed 分支）
+  - [tools/release/engine/models.py](file:///<project_root>/tools/release/engine/models.py)（`PreparedRelease.plan_digest` L68 + `Approval.plan_digest` L123，匹配校验注释 L122）
+  - [tools/release/engine/digest.py](file:///<project_root>/tools/release/engine/digest.py)（`hashlib.sha256` 实现，L8 import / L23 obj digest / L32 file digest）
+  - [tools/release/engine/build.py](file:///<project_root>/tools/release/engine/build.py)（`build_release()` 校验 digest 匹配，fail-closed 分支）
 - 相关 ADR：ADR-0013（release engine 编译器式架构，本决策依赖 `PreparedRelease` 不可变性）

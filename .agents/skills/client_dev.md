@@ -208,8 +208,8 @@ for tx in txs:
 
 | 文件 | 用途 |
 |------|------|
-| [panel_base.py](file:///f:/<project_root>/client/core/panel_base.py) | PanelBase 抽象基类 + PanelMeta |
-| [panel_registry.py](file:///f:/<project_root>/client/core/panel_registry.py) | 自动发现机制 |
-| [app.py](file:///f:/<project_root>/client/core/app.py) | MainWindow + 面板切换逻辑 |
-| [accounting.py](file:///f:/<project_root>/workspace/accounting/panel.py) | 异步加载参考实现（_ReviewDataLoader） |
-| [tools.py](file:///f:/<project_root>/client/panels/tools.py) | mtime 检测参考实现 |
+| [panel_base.py](file:///<project_root>/client/core/panel_base.py) | PanelBase 抽象基类 + PanelMeta |
+| [panel_registry.py](file:///<project_root>/client/core/panel_registry.py) | 自动发现机制 |
+| [app.py](file:///<project_root>/client/core/app.py) | MainWindow + 面板切换逻辑 |
+| [accounting.py](file:///<project_root>/workspace/accounting/panel.py) | 异步加载参考实现（_ReviewDataLoader） |
+| [tools.py](file:///<project_root>/client/panels/tools.py) | mtime 检测参考实现 |

@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from client.core.http_client import HttpClient
 from client.core.panel_base import PanelBase, PanelMeta
-from lib.ui import tokens
+from lib.ui import EmptyState, tokens
 from lib.ui.theme import set_kind, set_text_role
 
 
@@ -276,12 +276,14 @@ class DueTodosPanel(PanelBase):
         self._scroll.setWidget(self._list_container)
         layout.addWidget(self._scroll, 1)
 
-        # 空状态
-        self._empty_label = QLabel("没有到期任务")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        set_text_role(self._empty_label, "secondary")
-        self._empty_label.setVisible(False)
-        layout.addWidget(self._empty_label)
+        # 空状态（与列表区域互斥显示，components.md §12）
+        self._empty_state = EmptyState(
+            "clock",
+            "没有到期任务",
+            hint="到期任务由 Loop 按周期推送，处理后可在「待办」里标记完成",
+        )
+        self._empty_state.setVisible(False)
+        layout.addWidget(self._empty_state, 1)
 
     # —— PanelBase 钩子 ——
 
@@ -318,6 +320,8 @@ class DueTodosPanel(PanelBase):
     def _clear_list(self) -> None:
         while self._list_layout.count() > 1:
             item = self._list_layout.takeAt(0)
+            if item is None:
+                continue
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -363,7 +367,9 @@ class DueTodosPanel(PanelBase):
         scroll_pos = self._scroll.verticalScrollBar().value()
 
         self._clear_list()
-        self._empty_label.setVisible(len(self._todos) == 0)
+        has_todos = len(self._todos) > 0
+        self._scroll.setVisible(has_todos)
+        self._empty_state.setVisible(not has_todos)
 
         for todo in self._todos:
             card = _DueTodoCard(todo, self)

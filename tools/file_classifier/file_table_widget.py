@@ -27,11 +27,16 @@
 拆分原因：classifier_gui.py 已约 1500 行，将交互逻辑抽到独立模块避免文件膨胀。
 """
 
-from PySide6.QtCore import Qt, Signal, QPoint, QMimeData
+from PySide6.QtCore import QMimeData, QPoint, Qt, Signal
 from PySide6.QtGui import (
-    QKeyEvent, QDrag, QPixmap, QPainter, QPen, QColor,
+    QColor,
+    QDrag,
+    QKeyEvent,
+    QPainter,
+    QPen,
+    QPixmap,
 )
-from PySide6.QtWidgets import QTableWidget, QAbstractItemView
+from PySide6.QtWidgets import QAbstractItemView, QTableWidget
 
 
 class FileTableWidget(QTableWidget):

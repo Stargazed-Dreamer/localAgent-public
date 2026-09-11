@@ -203,7 +203,7 @@ def _decode_output(data: bytes) -> str:
         return ""
     candidates = ["utf-8", "gbk", "mbcs"]
     best = None
-    best_bad = None
+    best_bad = 1 << 30  # 哨兵：首个候选必然入选（原 None 触发比较类型错）
     for enc in candidates:
         try:
             text = data.decode(enc, errors="replace")
@@ -299,7 +299,8 @@ def _parse_patch_targets(patch: str, work_dir: Path) -> list[Path]:
     for line in patch.splitlines():
         match = re.match(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", line)
         move_match = re.match(r"^\*\*\* Move to: (.+)$", line)
-        raw_path = (match or move_match).group(1).strip() if (match or move_match) else ""
+        m = match or move_match
+        raw_path = m.group(1).strip() if m else ""
         if not raw_path:
             continue
         relative = Path(raw_path)
@@ -1623,7 +1624,7 @@ async def terminal_output(tid: str, channel: str = "stdout", offset: int = 0, li
 
 
 @terminal_router.post("/{tid}/kill", operation_id="exec_terminal_kill")
-async def terminal_kill(tid: str, req: TerminalActionRequest | None = None, request: Request = None):
+async def terminal_kill(tid: str, req: TerminalActionRequest | None = None, request: Request = None):  # type: ignore[assignment]
     """终止正在运行的终端会话
 
     权限：GUI 请求免审（已有自己的确认弹窗）；agent 请求需 owner_token。
@@ -1651,7 +1652,7 @@ async def terminal_kill(tid: str, req: TerminalActionRequest | None = None, requ
 
 
 @terminal_router.delete("/{tid}", operation_id="exec_terminal_delete")
-async def terminal_delete(tid: str, req: TerminalActionRequest | None = None, request: Request = None):
+async def terminal_delete(tid: str, req: TerminalActionRequest | None = None, request: Request = None):  # type: ignore[assignment]
     """删除已结束的终端会话记录
 
     权限：GUI 请求免审（已有自己的确认弹窗）；agent 请求需 owner_token。

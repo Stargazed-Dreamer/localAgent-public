@@ -27,7 +27,6 @@ import sys
 import time
 from pathlib import Path
 
-
 # 默认配置（与 config.example.toml 一致）
 DEFAULT_PORT = 9222
 DEFAULT_USER_DATA_DIR = Path(__file__).parent.parent.parent / "chrome_debug"
@@ -90,10 +89,12 @@ def is_port_listening(port: int) -> bool:
     try:
         result = subprocess.run(
             ["netstat", "-ano"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, timeout=5,
         )
+        # netstat 输出随系统代码页变化（中文 Windows 为 GBK），text=True 的 UTF-8 硬解码会在读取线程内崩溃
+        output = result.stdout.decode("utf-8", errors="replace")
         needle = f"127.0.0.1:{port}"
-        return any(needle in line and "LISTENING" in line for line in result.stdout.splitlines())
+        return any(needle in line and "LISTENING" in line for line in output.splitlines())
     except Exception:
         return False
 
@@ -211,11 +212,11 @@ def main():
                     print("[!] 复制失败，改用空白配置")
                     user_data_dir.mkdir(parents=True, exist_ok=True)
             else:
-                print(f"[!] 无法识别源浏览器用户数据目录，使用空白配置")
+                print("[!] 无法识别源浏览器用户数据目录，使用空白配置")
                 user_data_dir.mkdir(parents=True, exist_ok=True)
         else:
             # 默认非交互：直接用空白配置
-            print(f"\n[*] 首次使用，使用空白配置（如需保留登录态请加 --copy-user-data）")
+            print("\n[*] 首次使用，使用空白配置（如需保留登录态请加 --copy-user-data）")
             user_data_dir.mkdir(parents=True, exist_ok=True)
     else:
         if args.copy_user_data:
@@ -250,7 +251,7 @@ def main():
             print("  日常浏览器可同时使用，互不干扰")
             return
 
-    print(f"[!] 调试端口未就绪，请稍后重试")
+    print("[!] 调试端口未就绪，请稍后重试")
     sys.exit(1)
 
 

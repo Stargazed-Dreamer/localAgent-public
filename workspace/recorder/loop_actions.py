@@ -59,7 +59,9 @@ GUIDE_REGISTRY_ENTRIES = {
             "1.读 merged view 2.agent 自主决定后续 3.多轮 VL 协议（get_merged_view → select_vl_candidates → understand_image） 4.log_consumption 记录"
         ),
         "mcp_tools_priority": [
-            "localagent_understand_image (VL 看图，必带 question 参数)",
+            # 工具名引用 OpenAPI operation_id（不带 localagent_ 前缀）；
+            # 旧值 localagent_understand_image 在 drift_detector D 节判定为未知工具名
+            "understand_image (VL 看图，必带 question 参数)",
         ],
         "key_pitfalls": [
             "不预存 VL 结果到录制包（D005），VL 按需调用，结果只在会话内存中",

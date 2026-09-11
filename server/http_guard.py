@@ -114,6 +114,23 @@ def get_pending_http(approval_id: str) -> dict:
     return dict(pending)
 
 
+def extend_pending_http(approval_id: str, min_ttl: float) -> None:
+    """延长 HTTP 审批请求的存活期，确保其覆盖一个完整的审批会话。
+
+    pending 默认 TTL 为 approval_ttl_seconds（300s），而 GUI 审批的超时兜底是
+    gui_timeout_seconds + 20s。当 gui_timeout_seconds > 280 时，pending 会在
+    GUI 弹窗仍在倒计时期间先被 _cleanup 清理，导致用户批准后
+    record_http_decision 找不到条目而抛 ValueError。此处把 expires_at 抬到
+    至少 min_ttl 秒后（只增不减）。
+    """
+    _cleanup()
+    pending = _pending_http.get(approval_id)
+    if not pending:
+        raise ValueError("HTTP 审批请求不存在或已过期")
+    now = time.time()
+    pending["expires_at"] = max(pending["expires_at"], now + min_ttl)
+
+
 def record_http_decision(approval_id: str, decision: str, feedback: str = "") -> dict:
     """记录用户对 HTTP 审批的决定，批准时签发一次性 token。"""
     _cleanup()

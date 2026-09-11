@@ -1,6 +1,7 @@
 """查看 DB 内容"""
-import sqlite3, json
-conn = sqlite3.connect(r'f:\<project_root>\output\image_organizer\files.db')
+import sqlite3
+
+conn = sqlite3.connect(r'<project_root>\output\image_organizer\files.db')
 rows = conn.execute(
     'SELECT filename, caption, detailed_caption, ocr_text, width, height, exif_data, '
     'main_category, dimensions, tags, confidence, florence_raw FROM files WHERE status="llm_done"'

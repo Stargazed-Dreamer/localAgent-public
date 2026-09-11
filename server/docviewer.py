@@ -122,30 +122,32 @@ def _extract_pdf(file_path: str, pages: str | None = None) -> dict:
     doc = fitz.open(file_path)
     try:
         total = doc.page_count
+        doc_meta = doc.metadata or {}
         metadata = {
-            "title": doc.metadata.get("title", ""),
-            "author": doc.metadata.get("author", ""),
-            "subject": doc.metadata.get("subject", ""),
-            "creator": doc.metadata.get("creator", ""),
-            "creation_date": doc.metadata.get("creationDate", ""),
-            "mod_date": doc.metadata.get("modDate", ""),
+            "title": doc_meta.get("title", ""),
+            "author": doc_meta.get("author", ""),
+            "subject": doc_meta.get("subject", ""),
+            "creator": doc_meta.get("creator", ""),
+            "creation_date": doc_meta.get("creationDate", ""),
+            "mod_date": doc_meta.get("modDate", ""),
         }
         page_nums = _parse_page_range(pages, total)
         contents = []
         for page_num in page_nums:
             page = doc[page_num - 1]
-            text = page.get_text("text")
+            text = str(page.get_text("text"))
 
             # 提取表格
             tables = []
             try:
                 tab = page.find_tables()
-                for t in tab.tables:
-                    table_data = []
-                    for row in t.extract():
-                        table_data.append([str(cell) if cell else "" for cell in row])
-                    if table_data:
-                        tables.append(table_data)
+                if tab is not None:
+                    for t in tab.tables:
+                        table_data = []
+                        for row in t.extract():
+                            table_data.append([str(cell) if cell else "" for cell in row])
+                        if table_data:
+                            tables.append(table_data)
             except Exception:
                 pass  # 表格提取失败不影响文本
 
@@ -275,14 +277,16 @@ def _extract_pptx(file_path: str, pages: str | None = None) -> dict:
         tables = []
 
         for shape in slide.shapes:
-            if shape.has_text_frame:
-                for para in shape.text_frame.paragraphs:
+            text_frame = getattr(shape, "text_frame", None)
+            if text_frame is not None:
+                for para in text_frame.paragraphs:
                     text = para.text.strip()
                     if text:
                         texts.append(text)
-            if shape.has_table:
+            table = getattr(shape, "table", None)
+            if table is not None:
                 table_data = []
-                for row in shape.table.rows:
+                for row in table.rows:
                     table_data.append([cell.text for cell in row.cells])
                 tables.append(table_data)
 

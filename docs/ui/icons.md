@@ -89,6 +89,10 @@ lambda on: btn.setIcon(icon("star", tokens.ICON_ACTIVE if on else tokens.ICON_DE
 | `home` | 概览 / Dashboard 首页 |
 | `inbox` | 收件箱 |
 | `wrench` | 工具面板、WIP 任务面板 |
+| `wallet` | 记账 / 钱包（accounting 面板） |
+| `download` | 导入 / 下载 |
+| `upload` | 导出 / 上传 |
+| `layers` | 行业 / 分层（股市助手行业分组） |
 
 ### 状态与杂项
 | 名 | 推荐用途 |
@@ -108,6 +112,16 @@ lambda on: btn.setIcon(icon("star", tokens.ICON_ACTIVE if on else tokens.ICON_DE
 | `calendar` | 日程 / 日总结 |
 | `bot` | 机器人 / LLM 模型池 |
 | `sliders` | 系统工具 / 参数调整 |
+| `trending-up` | 股市 / 趋势（stock_advisor 面板、指数） |
+| `dices` | 抽卡采集 |
+| `tv` | <data_drive>:\<bilibili_videos>工具 / 视频源 |
+| `hard-drive` | 磁盘管理 / 存储 |
+| `target` | 目标 / 异环模拟器 / 关注焦点 |
+| `clipboard-list` | 面经 / 清单 / 分析结果 |
+| `video` | 操作录制（视频采集） |
+| `package` | 模型 / 包（模型总数、持仓） |
+| `plug` | 网关 / MCP 连接 / 数据源健康 |
+| `shield` | 审批强度 / 安全防护 |
 
 ## 新增图标规范
 
@@ -115,5 +129,5 @@ lambda on: btn.setIcon(icon("star", tokens.ICON_ACTIVE if on else tokens.ICON_DE
    `stroke="currentColor"`、`stroke-width="2"`、`stroke-linecap/linejoin="round"`。
 2. 文件放 `lib/ui/resources/icons/<kebab-name>.svg`。
 3. 在本文档清单登记（名字 + 推荐用途）。
-4. 跑 `pytest tests/test_ui_theme.py`（含 SVG 有效性与 currentColor 检查）。
+4. 跑 `pytest tests/client_ui/test_ui_theme.py`（含 SVG 有效性与 currentColor 检查）。
 5. 需要的概念没有合适图标时，宁可用文本按钮，不要硬凑 emoji。

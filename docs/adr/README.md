@@ -34,10 +34,15 @@
 | [0026](0026-watchdog-skip-danger-confirm.md) | watchdog 模式跳过 danger=confirm | 屏幕操控 | watchdog 授权即同意 confirm 范围，跳过弹窗保持自动执行体验 |
 | [0027](0027-client-server-dependency-boundary.md) | Client-Server 模块依赖边界 | 分层架构 | 提取 lib/config_reader + lib/component_manifest，物理隔离 + 单一真源 |
 | [0028](0028-agent-guide-semantic-embedding.md) | Agent Guide 语义向量化匹配 | Agent Guide | 复用 EmbeddingEngine 对 GUIDE_REGISTRY 摘要嵌入，弱匹配时余弦加分，双条件 strong_match |
+| [0029](0029-workspace-backup-manifest-decoupled.md) | workspace 数据备份方案 | 备份/恢复 | 新增 [backup] 段独立于 [watch] 段，与 [secret_backup] 对称设计但独立配置目录和保留策略 |
+| [0030](0030-model-lifecycle-manager-architecture-decisions.md) | Model Lifecycle Manager 架构决策（5 项） | 模型生命周期 | 薄编排 vs 所有权重构 / 进程内优先 / VRAM 主动 + RAM 预留 / 守护内部卸载绕过审批 / 热路径嵌入默认钉住 |
+| [0031](0031-inbound-gateway-own-sqlite-stats.md) | 入站网关统计自持 | 入站网关 | 网关 SQLite 是调用统计唯一真源，不复用池统计；TTFT 网关层计时。⚠️ 2026-09-02 修订：流式 `upstream_key` 缺失限制已解除、池子树只读边界纯增量放宽（见文末 Amendment）。⚠️ 原决策语境「`pool.stream()` 池侧零统计」已被 [ADR-0033](0033-stream-usage-collector-not-token-counter.md) 改变（流式现已记池侧 token），但「网关不复用池统计」核心结论不变 |
+| [0032](0032-keys-json-hot-reload-guard.md) | keys.json 热重载守护 | LLM 池 | 20s 轮询 mtime + 在途让位重建池，替代"手动 reload"；启动/重载自检 `inbound_gateway` 授权覆盖，独立于池子树 |
+| [0033](0033-stream-usage-collector-not-token-counter.md) | 流式 token 记账 = usage 采集器（非计数器） | 统计/并发 | 流式 token 只采 provider 权威 usage，缺失诚实标 `provider_missing` 记 0 + 精确字符数，**绝不本地估算**；补齐 `pool.stream()` 池侧记账 + Anthropic 原生 SSE；升格 ADR-0031 决策 #4「不估算」为跨池/网关全局原则。**Correction**：曾一度基于"聚合代理丢 SSE usage"的错误前提给网关加了默认关的「缓冲伪流式」开关，后原始 SSE dump 推翻该前提——真因是 `_stream_openai_sse` 看到 `finish_reason` 就 break、漏读其后的尾部 usage chunk（本端 bug，已修：读到 `[DONE]` 再统一收尾，仿 Anthropic）；据此缓冲开关已**彻底移除**，真流式**同时**得到逐字直播思维 + provider 精确 token（实测 total=395 / reasoning 529 字），网关真流式并把 provider 的 usage 尾 chunk 转发给外部客户端、透传真实 `finish_reason` |
 
 ## 主题域分组
 
-- **LLM 池**：0001, 0002
+- **LLM 池**：0001, 0002, 0032
 - **对话引擎**：0006, 0009, 0010, 0016, 0021
 - **记忆系统**：0008, 0022
 - **屏幕操控**：0011, 0012, 0015, 0025, 0026
@@ -49,9 +54,12 @@
 - **密钥管理**：0017
 - **数据校验**：0019
 - **HTTP 客户端**：0020
-- **统计/并发**：0024
+- **统计/并发**：0024, 0033
 - **Agent Guide**：0028
 - **分层架构**：0027
+- **备份/恢复**：0029
+- **模型生命周期**：0030
+- **入站网关**：0031
 
 ## 何时写 ADR
 

@@ -52,7 +52,7 @@ def _get_accounting_dir() -> Path:
         except Exception as e:
             logger.warning(f"读取 config.toml 失败: {e}")
     # 回退：兼容旧版未配置的用户
-    return Path(r"E:\<data_drive>:\<system_data_root>\Obsidian\Task\Task\main\记账")
+    return Path(r"<data_drive>:\<system_data_root>\Obsidian\Task\Task\main\记账")
 
 
 ACCOUNTING_DIR = _get_accounting_dir()

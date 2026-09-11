@@ -17,7 +17,7 @@ from server.config import (
 
 logger = logging.getLogger("localagent.health")
 
-VERSION = "0.39.0"
+VERSION = "0.46.0"
 
 
 # ========== 模块错误注册表（last_error 追踪）==========
@@ -80,6 +80,7 @@ class HealthResponse(BaseSchema):
     inbox: dict = {}  # 收件箱状态
     project_structure: dict = {}  # 项目结构映射 baseline 状态
     auto_shutdown: dict = {}  # 自动关机端点状态（trigger_count 等）
+    model_manager: dict = {}  # Model Lifecycle Manager 状态（design §10，低频枚举）
     last_errors: dict = {}  # 各模块最近一次错误（模块名 → {error, exc_type, timestamp}）
 
 
@@ -104,10 +105,14 @@ def _get_ocr_status() -> dict:
         "cold_start": ocr_models.cold_start,
         "loading": ocr_models.loading,
         "failed": ocr_models.failed,
+        # GPU→CPU 降级可见性：当前实际（或最近决策的）推理设备
+        "active_device": ocr_models.active_device,
         "load_elapsed_ms": ocr_models._load_elapsed_ms,
         "last_inference_ms": ocr_models._last_inference_ms,
         "inference_count": ocr_models._inference_count,
         "last_error": ocr_models._last_error,
+        # design §10 兼容委托：附加 ModelLifecycleManager 状态摘要
+        "mlm_state": _get_model_manager_status(),
     }
 
 
@@ -356,7 +361,7 @@ def _get_persistent_status() -> dict:
 
 
 def _get_vision_status() -> dict:
-    """Vision 状态（OmniParser 已移除，仅保留远程 VL）
+    """Vision 状态（远程 VL）
 
     含 provider 级额度耗尽 fallback 状态：
     - providers: 完整 provider 列表（含 cooldown/active_count/last_error）
@@ -490,7 +495,7 @@ def _get_mcp_status(app) -> dict:
 
 def _get_llm_pool_status() -> dict:
     """LLM 并发池状态"""
-    llm_pool_status = {"initialized": False}
+    llm_pool_status: dict[str, object] = {"initialized": False}
     # v6-lite-chat-fix T02：/llm/pool/models 端点已注册（含 grouped_by_tier/default_tier/default_model）
     # 此字段始终为 True，因为端点在 FastAPI app 启动时就注册了（不依赖池初始化）
     llm_pool_status["models_endpoint"] = {
@@ -519,7 +524,7 @@ def _get_llm_pool_status() -> dict:
             if str(kf) in seen or not kf.exists():
                 continue
             seen.add(str(kf))
-            needs_check_any = needs_check_any or should_run_health_check(str(kf))
+            needs_check_any = needs_check_any or should_run_health_check()
             try:
                 kf_data, _wrapper = _load_keys_records(kf)
             except Exception:
@@ -657,6 +662,19 @@ def _get_auto_shutdown_status() -> dict:
     return _as_status()
 
 
+def _get_model_manager_status() -> dict:
+    """Model Lifecycle Manager 状态（design §10 低频枚举）
+
+    不放高频计数器（避免 client 指纹漂移，design §10/§5.8）。
+    失败时返回最小 stub（不阻塞 /health）。
+    """
+    try:
+        from server.model_manager import get_model_manager
+        return get_model_manager().health_summary()
+    except Exception as e:
+        return {"enabled": False, "error": str(e)[:200]}
+
+
 # ========== TTL 缓存 ==========
 
 _status_cache: dict = {"data": None, "ts": 0.0}
@@ -684,7 +702,8 @@ def register_health_routes(app: FastAPI, version: str = VERSION):
                 return _status_cache["data"]
 
         from server.core.lifecycle import get_start_time
-        uptime = time.perf_counter() - get_start_time() if get_start_time() else 0
+        _st = get_start_time()
+        uptime = time.perf_counter() - _st if _st else 0
 
         # 各模块状态（直接调用函数，避免循环 import）
         # 组件健康状态通过 manifest [health_check] 段动态发现，
@@ -715,6 +734,7 @@ def register_health_routes(app: FastAPI, version: str = VERSION):
             inbox=_get_inbox_status(),
             project_structure=_get_project_structure_status(),
             auto_shutdown=_get_auto_shutdown_status(),
+            model_manager=_get_model_manager_status(),
             last_errors=get_module_errors(),
         )
 

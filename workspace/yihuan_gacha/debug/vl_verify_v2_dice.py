@@ -81,7 +81,7 @@ for img_name, target_idx, v1_dice, v2_dice in TARGET_CASES:
     dice_x2 = crop_left + bbox[3] + 5
     dice_crop = img.crop((dice_x1, dice_y1, dice_x2, dice_y2))
     # 放大 3 倍便于 VL 识别
-    dice_crop = dice_crop.resize((dice_crop.size[0] * 3, dice_crop.size[1] * 3), Image.LANCZOS)
+    dice_crop = dice_crop.resize((dice_crop.size[0] * 3, dice_crop.size[1] * 3), Image.Resampling.LANCZOS)
 
     # 保存裁切图
     out_path = SAMPLES_DIR / "debug" / "v2" / f"vl_dice_{img_name.replace('.png','')}_idx{target_idx}.png"

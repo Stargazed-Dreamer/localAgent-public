@@ -1,6 +1,6 @@
 # 设计原则参考 (design_principles.md)
 
-本文件是 [office_pptx skill](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注 anti-AI-slop 设计原则、Visual Floor、12-column grid、字体配对、调色板。
+本文件是 [office_pptx skill](file:///<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注 anti-AI-slop 设计原则、Visual Floor、12-column grid、字体配对、调色板。
 
 ## 目录
 
@@ -612,7 +612,7 @@ for slide in prs.slides:
 
 ## 参考
 
-- [office_pptx SKILL.md](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md)
-- [references/basic.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/basic.md)
-- [references/pitch_deck.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/pitch_deck.md)
+- [office_pptx SKILL.md](file:///<project_root>/.agents/skills/office_pptx/SKILL.md)
+- [references/basic.md](file:///<project_root>/.agents/skills/office_pptx/references/basic.md)
+- [references/pitch_deck.md](file:///<project_root>/.agents/skills/office_pptx/references/pitch_deck.md)
 - [python-pptx 官方文档](https://python-pptx.readthedocs.io/)

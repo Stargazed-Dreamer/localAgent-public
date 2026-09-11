@@ -13,6 +13,8 @@
 """
 from __future__ import annotations
 
+from typing import cast
+
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QStyle, QSystemTrayIcon
@@ -37,7 +39,7 @@ class TrayIcon(QObject):
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
-        self._app = QApplication.instance()
+        self._app = cast(QApplication, QApplication.instance())
         self._normal_icon = self._load_normal_icon()
         self._alert_icon = self._load_alert_icon()
 

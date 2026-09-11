@@ -8,7 +8,7 @@ accepted (2026-07-31)
 
 ## Context
 
-OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8（图标检测）+ Florence2（图标描述）+ PaddleOCR（文字识别）三段管线组成，承担"截图→UI 元素结构化"职责，模型目录 `F:\ai_models\omniparser` 占 2.06 GB，依赖 `ultralytics`/`supervision`/`torchvision`/`timm`/`accelerate` 5 个专用包。
+OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8（图标检测）+ Florence2（图标描述）+ PaddleOCR（文字识别）三段管线组成，承担"截图→UI 元素结构化"职责，模型目录 `<models_root>\omniparser` 占 2.06 GB，依赖 `ultralytics`/`supervision`/`torchvision`/`timm`/`accelerate` 5 个专用包。
 
 移除的强证据：
 - `data/mcp_stats.json` 显示 `parse_screen`（OmniParser 唯一入口）MCP 调用次数为 **0**——功能存在但无人用。
@@ -21,7 +21,7 @@ OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8�
 1. **整体移除 OmniParser 模块**：删除 `OmniParserManager` 类、`_detect_icons`/`_caption_icons`/`_ocr_text`/`_merge_ocr_into_elements` 函数、`parse_screen` 端点、`/vision/models/*` 端点、`ParseRequest`/`ParseResponse`/`ParseElement` Pydantic 模型。`VisionStatusResponse` 移除 `omniparser_enabled`/`icon_detect_loaded`/`icon_caption_loaded`/`keep_models`/`weights_dir` 5 个字段。
 2. **Computer Use 文字定位主路径改为 PaddleOCR bbox**：截图管线关闭 UVDoc 去畸变（`use_doc_unwarping=False`），bbox 三档回归误差 1-3px。坐标转换：`screen_ocr(mode="window")` 返回窗口截图内 bbox，中心点加 `list_windows` 返回的窗口 `left/top` 后再传 `execute_action`。
 3. **远程 VL 只做文档解析和图像描述**，不承担普通文字坐标定位（避免消耗昂贵且慢的 VL 配额）。纯图标/无文字元素场景由远程 VL 兜底：`understand_image` 描述 + `vision_locate` 坐标定位。
-4. **移除 5 个 OmniParser 专用依赖**（`ultralytics`/`supervision`/`torchvision`/`timm`/`accelerate`），保留 `transformers` 和 `torch`（embeddings + STT 仍用）。`F:\ai_models\omniparser` 2.06 GB 模型目录物理删除。
+4. **移除 5 个 OmniParser 专用依赖**（`ultralytics`/`supervision`/`torchvision`/`timm`/`accelerate`），保留 `transformers` 和 `torch`（embeddings + STT 仍用）。`<models_root>\omniparser` 2.06 GB 模型目录物理删除。
 5. **消除 ultralytics AGPL 传染风险**：public-release roadmap H1 标记为 ✅ 已解决，H7（OmniParser 模型权重不分发）状态更新为"模块整体移除，权重已物理删除"。
 
 ## Considered Options
@@ -48,6 +48,6 @@ OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8�
 - 移除条目：`docs/changelog-archive.md` [0.30.0] Changed "移除 OmniParser 模块" + Security "消除 ultralytics AGPL 传染风险"
 - 项目指引：`AGENTS.md` 技术栈段（"OmniParser 已于 2026-07-31 移除（调用 0 次，远程 VL + OCR bbox 已覆盖全部实际场景）"）
 - 环境约束：`docs/environment-constraints.md`（"OmniParser 已于 2026-07-31 移除"；Florence2 兼容性段）
-- 关键代码路径：[server/vl/vision.py](file:///f:/<project_root>/server/vl/vision.py)（OmniParser 已删除，仅留远程 VL 集成）、[server/ocr.py](file:///f:/<project_root>/server/ocr.py)（PaddleOCR bbox，`use_doc_unwarping=False`）、[server/vl/remote_vl.py](file:///f:/<project_root>/server/vl/remote_vl.py)（远程 VL + provider 级 fallback）
+- 关键代码路径：[server/vl/vision.py](file:///<project_root>/server/vl/vision.py)（OmniParser 已删除，仅留远程 VL 集成）、[server/ocr.py](file:///<project_root>/server/ocr.py)（PaddleOCR bbox，`use_doc_unwarping=False`）、[server/vl/remote_vl.py](file:///<project_root>/server/vl/remote_vl.py)（远程 VL + provider 级 fallback）
 - 注：`temp/sdd/omniparser-removal/spec.md` 在 changelog 中被引用，但该 SDD 产物已被清理（temp/ 目录 gitignore），决策细节以 changelog 0.30.0 条目 + AGENTS.md 为准
 - 相关 ADR：无（独立模块移除决策）

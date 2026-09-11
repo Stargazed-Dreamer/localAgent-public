@@ -222,12 +222,14 @@ def collect_focus_evidence(target_hwnd: int | None = None) -> dict:
                 ctypes.windll.user32.AttachThreadInput(cur_tid, target_tid, True)
                 try:
                     focused = win32gui.GetFocus()
-                    evidence["focus"] = _hwnd_info(focused)
+                    if focused:
+                        evidence["focus"] = _hwnd_info(focused)
                 finally:
                     ctypes.windll.user32.AttachThreadInput(cur_tid, target_tid, False)
             else:
                 focused = win32gui.GetFocus()
-                evidence["focus"] = _hwnd_info(focused)
+                if focused:
+                    evidence["focus"] = _hwnd_info(focused)
     except Exception as e:
         logger.debug(f"collect_focus_evidence GetFocus 失败: {e}")
 

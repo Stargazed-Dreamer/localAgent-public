@@ -27,6 +27,8 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from server.model_manager.types import ModelUnavailableError
+
 from .loop_manager import Action
 
 logger = logging.getLogger("localagent.loop_actions")
@@ -132,6 +134,8 @@ def _ocr_image_fallback(image) -> str | None:
         if not texts:
             return None
         return " | ".join(texts)[:500]
+    except ModelUnavailableError:
+        raise  # 管理器拒绝向上传播：调用方计 skipped 而非 failed（design §6）
     except Exception as e:
         logger.warning(f"OCR 兜底失败: {e}")
         return None
@@ -277,7 +281,11 @@ class ScreenVLDescribeAction(Action):
                 cpu_ok = (cpu_load is None) or (cpu_load < cpu_threshold)
                 gpu_ok = (gpu_load is None) or (gpu_load < gpu_threshold)
                 if cpu_ok or gpu_ok:
-                    ocr_text = await asyncio.to_thread(_ocr_image_fallback, image)
+                    try:
+                        ocr_text = await asyncio.to_thread(_ocr_image_fallback, image)
+                    except ModelUnavailableError as e:
+                        ocr_text = None
+                        logger.info(f"OCR 兜底被模型管理器拒绝，跳过: {e.reason}")
                     if ocr_text:
                         answer = f"[OCR兜底] {ocr_text}"
                         ocr_fallback_used = True
@@ -369,7 +377,18 @@ class ScreenVLDescribeAction(Action):
                 cpu_ok = (cpu_load is None) or (cpu_load < cpu_threshold)
                 gpu_ok = (gpu_load is None) or (gpu_load < gpu_threshold)
                 if cpu_ok or gpu_ok:
-                    ocr_text = await asyncio.to_thread(_ocr_image_fallback, image)
+                    try:
+                        ocr_text = await asyncio.to_thread(_ocr_image_fallback, image)
+                    except ModelUnavailableError as e:
+                        # 管理器拒绝 OCR 加载/使用：本次画面检查无法完成，但不是任务失败——
+                        # 计 skipped 三态（不累计 fail_count、不自动暂停常驻任务，design §6）
+                        logger.info(f"OCR 兜底被模型管理器拒绝，本次计 skipped: {e.reason}")
+                        vl_quota.record_call(vl_status)  # VL 调用已发生，如实记录
+                        return {
+                            "success": True, "skipped": True, "vl_status": vl_status,
+                            "skip_reason": f"ocr_unavailable:{e.reason}",
+                            "ocr_fallback_used": False,
+                        }
                     if ocr_text:
                         answer = f"[OCR兜底] {ocr_text}"
                         ocr_fallback_used = True
@@ -978,7 +997,7 @@ class <data_drive>:/DownloadscanAction(Action):
         from server.inbox import get_store
 
         config = context["config"]
-        watch_dir = Path(config.get("watch_dir", "E:/<data_drive>:\<system_data_root>/<data_drive>:/Downloads"))
+        watch_dir = Path(config.get("watch_dir", "<data_drive>:\<system_data_root>/<data_drive>:/Downloads"))
         threshold = config.get("file_count_threshold", 15)
         batch_size = config.get("classify_batch_size", 50)
 
@@ -1041,6 +1060,8 @@ class <data_drive>:/DownloadscanAction(Action):
         predictor_path = Path(__file__).parent.parent.parent / "tools" / "file_classifier" / "predictor.py"
         try:
             spec = importlib.util.spec_from_file_location("predictor", predictor_path)
+            if spec is None or spec.loader is None:
+                raise ValueError("spec/loader 不可用")
             predictor = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(predictor)
         except Exception as e:
@@ -1051,6 +1072,8 @@ class <data_drive>:/DownloadscanAction(Action):
         sm_instance = None
         try:
             sm_spec = importlib.util.spec_from_file_location("state_manager", state_mgr_path)
+            if sm_spec is None or sm_spec.loader is None:
+                raise ValueError("spec/loader 不可用")
             state_mgr_module = importlib.util.module_from_spec(sm_spec)
             sm_spec.loader.exec_module(state_mgr_module)
             state_path = str(predictor_path.parent / "state.json")
@@ -2333,7 +2356,7 @@ class KeyHealthCheckAction(Action):
     action_type = "key_health_check"
 
     async def execute(self, context: dict) -> dict:
-        from server.llm_pool import should_run_health_check, check_keys_health
+        from server.llm_pool import check_keys_health, should_run_health_check
         if not should_run_health_check():
             logger.debug("KeyHealthCheck: 未到检查间隔，跳过")
             return {"success": True, "skipped": True, "skip_reason": "未到检查间隔"}
@@ -2345,6 +2368,198 @@ class KeyHealthCheckAction(Action):
             result.get("fail"), result.get("removed"),
         )
         return {"success": True, "result": result}
+
+
+class SecretBackupAction(Action):
+    """定时备份密钥文件（keys.json / secrets.toml / config.toml）到双位置.
+
+    解决 gitignored 敏感文件被 agent 误删后无法恢复的问题：
+    每 5 天（可配）把三个 gitignored 敏感文件明文副本存到项目内 backups/secrets/
+    + 项目外目录（用户配置）双位置，防单点故障。
+
+    调用 tools/backup_secrets.py 的 run_backup() 函数（直接 import，不走 subprocess），
+    失败时返回 success=False 并推 inbox 告警（由 _push_first_failure_inbox 自动处理）。
+
+    配置在 config.toml [loops.secret_backup] 段：
+      interval_seconds = 432000    # 5 天（5 * 86400）
+      first_run_delay = 300        # 启动后 5 分钟首次触发
+      fail_threshold = 3          # 备份失败较严重，阈值低于默认 5
+    路径配置在 [secret_backup] 段（internal_dir / external_dir / keep_last_n / keep_within_days）。
+    """
+    action_type = "secret_backup"
+
+    async def execute(self, context: dict) -> dict:
+        # tools/backup_secrets.py 在项目根 tools/ 下，用 importlib 加载避免 sys.path 污染
+        import importlib.util
+        from pathlib import Path
+
+        tools_dir = Path(__file__).resolve().parent.parent.parent / "tools"
+        script_path = tools_dir / "backup_secrets.py"
+        if not script_path.exists():
+            return {"success": False, "error": f"backup_secrets.py 不存在: {script_path}"}
+
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "backup_secrets", script_path,
+            )
+            if spec is None or spec.loader is None:
+                raise ValueError("spec/loader 不可用")
+            module = importlib.util.module_from_spec(spec)
+            # backup_secrets.py 顶部会 sys.path.insert 项目根，加载后可正常 import lib.*
+            spec.loader.exec_module(module)
+        except Exception as e:
+            logger.exception("SecretBackup: 加载 backup_secrets.py 失败")
+            return {"success": False, "error": f"加载 backup_secrets.py 失败: {e}"}
+
+        # 调用 run_backup（同步函数，用 asyncio.to_thread 包装避免阻塞事件循环）
+        # location 固定 both（双位置备份）；如某位置未配置会自动跳过
+        try:
+            result = await asyncio.to_thread(module.run_backup, "both", False)
+        except Exception as e:
+            logger.exception("SecretBackup: run_backup 异常")
+            return {"success": False, "error": f"run_backup 异常: {e}"}
+
+        success = bool(result.get("success"))
+        files_count = len(result.get("files", []))
+        backups_written = sum(
+            1 for f in result.get("files", [])
+            for b in f.get("backups", [])
+            if b.get("written")
+        )
+        retention_deleted = len(result.get("retention_deleted", []))
+        locations = [loc["name"] for loc in result.get("locations", [])]
+        errors = result.get("errors", [])
+
+        if success:
+            logger.info(
+                "SecretBackup 完成: %d 个文件, %d 个备份已写入 (locations=%s, retention_deleted=%d)",
+                files_count, backups_written, locations, retention_deleted,
+            )
+            return {
+                "success": True,
+                "files_count": files_count,
+                "backups_written": backups_written,
+                "locations": locations,
+                "retention_deleted": retention_deleted,
+                "timestamp": result.get("timestamp"),
+            }
+        else:
+            err = result.get("error") or "; ".join(errors) or "unknown backup failure"
+            logger.warning(
+                "SecretBackup 失败: %s (files=%d, backups_written=%d, errors=%d)",
+                err, files_count, backups_written, len(errors),
+            )
+            return {
+                "success": False,
+                "error": err,
+                "files_count": files_count,
+                "backups_written": backups_written,
+                "locations": locations,
+                "retention_deleted": retention_deleted,
+                "errors": errors,
+                "timestamp": result.get("timestamp"),
+            }
+
+
+class WorkspaceBackupAction(Action):
+    """定时备份 workspace 各组件关键个人数据到双位置（ADR-0029）.
+
+    备份目标由各组件 manifest.toml [backup] 段声明（lib.component_manifest 解析），
+    与 secret_backup 对称设计但独立目录和保留策略：
+    - 备份位置：项目内 backups/workspace/<component>/ + 项目外目录（用户配置）
+    - 保留策略：默认 keep_last_n=7 / keep_within_days=14（比密钥更激进，因数据更新快）
+    - 文件 → 原子拷贝；目录（以 "/" 结尾）→ 打 zip
+
+    调用 tools/backup_workspace.py 的 run_backup()（importlib 加载，不走 subprocess），
+    失败时返回 success=False 并推 inbox 告警（由 _push_first_failure_inbox 自动处理）。
+
+    配置在 config.toml：
+      [loops.workspace_backup]  interval_seconds = 432000  # 5 天
+                                 first_run_delay = 600     # 比 secret_backup 晚 5 分钟避免并发
+                                 fail_threshold = 3
+      [workspace_backup]        internal_dir / external_dir / keep_last_n / keep_within_days
+
+    备份目标声明在 workspace/<component>/manifest.toml [backup] 段 paths = [...].
+    """
+    action_type = "workspace_backup"
+
+    async def execute(self, context: dict) -> dict:
+        import importlib.util
+        from pathlib import Path
+
+        tools_dir = Path(__file__).resolve().parent.parent.parent / "tools"
+        script_path = tools_dir / "backup_workspace.py"
+        if not script_path.exists():
+            return {"success": False, "error": f"backup_workspace.py 不存在: {script_path}"}
+
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "backup_workspace", script_path,
+            )
+            if spec is None or spec.loader is None:
+                raise ValueError("spec/loader 不可用")
+            module = importlib.util.module_from_spec(spec)
+            # backup_workspace.py 顶部会 sys.path.insert 项目根，加载后可正常 import lib.*
+            spec.loader.exec_module(module)
+        except Exception as e:
+            logger.exception("WorkspaceBackup: 加载 backup_workspace.py 失败")
+            return {"success": False, "error": f"加载 backup_workspace.py 失败: {e}"}
+
+        # 调用 run_backup（同步函数，用 asyncio.to_thread 包装避免阻塞事件循环）
+        # location 固定 both（双位置备份）；如某位置未配置会自动跳过
+        try:
+            result = await asyncio.to_thread(module.run_backup, "both", False)
+        except Exception as e:
+            logger.exception("WorkspaceBackup: run_backup 异常")
+            return {"success": False, "error": f"run_backup 异常: {e}"}
+
+        success = bool(result.get("success"))
+        components_count = len(result.get("components", []))
+        # 总 paths 处理数 = 所有 components 的 files 之和
+        files_count = sum(len(c.get("files", [])) for c in result.get("components", []))
+        backups_written = sum(
+            1 for c in result.get("components", [])
+            for f in c.get("files", [])
+            for b in f.get("backups", [])
+            if b.get("written")
+        )
+        retention_deleted = len(result.get("retention_deleted", []))
+        locations = [loc["name"] for loc in result.get("locations", [])]
+        errors = result.get("errors", [])
+
+        if success:
+            logger.info(
+                "WorkspaceBackup 完成: %d 个组件, %d 个 paths, %d 个备份已写入 "
+                "(locations=%s, retention_deleted=%d)",
+                components_count, files_count, backups_written,
+                locations, retention_deleted,
+            )
+            return {
+                "success": True,
+                "components_count": components_count,
+                "files_count": files_count,
+                "backups_written": backups_written,
+                "locations": locations,
+                "retention_deleted": retention_deleted,
+                "timestamp": result.get("timestamp"),
+            }
+        else:
+            err = result.get("error") or "; ".join(errors) or "unknown backup failure"
+            logger.warning(
+                "WorkspaceBackup 失败: %s (components=%d, backups_written=%d, errors=%d)",
+                err, components_count, backups_written, len(errors),
+            )
+            return {
+                "success": False,
+                "error": err,
+                "components_count": components_count,
+                "files_count": files_count,
+                "backups_written": backups_written,
+                "locations": locations,
+                "retention_deleted": retention_deleted,
+                "errors": errors,
+                "timestamp": result.get("timestamp"),
+            }
 
 
 def register_loop_actions(manager) -> None:
@@ -2371,6 +2586,8 @@ def register_loop_actions(manager) -> None:
     manager.register_action("smart_limit_check", SmartLimitCheckAction())
     manager.register_action("headless_session", HeadlessSessionAction())
     manager.register_action("key_health_check", KeyHealthCheckAction())
+    manager.register_action("secret_backup", SecretBackupAction())
+    manager.register_action("workspace_backup", WorkspaceBackupAction())
 
     # 加载 workspace 下可选组件的 loop action（独立组件，通过约定接口动态注册）
     _load_optional_actions(manager)

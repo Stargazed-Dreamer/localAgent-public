@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 版本号同步脚本：统一更新项目中所有 VERSION 常量引用。
 

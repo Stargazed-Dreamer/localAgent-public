@@ -232,6 +232,8 @@ class ServiceManager(QObject):
         online = health is not None and health.get("status") == "ok"
 
         if online:
+            # online 判定隐含 health 非 None（见上方表达式），此处显式窄化供类型检查
+            assert health is not None
             # 成功：重置失败计数，清除降级，恢复在线
             self._backend_fail_count = 0
             if self._backend_degraded:

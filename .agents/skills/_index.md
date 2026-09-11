@@ -23,12 +23,6 @@
 - **task_type**：`recurring.arknights_gacha`
 - **Skill 文件**：`workspace/arknights_gacha/SKILL.md`
 
-### auto_shutdown (auto_shutdown) [adhoc]
-
-- **描述**：自动关机 - agent 自己跑 loop + 调 REST 端点（POST /auto_shutdown/trigger + /cancel），120s 倒计时，关机前 agent 自行关闭有窗口的程序
-- **task_type**：`adhoc.auto_shutdown`
-- **Skill 文件**：`.agents/skills/auto_shutdown.md`
-
 ### bilibili_gacha (bilibili_gacha) [recurring]
 
 - **描述**：<data_drive>:\<bilibili_videos>互动抽奖动态扫描+开奖检查+取关
@@ -47,6 +41,12 @@
 - **task_type**：`adhoc.disk_cleanup`
 - **Skill 文件**：`workspace/disk_manager/SKILL.md`
 
+### email_source (email_source) [adhoc]
+
+- **描述**：邮件信源 - IMAP 轮询新邮件推 inbox（触发器）+ smtplib 发信工具，imbox 读取
+- **task_type**：`adhoc.email_source`
+- **Skill 文件**：`workspace/email_source/SKILL.md`
+
 ### endfield_gacha (endfield_gacha) [recurring]
 
 - **描述**：终末地寻访游戏日志/API采集
@@ -58,6 +58,12 @@
 - **描述**：期末复习资料精确汇总与整理工作流 - 文件梳理+LLM提纲+试卷分析
 - **task_type**：`adhoc.exam_prep`
 - **Skill 文件**：`workspace/exam_prep/SKILL.md`
+
+### gh_mirror (gh_mirror) [recurring]
+
+- **描述**：GitHub 私有镜像仓库监控 - 每 30 分钟调 GitHub API 检查 PAT/上游/同步/落后 4 类状态，告警推 inbox
+- **task_type**：`recurring.gh_mirror_monitor`
+- **Skill 文件**：`workspace/gh_mirror/SKILL.md`
 
 ### mindforge (mindforge) [adhoc]
 
@@ -97,7 +103,7 @@
 
 ### web_archive (web_archive) [adhoc]
 
-- **描述**：小黑盒/微信网页批量存档为MD（含评论+图片）
+- **描述**：小黑盒/微信/飞书云文档/腾讯文档批量存档为MD（含评论+图片）
 - **task_type**：`adhoc.web_archive`
 - **Skill 文件**：`workspace/web_archive/SKILL.md`
 
@@ -130,6 +136,7 @@
 - **`skill-creator.md`** 包含完整的 Skill 编写规范、模板和反模式——创建或修改 Skill 时必读
 - **`neat-freak.md`** 包含文档审查与同步规范——会话结束或用户说"整理一下"时触发
 - 新 Skill 目录命名：英文小写+连字符，如 `public-release/SKILL.md`；历史扁平文件按原名维护
+- **提交前机械防线**：pre-commit hook 会跑 `tools/check_hard_rules.py`（BOM/硬编码密钥/文档路径越界/import 边界），违反即拦截 commit；GUI 面板结构参考 `data/feature_map.json`，guide 路由改动需回测 `tests/guide_eval/`（`run_eval.py`，基线 88.9%）
 
 ---
 
@@ -364,20 +371,24 @@
 | **Skill 文件** | `.agents/skills/temp_cleanup.md` |
 | **触发方式** | 用户主动触发（"整理 temp"），或 temp 目录过大时建议触发 |
 | **输出** | 清理后的 `temp/` + 可选 wip 待办 + 清理报告 |
-| **依赖** | PowerShell + `Microsoft.VisualBasic.FileIO`（回收站 API）/ `wip_list`（open 任务检查，从 DB 查询不再读 `.agents/wip/`）/ `tools/`（重复对比） |
+| **依赖** | `tools/disk/recycle.py`（回收站唯一入口，纯 ctypes；⚠️ PowerShell `Add-Type` 本机被安全策略拦截）/ `wip_list`（open 任务检查，从 DB 查询）+ `.agents/wip/*.md`（人类可读留档）/ `git`（只读校验 worktree 注册状态） |
 
-**6 步工作流**：1.扫描分类 → 2.生成清单询问用户 → 3.执行删除（走回收站） → 4.执行移动 → 5.wip 待办处理 → 6.收尾报告
+**7 步工作流**：1.扫描 + 三问判定 → 2.生成**静态路径快照**清单询问用户 → 3.执行前二次 diff → 4.回收站删除 → 5.执行移动 → 6.wip 待办处理 → 7.收尾报告
 
-**核心规则**：
-- **删除必走回收站**：用 `Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile/DeleteDirectory` + `RecycleOption.SendToRecycleBin`，不得用 `Remove-Item`
-- **清单先行**：所有删除/移动操作前必须给用户完整清单，获得明确同意
-- **业务数据不删**：业务数据（微信收藏、考试资料等）只能移动到 workspace
-- **wip 关联检查**：每个文件调 `wip_list(status=active)` 查 DB 中相关 open 任务；OCR 校准数据看 `ocr_bbox_offset.md`（人类可读副本）或 DB 中对应 wip 任务
-- **跨项目检查**：不属于 LocalAgent 的文件移回原项目
+**核心规则（硬约束）**：
+- **删除必走回收站且只用 `tools/disk/recycle.py`**：`uv run python tools/disk/recycle.py --list <快照文件> --on-error continue`，不得用 `Remove-Item`/`rm`/`shutil.rmtree`
+- **清单是静态路径快照**：禁止"根目录所有 `*.py`"这类执行时求值的活规则（实测清理进行中 temp 被并发会话写入，根目录 `.py` 94 → 95）
+- **清单先行且不覆盖保护类**：用户说"全部删"也不能删保护清单里的东西，冲突必须明确指出
+- **业务数据不删**：个人创作/笔记/财务等唯一副本只能移动到 workspace
+- **备份分级**：回收站本身即备份，已确认入站时不再叠一层；仅逼近容量/非 NTFS/可能覆盖同名的场景强制先备份
 
-**分类决策表**：A.日志/B.终端日志/C.任务中间产物/D.业务数据误放/E.备份参考/F.散落脚本/G.OCR校准/H.旧测试图/I.临时解压/J.其他项目文件
+**三问决策树**（按性质，不按名字）：Q1 可重建 → 回收站 / Q2 唯一副本 → ★保护 / Q3 有归属 → 移回归属地，无归属标"待定"交用户
 
-**默认结构**：`temp/refs/`（备份参考）+ `temp/scripts/`（散落脚本）+ 临时目录
+**四条交叉校验**（判定后再过一遍）：活跃性（近 2 小时 mtime / wip 关联 / 运行中终端日志）· 引用性（被 AGENTS.md·docs/·tests/·client/·server/ grep 命中）· 仓库注册对象（git worktree → 回收站删目录后 `git worktree prune`）· 跨项目性
+
+**绝对保护**：`temp/sdd/<slug>/`（上下文压缩后的恢复锚点）+ `temp/planning_archive/`（只读历史归档），归档由用户决策
+
+**temp 无固定结构，不要强加**——清理目标是减少体积和风险，不是整形
 
 ---
 
@@ -543,14 +554,13 @@
 ```
 .agents/skills/browser_lessons/
 ├── SKILL.md                       # 元 skill：工作流 + 强制规则 + 跨网站通用踩坑
-├── sites/                         # 分网站经验文件
-│   ├── _template.md               # 新网站模板
-│   └── xiaoheihe.md               # 小黑盒（首个示例，汇总自 web_archive）
+├── sites/                         # 分网站经验文件（按主域动态增长，不在此逐文件列举）
+│   └── _template.md               # 新网站模板
 └── references/
     └── site_index.md              # 已记录网站索引（主域 → 文件映射）
 ```
 
-**已记录网站**：`xiaoheihe.cn`（小黑盒，相关 skill: web_archive/arknights_gacha）
+**已记录网站**：以 `sites/` 目录为准（`browser_match_site(domain=...)` 按域名/别名实时查询，本文件不维护静态清单）。
 
 **强制规则**（已并入 AGENTS.md "浏览器操作经验记录" 章节和 task_closure step 5）：浏览器操作任务收尾时必须检查本次是否遇到非显然行为，若是则写入 `sites/<domain>.md`，无对应文件时按 `_template.md` 创建并同步 `site_index.md`。
 
@@ -633,6 +643,17 @@
 | **Skill 文件** | `.agents/skills/office_docs/SKILL_pdf.md` |
 | **task_type** | `adhoc.office_pdf` |
 | **用途** | Markdown/文本→pdf + PDF 操作（合并/拆分/加密/水印/提取）（纯Python，reportlab+pypdf+pdfplumber） |
+
+---
+
+### auto_shutdown (auto_shutdown) [adhoc]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 自动关机、定时关机、睡前关机、挂机关机、条件关机、后台关机 |
+| **Skill 文件** | `.agents/skills/auto_shutdown.md` |
+| **task_type** | `adhoc.auto_shutdown` |
+| **用途** | agent 自写检测 loop + 调 POST /auto_shutdown/trigger（120s 倒计时，可 /cancel 中止）；关机不走 computer use |
 
 ---
 
@@ -977,7 +998,151 @@
 
 ---
 
-### 45. GKD 签到规则自动化 (gkd-signin-automation) [adhoc]
+### 45-55. 思维工具集（11 个 daily skill）[daily]
+
+来源：文章[《都 Agent 时代了，我还是想分享给你这 12 个我最常用的 Prompt》](https://mp.weixin.qq.com/s/NAdhdFrUq9-BKelqzqpwBQ)（作者：数字生命卡兹克，2026-08-21 抓取整合）。12 个 Prompt 中 2 个已整合到现有 skill（横纵分析法→`adhoc.deep_research`、人生设计术→`recurring.life_design`），其余 10 个+用户自定义组合版共 11 个独立 skill。
+
+**组合哲学**：这些 skill 是积木不是流水线，发散优先、举例非穷尽、agent 自行判断组合方式、拿不准列给用户选。详见 [daily/README.md](daily/README.md) 组合哲学段。
+
+每个 skill 目录：`SKILL.md`（路由元数据+工作流+兄弟工具）+ `prompt.md`（文章原文 Prompt 逐字保存，不改写）。
+
+**与 dev.grill_me 的关系**：grill-me 是决策前拷问计划（dev/），steel_man_decision 是决策中二选一（daily/），decision_protocol 是重大决策走完整协议（daily/）。三者可串联：grill-me 澄清→steel-man 决策，或直接走 decision_protocol。
+
+---
+
+### 45. 苏格拉底式提问 (socratic_questioning) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 苏格拉底提问、苏格拉底式问诊、澄清困惑、找到真正的问题、问清问题、我到底想问什么、socratic questioning |
+| **Skill 文件** | `.agents/skills/daily/socratic_questioning/SKILL.md`（+ prompt.md 原文 Prompt） |
+| **task_type** | `daily.socratic_questioning` |
+| **场景** | 问清问题 |
+| **用途** | 用户困惑模糊时，通过最多 6 个逐个追问找到真正值得回答的问题。每次只问一个，信息足够时立即停止 |
+
+---
+
+### 46. 双层解释法 (dual_layer_explanation) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 双层解释、双层解释法、小白专家两版解释、学一个概念、听不懂的概念、用两层解释帮我学、dual layer explanation |
+| **Skill 文件** | `.agents/skills/daily/dual_layer_explanation/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.dual_layer_explanation` |
+| **场景** | 学习 |
+| **用途** | 学陌生概念时分别从小白和专家两个角度解释一遍，避免"好像懂了"的错觉 |
+
+---
+
+### 47. 反向拆解 (reverse_decomposition) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 反向拆解、拆解优秀作品、拆解范例、学习它好在哪、拆解这个产品、反向工程一个作品、reverse decomposition |
+| **Skill 文件** | `.agents/skills/daily/reverse_decomposition/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.reverse_decomposition` |
+| **场景** | 学习 |
+| **用途** | 看到优秀作品想学习它好在哪时，先说它解决了什么问题，再反向拆解为什么有效，最后给可复用规律+操作清单+小练习 |
+
+---
+
+### 48. 事实核查 (fact_checking) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 事实核查、核查说法、验证观点、检查推理链、这个说法对吗、可信度评估、fact checking、笛卡尔怀疑 |
+| **Skill 文件** | `.agents/skills/daily/fact_checking/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.fact_checking` |
+| **场景** | 学习 |
+| **用途** | 对任何说法做笛卡尔式怀疑：拆三层+联网核查 5 档可信度+推理链 5 项漏洞+补强版本 |
+
+---
+
+### 49. 专家会诊 (expert_consultation) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 专家会诊、多专家视角、三视角分析、互补专家团、专家互相质疑、expert consultation、多视角会诊 |
+| **Skill 文件** | `.agents/skills/daily/expert_consultation/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.expert_consultation` |
+| **场景** | 解决问题 |
+| **用途** | 为问题选择 3 种真正互补的专业视角，各自重新定义问题+推荐路径，然后互相质疑找出真正分歧，最后综合输出推荐方案 |
+
+---
+
+### 50. 第一性原理 (first_principles) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 第一性原理、拆到本质、回到本质、first principles、重新推导路径、打补丁不如重推、路径依赖拆解 |
+| **Skill 文件** | `.agents/skills/daily/first_principles/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.first_principles` |
+| **场景** | 解决问题 |
+| **用途** | 把问题拆回最底层（基本事实/习惯性假设/真正目标/现实约束），暂时放下现成方案，只从基本事实重新推导可行路径 |
+
+---
+
+### 51. 跨领域借解 (cross_domain_borrowing) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 跨领域借解、跨领域类比、其他行业怎么解决、跨领域借鉴、cross domain、跨界借解、底层结构相似 |
+| **Skill 文件** | `.agents/skills/daily/cross_domain_borrowing/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.cross_domain_borrowing` |
+| **场景** | 解决问题 |
+| **用途** | 把问题剥掉行业术语抽象成底层结构，从历史案例和至少 3 个距离较远的领域寻找相似解法，翻译成适合当前处境的方案 |
+
+---
+
+### 52. 双向钢人论证 (steel_man_decision) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 钢人论证、双向钢人、犹豫不决、两个选项选哪个、难以决定选哪个、steel man、决策二选一、纠结选哪个 |
+| **Skill 文件** | `.agents/skills/daily/steel_man_decision/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.steel_man_decision` |
+| **场景** | 决策 |
+| **用途** | 两个选项间犹豫不决时，分别构造双方最强论证（不是稻草人），找出真正分歧，只问一个最关键的问题，再给判断。与 grill-me 区别：grill-me 决策前拷问计划，钢人决策中二选一 |
+
+---
+
+### 53. 用最小实验替代空想 (minimal_experiment) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 最小实验、最小可行实验、用实验替代空想、试一下再说、低成本验证、minimal experiment、验证假设 |
+| **Skill 文件** | `.agents/skills/daily/minimal_experiment/SKILL.md`（+ prompt.md） |
+| **task_type** | `daily.minimal_experiment` |
+| **场景** | 决策 |
+| **用途** | 当纸上谈兵无法更清晰时，找出最需要验证的 3 个假设，设计一个低成本、可逆、7 天内能完成的最小实验 |
+
+---
+
+### 54. 挖掘隐藏天赋 (talent_mining) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 挖掘天赋、隐藏天赋、天赋挖掘、我的天赋是什么、个人天赋说明书、talent mining、找天赋、人生天赋 |
+| **Skill 文件** | `.agents/skills/daily/talent_mining/SKILL.md`（+ prompt.md，含完整 Role/对话规则/主线/输出结构） |
+| **task_type** | `daily.talent_mining` |
+| **场景** | 认识自己 |
+| **用途** | agent 扮演资深生涯咨询师，通过多轮深度对话（最多 10 个主问题），在怪癖/缺点/嫉妒/无意识胜任区/能量模式里找到被压抑的天赋，最终产出万字《个人天赋使用说明书》 |
+
+---
+
+### 55. 重大决策协议 (decision_protocol) [daily]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 重大决策、人生抉择、重要选择、重大决定、难以决定人生方向、decision protocol、决策协议、重大人生决策 |
+| **Skill 文件** | `.agents/skills/daily/decision_protocol/SKILL.md`（+ prompt.md，用户自定义组合版） |
+| **task_type** | `daily.decision_protocol` |
+| **场景** | 决策 |
+| **用途** | 预烘焙组合套餐：启动前对齐（目标/成功标准/资源/限制/协作对象）+最强论证（双向钢人）+执行纪律。适用于重大人生抉择。简单二选一不走本 skill 走 steel_man_decision |
+
+---
+
+### 56. GKD 签到规则自动化 (gkd-signin-automation) [adhoc]
 
 | 属性 | 值 |
 |------|------|
@@ -989,7 +1154,7 @@
 
 ---
 
-### 46. 人生设计 (life_design) [recurring]
+### 57. 人生设计 (life_design) [recurring]
 
 | 属性 | 值 |
 |------|------|
@@ -1007,7 +1172,7 @@
 
 ---
 
-### 47. 后端自主 agent 会话 (headless_session) [adhoc]
+### 58. 后端自主 agent 会话 (headless_session) [adhoc]
 
 | 属性 | 值 |
 |------|------|
@@ -1025,7 +1190,7 @@
 
 ---
 
-### 48. 版本发布 (system.release) [system]
+### 59. 版本发布 (system.release) [system]
 
 | 属性 | 值 |
 |------|------|
@@ -1045,7 +1210,7 @@
 
 ---
 
-### 49. README 编写 (readme_author) [adhoc]
+### 60. README 编写 (readme_author) [adhoc]
 
 | 属性 | 值 |
 |------|------|

@@ -19,56 +19,24 @@ import sys
 import json
 import argparse
 import subprocess
-import ctypes
-from ctypes import wintypes
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, List
 
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
-# ========== ctypes 回收站（SHFileOperationW）==========
+# ========== 回收站删除（复用公共模块）==========
+# 历史实现曾在此内联 ctypes SHFileOperationW；现已抽取为项目统一入口
+# tools/disk/recycle.py，此处仅做转发，签名保持 (ok, err_msg) 不变。
+#
+# 注意：不要改回 PowerShell Microsoft.VisualBasic.FileIO 方案 ——
+# 本机 Add-Type 被安全策略拦截（"Add-Type compiles and loads .NET code at runtime"）。
 
-FO_DELETE = 0x0003
-FOF_ALLOWUNDO = 0x0040
-FOF_NOCONFIRMATION = 0x0010
-FOF_SILENT = 0x0004
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]  # scripts→disk_manager→workspace→项目根
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-_shell32 = ctypes.windll.shell32
-
-
-class SHFILEOPSTRUCTW(ctypes.Structure):
-    _fields_ = [
-        ("hwnd", wintypes.HWND),
-        ("wFunc", wintypes.UINT),
-        ("pFrom", wintypes.LPCWSTR),
-        ("pTo", wintypes.LPCWSTR),
-        ("fFlags", wintypes.WORD),
-        ("fAnyOperationsAborted", wintypes.BOOL),
-        ("hNameMappings", ctypes.c_void_p),
-        ("lpszProgressTitle", wintypes.LPCWSTR),
-    ]
-
-
-def send_to_recycle(path):
-    """送文件/目录到回收站。返回 (ok, err_msg)。纯 Python，无子进程依赖。"""
-    try:
-        op = SHFILEOPSTRUCTW()
-        op.hwnd = None
-        op.wFunc = FO_DELETE
-        op.pFrom = path + "\0\0"  # 必须双 \0 结尾
-        op.pTo = None
-        op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT
-        op.fAnyOperationsAborted = False
-        op.hNameMappings = None
-        op.lpszProgressTitle = None
-        res = _shell32.SHFileOperationW(ctypes.byref(op))
-        if res != 0:
-            return False, f"SHFileOperationW 返回 {res}"
-        if op.fAnyOperationsAborted:
-            return False, "用户取消"
-        return True, ""
-    except Exception as e:
-        return False, str(e)[:80]
+from tools.disk.recycle import send_to_recycle  # noqa: E402
 
 
 # ========== 清理项目定义（路径模板，运行时通用化解析）==========
@@ -91,7 +59,7 @@ CACHE_ITEMS = [
     (r"~\AppData\Roaming\Trae CN\logs", "Trae日志 (建议关Trae)"),
     (r"~\AppData\Roaming\Tencent\WeChat\radium\WmpfCache", "微信WmpfCache (建议关微信)"),
     (r"~\AppData\Roaming\Tencent\WeMeet\Global\Data\WebkitCacheData", "腾讯会议WebKit缓存"),
-    (r"E:\<data_drive>:\<system_data_root>\QQMusicCache\downloadproxyNew\tp2p\.tpfs\duty", "QQ音乐播放缓存"),
+    (r"<data_drive>:\<system_data_root>\QQMusicCache\downloadproxyNew\tp2p\.tpfs\duty", "QQ音乐播放缓存"),
 ]
 
 # [2] 已卸载程序残留
@@ -192,7 +160,7 @@ def _allowed_roots():
     return [
         os.path.realpath(os.path.expanduser("~")),
         os.path.realpath(os.environ.get("ProgramData", r"C:\ProgramData")),
-        r"E:\<data_drive>:\<system_data_root>",
+        r"<data_drive>:\<system_data_root>",
     ]
 
 

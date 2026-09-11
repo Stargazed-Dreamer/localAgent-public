@@ -8,20 +8,22 @@
 
 | 主域 | 网站名 | 文件 | 相关 skill | 触发关键词 | 登录态 |
 |------|--------|------|-----------|-----------|--------|
-| `xiaoheihe.cn` | 小黑盒 | [sites/xiaoheihe.md](file:///f:/<project_root>/.agents/skills/browser_lessons/sites/xiaoheihe.md) | web_archive、arknights_gacha（导入） | 小黑盒、xiaoheihe、社区帖子、图文帖、文章帖 | 匿名可读，写操作需登录 |
-| `127.0.0.1` | LocalAgent 本地监控面板 | [sites/127-0-0-1.md](file:///f:/<project_root>/.agents/skills/browser_lessons/sites/127-0-0-1.md) | browser_lessons、html-dev-debug | localhost、LocalAgent监控面板、终端卡片 | 本机后端运行时可访问 |
-| `kurogames.com` | 库洛云游戏 | [sites/kurogames.md](file:///f:/<project_root>/.agents/skills/browser_lessons/sites/kurogames.md) | wuwa_gacha | 鸣潮、云鸣潮、唤取记录 | 需登录库洛通行证 |
-| `hypergryph.com` | 鹰角通行证与游戏记录页 | [sites/hypergryph.md](file:///f:/<project_root>/.agents/skills/browser_lessons/sites/hypergryph.md) | arknights_gacha、endfield_gacha | 明日方舟、终末地、鹰角、寻访记录 | 需登录鹰角通行证 |
+| `xiaoheihe.cn` | 小黑盒 | [sites/xiaoheihe.md](file:///<project_root>/.agents/skills/browser_lessons/sites/xiaoheihe.md) | web_archive、arknights_gacha（导入） | 小黑盒、xiaoheihe、社区帖子、图文帖、文章帖 | 匿名可读，写操作需登录 |
+| `127.0.0.1` | LocalAgent 本地监控面板 | [sites/127-0-0-1.md](file:///<project_root>/.agents/skills/browser_lessons/sites/127-0-0-1.md) | browser_lessons、html-dev-debug | localhost、LocalAgent监控面板、终端卡片 | 本机后端运行时可访问 |
+| `kurogames.com` | 库洛云游戏 | [sites/kurogames.md](file:///<project_root>/.agents/skills/browser_lessons/sites/kurogames.md) | wuwa_gacha | 鸣潮、云鸣潮、唤取记录 | 需登录库洛通行证 |
+| `hypergryph.com` | 鹰角通行证与游戏记录页 | [sites/hypergryph.md](file:///<project_root>/.agents/skills/browser_lessons/sites/hypergryph.md) | arknights_gacha、endfield_gacha | 明日方舟、终末地、鹰角、寻访记录 | 需登录鹰角通行证 |
+| `feishu.cn` | 飞书云文档 | [sites/feishu.cn.md](../sites/feishu.cn.md) | web_archive（extract_feishu.py） | 飞书、飞书文档、云文档、wiki、docx | 分享链接游客态可读 |
+| `docs.qq.com` | 腾讯文档 | [sites/docs.qq.com.md](../sites/docs.qq.com.md) | web_archive（extract_tencent_doc.py） | 腾讯文档、腾讯、docs.qq.com、tdocs | 游客态可读全文 |
+| `bilibili.com` | <data_drive>:\<bilibili_videos> | [sites/bilibili.com.md](../sites/bilibili.com.md) | bilibili_gacha、official_gacha | <data_drive>:\<bilibili_videos>、bilibili、互动抽奖、取关、删动态 | 需登录 |
 
 ## 待记录网站（已知但未汇总）
 
-以下网站已被现有 skill 操作，但 sites/ 文件尚未创建。下次操作这些网站遇到非显然行为时按 `sites/_template.md` 创建并补到此表。
+以下网站已被现有 skill 操作，但 sites/ 文件尚未创建。下次操作这些网站遇到非显然行为时，用 `browser_write_lesson` MCP 工具写入（自动按 `_template.md` 9 段结构建文件、规范化域名、合并 aliases），并补到此表。
 
 | 主域 | 网站名 | 相关 skill | 备注 |
 |------|--------|-----------|------|
 | `mp.weixin.qq.com` | 微信公众号 | web_archive | DOM 坑已在 web_archive/SKILL.md 中，未汇总到独立 sites 文件 |
 | `*.xiaoe-tech.com` | 小鹅通鹅圈子 | community_review | 内容提取/滚动防跳帖/点赞标记坑已在 community_review.md 中 |
-| `bilibili.com` | <data_drive>:\<bilibili_videos> | bilibili_gacha、official_gacha | 互动抽奖/动态/反风控坑散落在两个 skill 文件中 |
 | `bwiki.rs` | Bwiki | arknights_gacha | 卡池数据采集 |
 | `prts.wiki` | PRTS | arknights_gacha | 限定卡池数据 |
 | `nowcoder.com` | 牛客 | niuke_review | 面经抓取（实际用 WebSearch + WebFetch，未必走浏览器） |

@@ -14,6 +14,7 @@ Ticket 06：
 from __future__ import annotations
 
 import sys
+from typing import cast
 
 from PySide6.QtWidgets import QApplication
 
@@ -23,6 +24,7 @@ from client.approval_panel.poller import Poller
 from client.approval_panel.settings import get_show_in_tray
 from client.approval_panel.taskbar_flash import flash_window_5_times, stop_flash
 from client.approval_panel.tray import TrayIcon
+from lib.ui import apply_theme
 
 # 单实例锁 key（QSharedMemory）
 _SINGLE_INSTANCE_KEY = "LocalAgent_ApprovalPanel"
@@ -57,7 +59,7 @@ def _activate_existing_panel() -> None:
         import ctypes
         from ctypes import wintypes
 
-        target_hwnd = ctypes.wintypes.HWND()
+        target_hwnd = wintypes.HWND()
 
         # EnumWindows 回调：找到标题匹配的窗口
         def _callback(hwnd, _lparam):
@@ -89,11 +91,14 @@ def _activate_existing_panel() -> None:
 def main() -> int:
     # 不抢焦点：QApplication 前 set Qt::AA_DisableWindowContextHelpButton
     # 启动后窗口通过 WindowDoesNotAcceptFocus 不激活
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = cast(QApplication, QApplication.instance() or QApplication(sys.argv))
     app.setApplicationName("LocalAgent 审批面板")
     app.setOrganizationName("LocalAgent")
     # 关闭最后一个窗口时不退出（托盘模式需要）
     app.setQuitOnLastWindowClosed(False)
+
+    # 接入全局主题（与主 client 同一套暗色工程主题）
+    apply_theme(app)
 
     # 单实例锁：已有实例运行时激活已有窗口并退出
     if not _acquire_single_instance(app):

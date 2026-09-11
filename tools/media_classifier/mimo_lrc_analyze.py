@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 MiMo LRC 歌词分析器
 使用 MiMo API 分析歌词的情感、主题、风格等。
@@ -7,7 +6,7 @@ MiMo LRC 歌词分析器
 
 用法:
   # 分析 MuseArc 库中的歌词（通过数据库关联歌曲信息）
-  uv run python tools/media_classifier/mimo_lrc_analyze.py --musearc-db F:\\codex\\MuseArc\\realLib\\db\\musearc.db --musearc-lib F:\\codex\\MuseArc\\realLib
+  uv run python tools/media_classifier/mimo_lrc_analyze.py --musearc-db <external_project_root>\\MuseArc\\realLib\\db\\musearc.db --musearc-lib <external_project_root>\\MuseArc\\realLib
 
   # 分析测试目录中的歌词
   uv run python tools/media_classifier/mimo_lrc_analyze.py --test-dir "E:\\<data_drive>:\<projects_root>\\歌曲分类\\测试文件"
@@ -16,20 +15,19 @@ MiMo LRC 歌词分析器
   uv run python tools/media_classifier/mimo_lrc_analyze.py --musearc-db ... --musearc-lib ... --test-dir ...
 """
 
+import argparse
 import json
 import os
 import re
-import sys
-import time
-import argparse
 import sqlite3
-import requests
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import sys
 
 # ==================== 配置 ====================
-
 import sys as _sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
 _sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from server.llm_pool import call_via_backend, check_backend_pool, print_backend_pool_status
 
@@ -384,7 +382,7 @@ def main():
     save_state(state)
 
     print(f"\n{'='*60}")
-    print(f"完成！")
+    print("完成！")
     print(f"  成功处理: {processed}")
     print(f"  失败: {failed}")
     print(f"  总结果数: {len(results)}")

@@ -113,6 +113,7 @@ class InboxStore:
     def conn(self) -> sqlite3.Connection:
         if self._conn is None:
             self.initialize()
+        assert self._conn is not None  # initialize() 后必有连接，收窄返回类型
         return self._conn
 
     @staticmethod
@@ -146,7 +147,9 @@ class InboxStore:
             ),
         )
         self.conn.commit()
-        return self.get(item_id)
+        result = self.get(item_id)
+        assert result is not None  # 刚 INSERT 的行必存在，收窄返回类型
+        return result
 
     def get(self, item_id: str) -> dict | None:
         cur = self.conn.execute("SELECT * FROM inbox_items WHERE id = ?", (item_id,))

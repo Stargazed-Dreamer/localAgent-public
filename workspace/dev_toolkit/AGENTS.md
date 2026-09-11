@@ -165,7 +165,7 @@ implement 防呆门放行小任务时，可引导用 anti-hallucination 替代"�
 
 Skill 定义在 `.agents/skills/` 目录，每个 skill 是一个文件夹（`SKILL.md` + 按需的 `references/scripts/assets`）。索引在 [`.agents/skills/_index.md`](.agents/skills/_index.md)。
 
-### Skill 清单（23 个）
+### Skill 清单（34 个）
 
 | 类别 | Skill | 用途 |
 |------|-------|------|
@@ -191,6 +191,25 @@ Skill 定义在 `.agents/skills/` 目录，每个 skill 是一个文件夹（`SK
 | **UI/UX 设计** | ui-ux-pro-max | 第三方技能：UI/UX 设计智能（配色/字体/风格/设计系统生成） |
 | **前端设计工艺（vendor 融合）** | dev/impeccable | 前端设计工艺（23 命令 + Absolute Bans + OKLCH + Mobile 4 档必检），来源 pbakaus/impeccable (Apache-2.0) |
 | | dev/hallmark | 反 AI-slop 设计（4 动词 + 6 大 disciplines + 20 主题），来源 nutlope/hallmark (MIT) |
+| **思维工具集（daily/）** | daily/socratic_questioning | 苏格拉底提问：最多 6 个追问澄清"嘴上问的和心里想的不一致" |
+| | daily/dual_layer_explanation | 双层解释：小白+专家双视角解释陌生概念 |
+| | daily/reverse_decomposition | 反向拆解：拆解优秀作品为什么有效+可复用规律 |
+| | daily/fact_checking | 事实核查：拆三层（事实/结论/价值判断）+ 联网核查 5 档可信度 |
+| | daily/expert_consultation | 专家会诊：3 种互补视角重新定义问题+互相质疑 |
+| | daily/first_principles | 第一性原理：拆到本质（基本事实/习惯性假设/真正目标/现实约束） |
+| | daily/cross_domain_borrowing | 跨领域借解：从历史案例和至少 3 个距离较远领域找相似解法 |
+| | daily/steel_man_decision | 钢人决策：双向钢人论证二选一，找真正分歧点 |
+| | daily/minimal_experiment | 最小实验：低成本可逆 7 天内验证最关键假设 |
+| | daily/talent_mining | 天赋挖掘：资深生涯咨询师对话找被压抑的天赋 |
+| | daily/decision_protocol | 决策协议：预烘焙组合（对齐+双向钢人+执行纪律），重大人生抉择专用 |
+
+### 思维工具集（daily/，11 个通用思维 Prompt）
+
+来源：文章[《都 Agent 时代了，我还是想分享给你这 12 个我最常用的 Prompt》](https://mp.weixin.qq.com/s/NAdhdFrUq9-BKelqzqpwBQ)（作者：数字生命卡兹克）。12 个 Prompt 中 2 个已整合到现有 skill（横纵分析法→`deep_research`、人生设计术→`life_design`），其余 10 个+用户自定义组合版共 11 个独立 skill。
+
+**组合哲学**：这些 skill 是积木不是流水线，发散优先、举例非穷尽、agent 自行判断组合方式、拿不准列给用户选。详见 [daily/README.md](.agents/skills/daily/README.md) 组合哲学段。
+
+**与 dev/grill-me 的关系**：grill-me 是决策前拷问计划（dev/），steel_man_decision 是决策中二选一（daily/），decision_protocol 是重大决策走完整协议（daily/）。三者可串联：grill-me 澄清→steel-man 决策，或直接走 decision_protocol。
 
 ### UI/UX 设计任务（优先用 ui-ux-pro-max）
 
@@ -264,7 +283,7 @@ agent 靠清单里每个 skill 的 `description`（≤250字符）匹配用户�
 │   ├── rules/                          # 编码准则、skill 设计规范
 │   │   ├── coding_principles.md
 │   │   └── skill_design.md
-│   ├── skills/                         # 23 个 skill 文件夹
+│   ├── skills/                         # 34 个 skill 文件夹
 │   │   ├── _index.md                   # skill 索引（必读入口）
 │   │   ├── grill-me/SKILL.md
 │   │   ├── spec/SKILL.md
@@ -288,6 +307,19 @@ agent 靠清单里每个 skill 的 `description`（≤250字符）匹配用户�
 │   │   │   ├── goal_engineering/       # 开发任务统一编排入口（三阶段闸门流程）
 │   │   │   ├── impeccable/             # 前端设计工艺（vendor 融合，含 upstream/ 原版档案）
 │   │   │   └── hallmark/               # 反 AI-slop 设计（vendor 融合，含 upstream/ 原版档案）
+│   │   ├── daily/                      # 思维工具集（11 个通用思维 Prompt + 组合哲学 README）
+│   │   │   ├── README.md               # 组合哲学（发散优先 / 举例非穷尽 / agent 自行组合）
+│   │   │   ├── socratic_questionning/  # 苏格拉底提问
+│   │   │   ├── dual_layer_explanation/ # 双层解释
+│   │   │   ├── reverse_decomposition/  # 反向拆解
+│   │   │   ├── fact_checking/          # 事实核查
+│   │   │   ├── expert_consultation/    # 专家会诊
+│   │   │   ├── first_principles/       # 第一性原理
+│   │   │   ├── cross_domain_borrowing/ # 跨领域借解
+│   │   │   ├── steel_man_decision/     # 钢人决策（双向钢人）
+│   │   │   ├── minimal_experiment/    # 最小实验
+│   │   │   ├── talent_mining/          # 天赋挖掘
+│   │   │   └── decision_protocol/      # 决策协议（重大人生抉择组合套餐）
 │   │   └── ui-ux-pro-max/              # 第三方 UI/UX 设计技能
 │   │       ├── SKILL.md
 │   │       ├── data/                   # CSV 数据库（风格/配色/字体/UX准则...）

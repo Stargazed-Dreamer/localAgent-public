@@ -19,7 +19,6 @@
 
 import os
 
-
 # 扩展名 → 类型标签后缀的映射
 # key 为小写扩展名（含点），value 为类型标签（不含扩展名前缀）
 _EXT_LABEL_MAP: dict[str, str] = {

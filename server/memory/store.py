@@ -35,6 +35,8 @@ class MemoryStore:
             self._conn: sqlite3.Connection | None = None  # 初始化数据库连接对象为None，表示尚未建立连接
             self._write_lock = threading.Lock()
             self._table_columns_cache: dict[str, list[str]] = {}  # 表名列名缓存（实例级）
+            # Ticket 01：DB 大小采样历史（in-memory 7 天滚动，不新增 sqlite 表）
+            self._db_size_history: dict[str, float] = {}
 
     def _commit(self) -> None:
         """线程安全的 commit（串行化写提交，避免并发 database is locked）"""
@@ -61,6 +63,7 @@ class MemoryStore:
         """
         if self._conn is None:  # 检查数据库连接是否已存在
             self.initialize()  # 若连接为空，则初始化数据库连接
+        assert self._conn is not None  # initialize() 后必有连接，收窄返回类型
         return self._conn  # 返回数据库连接对象
 
         # ─── 消息 ───────────────────────────────────────────────
@@ -88,7 +91,7 @@ class MemoryStore:
                 (ts, source, role, content, json.dumps(metadata or {}, ensure_ascii=False), session_id, key),
             )
             self.conn.commit()
-            return cur.lastrowid  # T06：用 cursor.lastrowid 而非 SELECT last_insert_rowid()
+            return cur.lastrowid or 0  # T06：用 cursor.lastrowid 而非 SELECT last_insert_rowid()
 
     def get_message(self, msg_id: int) -> dict | None:
         """
@@ -232,7 +235,7 @@ class MemoryStore:
                     (start_time, end_time, summary, message_count, model),
                 )
                 self.conn.commit()
-                return cur.lastrowid  # T06：cursor.lastrowid 而非 SELECT last_insert_rowid()
+                return cur.lastrowid or 0  # T06：cursor.lastrowid 而非 SELECT last_insert_rowid()
 
     def query_summaries(
         self,
@@ -446,7 +449,7 @@ class MemoryStore:
                 (message_id, text_hash, vector_blob, model_name, dim),
             )
             self.conn.commit()
-            return cur.lastrowid  # T06：cursor.lastrowid 而非 SELECT last_insert_rowid()
+            return cur.lastrowid or 0  # T06：cursor.lastrowid 而非 SELECT last_insert_rowid()
 
     def get_vectors_for_search(self, model_name: str | None = None) -> list[dict]:
         """获取所有向量用于搜索"""
@@ -632,6 +635,38 @@ class MemoryStore:
             "db_size_bytes": db_size, # 数据库大小（字节）
             "db_size_mb": round(db_size / 1024 / 1024, 2),  # 转换为MB并保留两位小数
         }
+
+    def query_db_size_history(self) -> list[dict]:
+        """返回最近 7 天 DB 大小采样数组
+
+        Ticket 01：最简实现，in-memory cache + 当天采样。
+        不新增 sqlite 表（如需持久化采样走后续 ticket）。
+
+        每次 /memory/status 被调用时更新当天采样值，反映最新 DB 大小。
+        历史采样在内存中滚动保留 7 天（按日期字符串升序，超过 7 条删最旧的）。
+
+        Returns:
+            list[dict]: 每条 {date: "YYYY-MM-DD", size_mb: float}，按 date 升序，
+                       最少返回当天 1 条采样。
+        """
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
+        # 当天采样（每次调用都更新当天值，反映最新 DB 大小）
+        db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
+        size_mb = round(db_size / 1024 / 1024, 2)
+        self._db_size_history[today_str] = size_mb
+
+        # 滚动保留最近 7 天，删过期采样
+        sorted_dates = sorted(self._db_size_history.keys())
+        if len(sorted_dates) > 7:
+            for old_date in sorted_dates[:-7]:
+                del self._db_size_history[old_date]
+
+        # 返回 list[dict]，按 date 升序
+        return [
+            {"date": d, "size_mb": self._db_size_history[d]}
+            for d in sorted(self._db_size_history.keys())
+        ]
 
         # ─── 旧 KV 迁移 ────────────────────────────────────────
 

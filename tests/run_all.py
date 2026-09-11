@@ -5,6 +5,7 @@
     uv run python tests/run_all.py --quick      # 同上
     uv run python tests/run_all.py --full       # 跑全部测试（含 E2E）
     uv run python tests/run_all.py --full --tb=short  # 全量 + 详细 traceback
+    uv run python tests/run_all.py --no-list    # 不打印失败清单（默认总是打印）
 
 分层策略对齐 docs/dev-workflow.md "测试运行与问题定位流程"：
 - quick: 排除 gpu/browser/real_backend/network/chaos（约 3-4 分钟跑完纯逻辑测试）
@@ -25,7 +26,7 @@ from pathlib import Path
 
 # 共享运行器（在 tools/ 下，tests/ 需补路径）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from test_runner import (  # noqa: E402
+from test_runner import (  # noqa: E402  # type: ignore[reportMissingImports]
     LOG_FILE,
     PROJECT_ROOT,
     QUICK_MARKERS,
@@ -40,11 +41,14 @@ def main() -> int:
     # 解析参数
     mode = "--quick"
     tb_mode = "line"
+    show_list = True  # 默认总是输出失败清单（agent 拿全量错误的机械防线），--no-list 显式关闭
     args = sys.argv[1:]
     filtered = []
     for a in args:
         if a in ("--quick", "--full"):
             mode = a
+        elif a == "--no-list":
+            show_list = False
         elif a.startswith("--tb="):
             tb_mode = a.split("=", 1)[1]
         else:
@@ -56,15 +60,21 @@ def main() -> int:
 
     markers = QUICK_MARKERS if mode == "--quick" else None
     # --durations=10 输出最慢测试，帮定位慢测试
+    # -n auto：xdist 并行（addopts 已移除 -n auto，脚本层显式加；受限沙箱可用 -n0 覆盖）
+    # 注意（2026-08-27 教训）：16 个 worker 全并发时每个 worker 都要导入 app+PySide6 并
+    # 序列化全部收集项，32GB 内存机器上曾连续 OOM 崩溃（execnet MemoryError）。
+    # 内存紧张时可显式降并发：uv run python tests/run_all.py --quick -n 4
+    # （pytest 对同名选项 last-wins，追加的 -n 会覆盖前面的 -n auto）
     cmd = build_pytest_cmd(
-        extra_args=["--durations=10"] + filtered,
+        extra_args=["--durations=10", "-n", "auto"] + filtered,
         markers=markers,
         xml_path=XML_FILE,
         tb_mode=tb_mode,
     )
     print(
         f"[run_all] mode={mode}, "
-        f"markers={markers or '(none)'}, tb={tb_mode}",
+        f"markers={markers or '(none)'}, tb={tb_mode}, "
+        f"failure_list={'on' if show_list else 'off'}",
         flush=True,
     )
     return run_and_report(
@@ -73,6 +83,7 @@ def main() -> int:
         xml_path=XML_FILE,
         report_path=REPORT_FILE,
         cwd=PROJECT_ROOT,
+        show_failure_list=show_list,
     )
 
 

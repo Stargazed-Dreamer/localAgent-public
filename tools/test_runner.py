@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """共享测试运行器：流式 tee 输出 + JUnit XML 解析 + 崩溃检测 + 报告生成。
 
 被 tools/run_tests_collect.py 和 tests/run_all.py 共用，消除"查不到错误"的根因：
@@ -24,7 +23,6 @@
 
 详见 docs/dev-workflow.md "测试运行与问题定位流程" 段。
 """
-import re
 import subprocess
 import sys
 import time
@@ -37,7 +35,12 @@ XML_FILE = PROJECT_ROOT / "temp" / "test_results.xml"
 REPORT_FILE = PROJECT_ROOT / "temp" / "test_failure_report.md"
 
 # 排除需要外部资源的 marker，只跑纯单元测试
-QUICK_MARKERS = "not gpu and not browser and not real_backend and not network and not chaos"
+# （e2e/gui/migration 也排除：它们依赖 CDP/后端/GUI 渲染或真实数据迁移，
+#   在 quick 层跑会因环境不满足而连坐失败；full 层不传 markers 自然全跑）
+QUICK_MARKERS = (
+    "not gpu and not browser and not real_backend and not network "
+    "and not chaos and not e2e and not gui and not migration"
+)
 
 
 def classify_exit(rc: int) -> tuple[str, str]:
@@ -107,6 +110,7 @@ def parse_junit_xml(xml_path: Path) -> tuple[dict, list[dict]] | tuple[None, lis
             err_node = tc.find("error")
             if fail_node is not None or err_node is not None:
                 node = fail_node if fail_node is not None else err_node
+                assert node is not None  # 由上方 or 分支保证（pyright Optional 收窄）
                 kind = "failure" if fail_node is not None else "error"
                 name = tc.get("name", "<unknown>")
                 classname = tc.get("classname", "")
@@ -157,7 +161,7 @@ def generate_report(
     if summary is None:
         report.append("## 结果摘要\n")
         report.append("> JUnit XML 未生成或解析失败（进程崩溃或被中断）。")
-        report.append(f"> 无法解析结构化结果，**不能假设\"0 失败\"**。")
+        report.append("> 无法解析结构化结果，**不能假设\"0 失败\"**。")
         report.append(f"> 完整输出见 `{log_path.relative_to(PROJECT_ROOT)}`。\n")
     else:
         report.append("## 结果摘要\n")
@@ -192,6 +196,24 @@ def generate_report(
     if xml_path.exists():
         report.append(f"## JUnit XML\n见 `{xml_path.relative_to(PROJECT_ROOT)}`\n")
 
+    # 失败子集复现：让 agent 不必整轮重跑就能验证修复。
+    # 按 file 而非 nodeid 聚合——junit XML 的 classname 是点分模块路径，参数化测试的
+    # name 带 [params]，反向拼 nodeid 不可靠；文件路径属性稳定且足够定位。
+    if failures:
+        files = []
+        for f in failures:
+            fp = f.get("file", "")
+            if fp and fp not in files:
+                files.append(fp)
+        if files:
+            file_args = " ".join(files)
+            report.append("## 失败子集复现（验证修复先跑这些，别整轮重跑）\n")
+            report.append("```powershell")
+            report.append(f".venv\\Scripts\\python.exe -m pytest {file_args} --tb=short")
+            report.append("```")
+            report.append("\n或只重跑上次失败的测试（依赖 .pytest_cache）：`pytest --lf --tb=short`")
+            report.append("全部通过后，再跑一次整轮 quick 收尾。\n")
+
     report.append("\n## 分类建议\n")
     report.append("- **真实 bug**：单独跑该测试文件也失败 → 改实现代码")
     report.append("- **测试隔离问题**：单独跑通过，全量跑失败 → 改测试（加 cleanup/隔离 fixture）或标记已知问题")
@@ -206,6 +228,60 @@ def generate_report(
     content = "\n".join(report)
     report_path.write_text(content, encoding="utf-8")
     return content
+
+
+def _print_failure_list(
+    summary: dict | None,
+    failures: list[dict],
+    status: str,
+    xml_path: Path,
+    report_path: Path,
+) -> None:
+    """把完整失败/错误清单打印到 console（默认强制，调用方显式关才不打印）。
+
+    背景（2026-09-03）：失败表格原本只写进 test_failure_report.md，控制台只打一行
+    [result] 计数。agent 若不主动读报告文件，就拿不到完整 error 清单，只能反复
+    翻 log / 重跑，形成"测→修→再测"循环。此函数把同一份 JUnit XML 驱动的清单以
+    紧凑文本打上 stdout，一行一个失败（测试全名 + 错误摘要），不依赖 pytest 的
+    文本输出（-q dots 进度会淹没在长输出里），也不依赖 agent 主动读文件。
+
+    summary=None（XML 缺失/解析失败）时给出显式提示，不假装"0 失败"。
+    """
+    if summary is None:
+        if failures and "parse_error" in failures[0]:
+            print(
+                f"[list] XML 解析失败：{failures[0]['parse_error']}，"
+                "无法生成结构化失败清单；完整输出见 log 末尾",
+                flush=True,
+            )
+        else:
+            print(
+                "[list] XML 未生成（进程崩溃或被中断），无法生成结构化失败清单；"
+                "完整输出见 log 末尾",
+                flush=True,
+            )
+        return
+
+    print(f"[list] ===== 失败/错误清单（共 {len(failures)} 个，来自 JUnit XML）=====", flush=True)
+    for i, f in enumerate(failures, 1):
+        full = f"{f['classname']}::{f['name']}" if f["classname"] else f["name"]
+        msg = (f["message"] or f["type"] or "(无消息)").replace("\n", " ")
+        print(f"[list] {i:>3}. [{f['kind']}] {full} — {msg}", flush=True)
+    if failures:
+        print(f"[list] ===== 清单结束 =====", flush=True)
+        print(
+            f"[list] 完整表格 + 每个失败的单独复现命令见 {report_path.relative_to(PROJECT_ROOT)}。"
+            "修复后先跑失败子集/`pytest --lf` 验证，全部通过再整轮收尾。",
+            flush=True,
+        )
+    elif status == "passed":
+        print("[list] （无失败）", flush=True)
+    else:
+        print(
+            f"[list] 状态={status} 但 XML 解析出 0 失败：崩溃可能发生在 pytest 汇总阶段"
+            f"（conftest.py:95-122 已知问题），XML 未记录崩溃，见 log 末尾。",
+            flush=True,
+        )
 
 
 def run_pytest_streaming(
@@ -230,7 +306,7 @@ def run_pytest_streaming(
     print(f"[run] log -> {log_path}", flush=True)
     if xml_path:
         print(f"[run] xml -> {xml_path}", flush=True)
-    print(f"[run] 实时输出中（同时写 log 文件）...\n", flush=True)
+    print("[run] 实时输出中（同时写 log 文件）...\n", flush=True)
 
     start = time.monotonic()
     proc = subprocess.Popen(
@@ -243,6 +319,7 @@ def run_pytest_streaming(
         errors="replace",
         bufsize=1,  # 行缓冲，实时输出
     )
+    assert proc.stdout is not None  # stdout=PIPE 时必有（pyright Optional 收窄）
 
     # 主线程逐行读（Popen.stdout.readline 阻塞，读到 EOF 返回 ""）
     with open(log_path, "a", encoding="utf-8") as log_f:
@@ -264,6 +341,7 @@ def build_pytest_cmd(
     xml_path: Path | None = XML_FILE,
     tb_mode: str = "line",
     python_exe: str | None = None,
+    include_workspace_tests: bool = True,
 ) -> list[str]:
     """构造 pytest 命令。
 
@@ -271,6 +349,8 @@ def build_pytest_cmd(
     - xml_path: --junit-xml 路径，None 表示不生成 XML
     - tb_mode: --tb 模式（line/short/long），默认 line（全量收集最简）
     - python_exe: python 路径，None 用 sys.executable
+    - include_workspace_tests: 追加各组件 manifest.toml [tests] 段声明的测试目录
+      （lib.component_manifest.collect_test_dirs()）。收集失败不阻断主套件。
 
     注意：不在此加 -q/-ra/--maxfail/--timeout 等——这些走 pyproject.toml addopts，
     避免重复。脚本层只补 --tb（覆盖 addopts 的 --tb=short）和 --junit-xml。
@@ -278,6 +358,24 @@ def build_pytest_cmd(
     if python_exe is None:
         python_exe = sys.executable
     cmd = [python_exe, "-m", "pytest", "tests/"]
+    if include_workspace_tests:
+        try:
+            # 直接以脚本方式跑（如 python tests/run_all.py）时项目根不在 sys.path
+            if str(PROJECT_ROOT) not in sys.path:
+                sys.path.insert(0, str(PROJECT_ROOT))
+            from lib.component_manifest import collect_test_dirs
+
+            workspace_dirs = collect_test_dirs()
+            if workspace_dirs:
+                cmd.extend(workspace_dirs)
+                print(
+                    f"[test_runner] workspace tests: {len(workspace_dirs)} dirs "
+                    f"(from manifest.toml [tests])",
+                    flush=True,
+                )
+        except Exception as e:
+            # manifest 系统不可用时不阻断主测试套件
+            print(f"[test_runner][WARN] collect workspace test dirs failed: {e}", flush=True)
     if markers:
         cmd.extend(["-m", markers])
     cmd.extend(["--tb", tb_mode])
@@ -294,8 +392,15 @@ def run_and_report(
     xml_path: Path = XML_FILE,
     report_path: Path = REPORT_FILE,
     cwd: Path = PROJECT_ROOT,
+    show_failure_list: bool = True,
 ) -> int:
-    """完整流程：流式运行 → 解析 XML → 生成报告 → 返回退出码。"""
+    """完整流程：流式运行 → 解析 XML → 生成报告 → 打印失败清单 → 返回退出码。
+
+    show_failure_list（默认 True）：跑完总是把完整失败清单打印到 console。
+    只有调用方显式传 False（入口脚本 --no-list）才关闭——这是"一次拿全量失败"
+    的机械防线，禁止默认关闭（agent 不读 report 文件就拿不到清单，会陷入
+    "测→修→再测"循环）。
+    """
     rc, elapsed = run_pytest_streaming(cmd, log_path, xml_path, cwd)
     content = generate_report(xml_path, rc, elapsed, log_path, report_path, cmd)
     print(f"[done] report -> {report_path}", flush=True)
@@ -313,4 +418,6 @@ def run_and_report(
         print(f"[result] XML 解析失败：{failures[0]['parse_error']}", flush=True)
     else:
         print("[result] XML 未生成（进程崩溃或被中断），见 log 末尾", flush=True)
+    if show_failure_list:
+        _print_failure_list(summary, failures, status, xml_path, report_path)
     return rc

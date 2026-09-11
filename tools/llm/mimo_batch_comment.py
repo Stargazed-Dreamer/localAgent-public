@@ -1,31 +1,29 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 MiMo 批量代码注释生成器
 使用小米 MiMo API 为 Python/C# 源码中的函数/类添加中文注释。
 每个函数/类是一个独立的 API 调用（原子任务），支持断点续传。
 
 用法:
-  uv run python tools/llm/mimo_batch_comment.py --project F:\\codex\\MuseArc --project F:\\codex\\MusePlayer
-  uv run python tools/llm/mimo_batch_comment.py --project F:\\codex\\ElasticBreath --dry-run
-  uv run python tools/llm/mimo_batch_comment.py --project F:\\codex\\MuseArc --force
+  uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\\MuseArc --project <external_project_root>\\MusePlayer
+  uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\\ElasticBreath --dry-run
+  uv run python tools/llm/mimo_batch_comment.py --project <external_project_root>\\MuseArc --force
 """
 
+import argparse
 import ast
 import json
 import os
 import re
 import sys
-import time
-import argparse
-import requests
-import threading
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ==================== 配置 ====================
-
 import sys as _sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
 _sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from server.llm_pool import call_via_backend, check_backend_pool, print_backend_pool_status
 
@@ -821,9 +819,7 @@ def _extract_code_part(line, ext):
         elif ch in ('"', "'", '`'):
             in_string = True
             string_char = ch
-        elif ext == '.py' and ch == '#':
-            return line[:i].rstrip()
-        elif ext in ('.cs', '.ts', '.tsx', '.js', '.jsx') and ch == '/' and i + 1 < len(line) and line[i+1] == '/':
+        elif ext == '.py' and ch == '#' or ext in ('.cs', '.ts', '.tsx', '.js', '.jsx') and ch == '/' and i + 1 < len(line) and line[i+1] == '/':
             return line[:i].rstrip()
         i += 1
     return line.rstrip()
@@ -915,7 +911,7 @@ def process_file(filepath, dry_run=False, project="default", debug=False):
             del results[idx]
             rejected += 1
         if bad_units and not results:
-            print(f"  [跳过] 所有单元均未通过 AST 验证")
+            print("  [跳过] 所有单元均未通过 AST 验证")
             return 0, len(units)
 
     # 从底部到顶部替换（避免行号偏移）
@@ -1068,7 +1064,7 @@ def main():
                     print(f"  [异常] {rel}: {e}")
 
     print(f"\n{'='*60}")
-    print(f"完成！")
+    print("完成！")
     print(f"  处理单元: {total_processed}")
     print(f"  发现单元: {total_units}")
     print(f"  跳过文件: {total_skipped}")

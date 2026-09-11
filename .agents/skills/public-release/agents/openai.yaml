@@ -1,4 +1,0 @@
-interface:
-  display_name: "Public Release"
-  short_description: "Build privacy-safe LocalAgent source release profiles"
-  default_prompt: "Use $public-release to plan and validate a privacy-safe source release."

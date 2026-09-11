@@ -6,9 +6,10 @@
 
 ```
 tools/
-├── browser/              # 浏览器通用工具（调试 Chrome 启动、批量打开标签页）
+├── audit/                # 仓库一致性对账（drift_detector 字符串弱耦合断链检测）
+├── browser/              # 浏览器通用工具（调试 Chrome 启动、批量开 tab、tab 泄漏诊断）
 ├── debug/                # 屏幕操控调试工具（OCR bbox 回归、坐标链路、DPI）
-├── disk/                 # 磁盘管理（备份、清理、扫描）
+├── disk/                 # 磁盘管理（回收站删除公共模块；扫描/清理见 workspace/disk_manager/）
 ├── file_classifier/      # 文件分类器（带 GUI）
 ├── image_organizer/      # 图片整理（Florence-2/Qwen-VL + LLM 分类）
 ├── llm/                  # LLM 工具（API 测试、批量注释、Token 统计、帖子总结）
@@ -26,9 +27,18 @@ tools/
 
 ## 各目录详解
 
+### `audit/` — 仓库一致性对账
+
+- `drift_detector.py` — **漂移对账脚本**（提交前机械防线之一，注册表类改动必跑）
+  - 检测项目中的"字符串弱耦合断链"，共 8 组：A 运行时 OpenAPI 真源 / B 客户端 HTTP 调用 vs 服务端路由 / C `tools_manifest.json` 路径存在性 / D `GUIDE_REGISTRY` 条目（skill_file 存在性、manifest `[skill].task_type` 一致性、`mcp_tools_priority` 工具名有效性）/ E `mcp_whitelist` 三张表 ⊆ operationIds / F `config.example.toml` ↔ `data/config_descriptions.json` 双向对账 / G `workspace/*/manifest.toml` 声明路径存在性 / H `docs/api-reference.md` ↔ OpenAPI 路由双向对账
+  - CLI：`uv run python tools/audit/drift_detector.py`（需 import `server.main`，故必须在仓库根运行）
+  - 输出：控制台摘要 + `temp/audit/drift_report.md`。报告是**可再生产物**，所以写 temp/ 不写 `docs/`；脚本本身是工具，故从 temp/ 迁到本目录
+  - ⚠️ 本目录不在 `pyrightconfig.json` 的 `include` 范围内，仓库级 `uv run pyright` **从不检查它**，改动后须显式 `uv run pyright tools/audit/drift_detector.py`
+
 ### `browser/` — 浏览器通用工具
-- `start_debug_chrome.py` — 启动独立调试 Chrome 实例（端口 9222，不影响工作浏览器）
+- `start_debug_browser.py` — 启动独立调试 Chrome 实例（端口 9222，不影响工作浏览器）
 - `open_tabs.py` — 批量打开标签页
+- `leak_trace_plugin.py` — **pytest tab 泄漏诊断插件**（2026-09-03 从 `temp/` 转正）：逐用例 teardown 后经 `GET /browser/tabs` 统计调试浏览器真实 tab 数，超过基线（默认 2）记录 LEAK 行到 `<项目根>/temp/leak_trace.log`。用法：`env PYTHONPATH="<项目根>/tools/browser" uv run pytest -p leak_trace_plugin tests/browser/... -q`。前提：后端 8766 存活。基线与日志路径可用 `LEAK_TRACE_BASELINE` / `LEAK_TRACE_LOG` 覆盖。定位"测试全绿但浏览器 tab 悄悄变多"类问题用
 
 ### `debug/` — 屏幕操控调试
 **状态：开发调试用，非常规工具**
@@ -36,9 +46,20 @@ tools/
 排查 OCR 识别、bbox 坐标链路和 DPI 偏移。PaddleOCR/PaddleX 更新后先运行三档 bbox 回归；详见 `debug/README.md`。
 
 ### `disk/` — 磁盘管理
-- `backup_env.py` — 环境备份
-- `cleanup.py` — 磁盘清理
-- `scan_disk.py` — 磁盘扫描
+
+- `recycle.py` — **回收站删除公共模块**（项目统一入口）
+  - `send_to_recycle(path) -> (ok, err_msg)`；`recycle_batch(paths, on_error=...)`
+  - ctypes `SHFileOperationW` + `FOF_ALLOWUNDO`，纯 Python，无子进程依赖
+  - CLI：`uv run python tools/disk/recycle.py --list paths.txt`（也支持位置参数 / `--stdin`）
+  - ⚠️ 本机 PowerShell `Add-Type` 被安全策略拦截，**不要**改用 `Microsoft.VisualBasic.FileIO` 方案
+
+其余磁盘工具在 `workspace/disk_manager/scripts/`（已登记 `tools_manifest.json` 的 `disk` 分类）：
+
+- `scan_disk.py` — 磁盘空间扫描
+- `cleanup.py` — 磁盘清理（dry-run 回执 → 用户勾选 → 回收站删除；内部复用本目录 `recycle.py`）
+- `backup_env.py` — 系统环境备份
+
+> `client/core/agent/builtin_tools/file_delete.py` 另有一份等价实现，属**有意为之**：`client/` 是打包分发的产品代码，不能依赖 `tools/`（开发工具不参与发布）。新增工具脚本请一律复用 `tools/disk/recycle.py`。
 
 ### `file_classifier/` — 文件分类器
 带 PySide6 GUI 的文件分类工具，使用 LLM 预测文件类别（支持文件+文件夹分类、类交互式协议、state.json 状态持久化）。

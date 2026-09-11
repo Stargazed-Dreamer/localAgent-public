@@ -14,10 +14,10 @@
   响应: {"status": "bye"} 然后退出
 """
 
-import json
-import sys
-import os
 import gc
+import json
+import os
+import sys
 
 # PaddlePaddle 兼容性
 os.environ.setdefault("FLAGS_use_mkldnn", "0")

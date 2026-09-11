@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 项目结构 baseline 同步脚本：扫描磁盘 + 把 unknown/missing 路径机械同步到 baseline。
 
@@ -28,7 +27,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from server.project_structure import (  # noqa: E402
     diff_structure,
     load_baseline,
-    save_baseline,
     scan_project_structure,
 )
 

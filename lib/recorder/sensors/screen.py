@@ -22,12 +22,15 @@
 
 import hashlib
 import io
+import logging
 import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from lib.recorder.controller import RecordingController
@@ -89,7 +92,7 @@ def compute_phash(img: Image.Image) -> int:
     Returns:
         64-bit 整数哈希值
     """
-    small = img.convert("L").resize((_PHASH_SIZE, _PHASH_SIZE), Image.BILINEAR)
+    small = img.convert("L").resize((_PHASH_SIZE, _PHASH_SIZE), Image.Resampling.BILINEAR)
     arr = np.asarray(small, dtype=np.float64)
     mean = arr.mean()
     bits = (arr >= mean).flatten()
@@ -235,9 +238,19 @@ class ScreenCaptureSensor:
         self._run_burst_impl()
 
     def _run(self) -> None:
-        """定时截图循环。"""
+        """定时截图循环。
+
+        循环体带异常保护：单帧失败仅告警不退出线程——否则 daemon 线程会
+        静默死亡，录制在无告警中丢失全部后续帧。
+        """
+        consecutive_failures = 0
         while not self._stop_event.is_set():
-            self._capture_and_buffer()
+            try:
+                self._capture_and_buffer()
+                consecutive_failures = 0
+            except Exception:
+                consecutive_failures += 1
+                logger.exception("屏幕截图连续失败 %d 次", consecutive_failures)
             self._stop_event.wait(self.interval)
 
     def _run_burst_impl(self) -> None:

@@ -82,55 +82,12 @@ class ApprovalBridge(QObject):
             event.set()
 
     def _run_dialog(self, body: dict, method: str, path: str) -> str | None:
-        """在主线程执行审批对话框 + request-approval，返回 token 或 None。"""
-        from PySide6.QtWidgets import QApplication
+        """在主线程执行审批对话框 + request-approval，返回 token 或 None。
 
-        app = QApplication.instance()
-        if app is None:
-            return None
-        parent = app.activeWindow()
-        approval_id = body.get("approval_id", "")
-        message = body.get("message", f"{method} {path} 需要 user 审批")
-        detail_parts = [f"approval_id: {approval_id}"]
-        if body.get("safety"):
-            detail_parts.append(f"safety: {body['safety']}")
-
-        from client.widgets.confirm_dialog import ConfirmDialog
-
-        confirmed = ConfirmDialog.confirm(
-            parent,
-            title=f"审批请求 — {method} {path}",
-            message=message,
-            risk_level="warning",
-            detail="\n".join(detail_parts),
-        )
-        if not confirmed:
-            logger.info("ApprovalBridge: 用户取消审批")
-            return None
-
-        reason = f"GUI 用户确认执行 {method} {path}"
-        try:
-            approval_resp = self._http._session.post(
-                self._http._build_url("/command-guard/request-approval"),
-                json={"approval_id": approval_id, "agent_reason": reason},
-                timeout=130.0,
-            )
-            if approval_resp.status_code >= 400:
-                logger.warning(
-                    "ApprovalBridge: request-approval failed status=%d",
-                    approval_resp.status_code,
-                )
-                return None
-            approval_data = approval_resp.json()
-        except Exception as e:
-            logger.warning("ApprovalBridge: request-approval error: %s", e)
-            return None
-
-        if not approval_data.get("approved"):
-            logger.info("ApprovalBridge: 审批被拒绝")
-            return None
-        logger.info("ApprovalBridge: 审批通过，token 已签发")
-        return approval_data.get("approval_token", "") or None
+        委托 HttpClient._run_approval_dialog 共享实现（主线程直调路径与
+        bridge 路径共用一份逻辑，避免两处漂移）。
+        """
+        return self._http._run_approval_dialog(body, method, path)
 
 
 # ─── 模块级 ApprovalBridge 单例 ──────────────────────────────────
@@ -143,6 +100,9 @@ def get_approval_bridge(http_client: Any) -> ApprovalBridge:
     """获取 ApprovalBridge 单例（主线程首次调用时创建）。
 
     后续调用（含 worker 线程）复用同一实例。
+    注意：QObject 亲和其创建线程。若单例首次在 worker 线程被调用时创建，
+    调用方（HttpClient._handle_approval_response）负责在弹窗前把 bridge
+    moveToThread 到主线程，保证 _on_request 槽经 QueuedConnection 在主线程执行。
     """
     global _approval_bridge
     with _approval_bridge_lock:
@@ -173,6 +133,9 @@ class HttpWorker(QThread):
 
     done = Signal(object)  # dict | None
     failed = Signal(str)  # error message
+    # HTTP 状态码（status < 400 为 None）。用于区分"网络错误 None"和
+    # "HTTP 错误码 None"（如 loop run 的 409 task_busy 需要面板感知）
+    status_code = Signal(object)  # int | None
 
     def __init__(
         self,
@@ -237,6 +200,8 @@ class HttpWorker(QThread):
             # HttpClient 返回 None 表示 HTTP 失败（status >= 400 或异常）
             # 但无法区分"404 返回 None"和"网络错误返回 None"
             # 这里统一用 done 信号传回 result（可能是 None）
+            # last_status：HttpClient 记录的最后一次 HTTP 状态码（供面板区分错误类型）
+            self.status_code.emit(getattr(http, "last_status_code", None))
             self.done.emit(self.result)
         except Exception as e:
             self.error = f"{type(e).__name__}: {e}"

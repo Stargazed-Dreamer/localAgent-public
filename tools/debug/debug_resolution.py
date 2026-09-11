@@ -1,8 +1,9 @@
 """检查截图分辨率 vs 窗口实际分辨率"""
-import requests
 import base64
-from PIL import Image
 import io
+
+import requests
+from PIL import Image
 
 API = "http://127.0.0.1:8766"
 WINDOW = "异环  "

@@ -270,10 +270,8 @@ TASK_BUILDERS: dict[str, list[dict]] = {
          "trigger": lambda c, tz: CronTrigger(c.get("daily_summarize_cron", "30 5 * * *"), tz, catchup=True)},
         {"sub_id": "cleanup", "action": "cleanup_activity",
          "trigger": lambda c, tz: CronTrigger(c.get("cleanup_cron", "30 0 * * *"), tz)},
-        {"sub_id": "screen_summary_trigger", "action": "screen_summary_trigger",
-         "trigger": lambda c, tz: IntervalTrigger(
-             c.get("screen_summary_interval", 1800),
-             first_run_delay=c.get("screen_summary_first_run_delay", 60))},
+        # 今日总结提醒不在调度表自动注入（ScreenSummaryTriggerAction 类保留在
+        # loop_actions.py，未注册调度，需要时再挂回此条目）。
     ],
     "download_watcher": [
         {"sub_id": "scan", "action": "download_scan",
@@ -302,6 +300,25 @@ TASK_BUILDERS: dict[str, list[dict]] = {
          "trigger": lambda c, tz: IntervalTrigger(
              c.get("check_interval", 43200),
              first_run_delay=c.get("first_run_delay", 300))},
+    ],
+    "secret_backup": [
+        # 密钥备份：每 5 天把 keys.json / secrets.toml / config.toml 备份到
+        # 项目内 backups/secrets/ + 项目外目录双位置（防 agent 误删 gitignored 文件后无法恢复）
+        # 路径配置在 [secret_backup] 段，调度配置在此段
+        {"sub_id": "run", "action": "secret_backup",
+         "trigger": lambda c, tz: IntervalTrigger(
+             c.get("interval_seconds", 432000),  # 默认 5 天
+             first_run_delay=c.get("first_run_delay", 300))},
+    ],
+    "workspace_backup": [
+        # workspace 关键数据备份：按各组件 manifest [backup] 段声明备份
+        # 路径配置在 [workspace_backup] 段，备份目标声明在 workspace/<comp>/manifest.toml
+        # 与 secret_backup 对称设计但独立目录和保留策略，避免相互挤占（ADR-0029）
+        # first_run_delay 默认 600s（比 secret_backup 晚 5 分钟避免并发 IO 压力）
+        {"sub_id": "run", "action": "workspace_backup",
+         "trigger": lambda c, tz: IntervalTrigger(
+             c.get("interval_seconds", 432000),  # 默认 5 天
+             first_run_delay=c.get("first_run_delay", 600))},
     ],
     "headless_session": [
         # headless-agent-session Ticket 04：后端自主启动 agent 会话
@@ -552,15 +569,33 @@ class LoopManager:
                 logger.exception(f"Loop 调度循环异常: {e}")
                 await asyncio.sleep(30)  # 异常后退避，避免每秒刷爆日志
 
-    async def _run_task(self, task: LoopTask, catchup_target_ts: float | None = None):
+    async def _run_task(self, task: LoopTask, catchup_target_ts: float | None = None,
+                        manual: bool = False):
         """执行单个任务，异常捕获 + 失败计数 + 自动暂停
 
         catchup_target_ts: 补跑模式下的目标触发时刻（epoch 秒）。None 表示正常触发。
             补跑模式下 context 会传入 catchup_target_ts，action 可据此处理历史时刻；
             last_run_at 取 max(target_ts, current)，避免补跑历史时刻时把进度回退
             （如正常 cron 已跑到 01:00，补跑 ts=23:00 不应让 last_run_at 倒退到 23:00）。
+        manual: 手动触发（run_task_now / REST endpoint）标志。
+            - running 冲突时不再静默 return，而是设置 task_busy 结果让调用方感知
+              （旧实现只打日志，endpoint 返回旧 last_result 造成"已触发"假象）。
+            - 不推进 last_run_at（P2-4）：手动补跑不应顺延 IntervalTrigger 的调度
+              周期。last_result/run_count 照常更新。
         """
         if task.running:
+            if manual:
+                logger.warning(
+                    f"Loop 任务 {task.task_id} 正在运行，手动触发被拒（task_busy）"
+                )
+                task.last_result = {
+                    "success": False,
+                    "error": "task_busy",
+                    "message": "任务正在执行中（调度器触发），请稍后再试",
+                }
+                # busy 不计失败：不是 action 执行失败，是并发保护
+                self._save_state()
+                return
             logger.warning(f"Loop 任务 {task.task_id} 已在运行，跳过本次触发")
             return
         task.running = True
@@ -578,9 +613,17 @@ class LoopManager:
             if catchup_target_ts is not None:
                 context["catchup_target_ts"] = catchup_target_ts
             result = await task.action.execute(context)
-            # catchup 模式：last_run_at 取 max(target_ts, current)，避免补跑历史时刻时把进度回退
-            # （如正常 cron 已跑到 01:00，补跑 ts=23:00 不应让 last_run_at 倒退到 23:00）
-            task.last_run_at = max(catchup_target_ts, task.last_run_at or 0) if catchup_target_ts is not None else time.time()
+            # last_run_at 更新策略：
+            # - catchup 模式：取 max(target_ts, current)，避免补跑历史时刻时把进度回退
+            #   （如正常 cron 已跑到 01:00，补跑 ts=23:00 不应让 last_run_at 倒退到 23:00）
+            # - 手动触发：不更新，避免顺延 IntervalTrigger 的下次调度（P2-4）
+            # - 正常调度：更新为 now
+            if catchup_target_ts is not None:
+                task.last_run_at = max(catchup_target_ts, task.last_run_at or 0)
+            elif manual:
+                pass  # 手动触发不推进调度进度
+            else:
+                task.last_run_at = time.time()
             task.last_result = result
             task.run_count += 1
             # 三态判断：success / skipped / failed
@@ -615,8 +658,11 @@ class LoopManager:
                 # 首次失败推送 inbox（同 error 去重），让用户立即看到
                 self._push_first_failure_inbox(task, result.get("error", "unknown"))
         except Exception as e:
-            # catchup 模式：异常路径也按 max(target_ts, current) 更新 last_run_at，避免补跑卡死或回退
-            task.last_run_at = max(catchup_target_ts, task.last_run_at or 0) if catchup_target_ts is not None else time.time()
+            # last_run_at 更新策略与成功路径一致：catchup 取 max；manual 不推进
+            if catchup_target_ts is not None:
+                task.last_run_at = max(catchup_target_ts, task.last_run_at or 0)
+            elif not manual:
+                task.last_run_at = time.time()
             task.last_result = {"success": False, "error": str(e)}
             task.fail_count += 1
             task.run_count += 1
@@ -859,16 +905,23 @@ class LoopManager:
         """手动触发一次任务执行。
 
         catchup_target_ts: 可选，补跑模式下的目标整点时刻（epoch 秒）。
-            None（默认）：正常触发，last_run_at 更新为当前时间。
+            None（默认）：正常触发。注意：手动触发不推进 last_run_at，
+            不影响正常调度周期（不会顺延 IntervalTrigger 的下次运行）。
             非 None：补跑模式，action 收到 catchup_target_ts context，
             last_run_at 取 max(target_ts, current)（不回退进度，让 next_run_at 计算正确）。
             用于手动补跑历史缺失的小时总结。
+
+        若任务正在执行中（调度器触发），返回 {"success": False, "error": "task_busy"}，
+        调用方（REST endpoint）应把 busy 状态透传给 GUI。
         """
         t = self.tasks.get(task_id)
         if not t:
             raise KeyError(task_id)
-        await self._run_task(t, catchup_target_ts=catchup_target_ts)
-        return t.last_result or {"success": False, "error": "no result"}
+        await self._run_task(t, catchup_target_ts=catchup_target_ts, manual=True)
+        result = t.last_result or {"success": False, "error": "no result"}
+        if isinstance(result, dict) and result.get("error") == "task_busy":
+            return {"task_busy": True, **result}
+        return result
 
     def get_status(self) -> dict:
         """供 /health 和 /loop/tasks 调用"""
@@ -951,6 +1004,9 @@ async def run_task(task_id: str, body: RunTaskRequest | None = None):
         raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
     catchup_ts = body.catchup_target_ts if body else None
     result = await mgr.run_task_now(task_id, catchup_target_ts=catchup_ts)
+    # busy 状态用 409 透传，GUI 可区分"执行失败"和"任务正在跑，稍后再试"
+    if isinstance(result, dict) and result.get("task_busy"):
+        raise HTTPException(status_code=409, detail=result.get("message", "任务正在执行中"))
     return {"task_id": task_id, "catchup_target_ts": catchup_ts, "result": result}
 
 

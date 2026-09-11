@@ -1,6 +1,6 @@
 # 基础元素参考 (basic.md)
 
-本文件是 [office_pptx skill](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注 python-pptx 基础元素的 API、用法、反模式。
+本文件是 [office_pptx skill](file:///<project_root>/.agents/skills/office_pptx/SKILL.md) 的子参考，专注 python-pptx 基础元素的 API、用法、反模式。
 
 ## 目录
 
@@ -831,6 +831,6 @@ add-only mermaid → native shapes 或 rendered image：
 
 - [python-pptx 官方文档](https://python-pptx.readthedocs.io/)
 - [python-pptx GitHub](https://github.com/scanny/python-pptx)
-- [office_pptx SKILL.md](file:///f:/<project_root>/.agents/skills/office_pptx/SKILL.md)
-- [references/design_principles.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/design_principles.md)
-- [references/recipes.md](file:///f:/<project_root>/.agents/skills/office_pptx/references/recipes.md)
+- [office_pptx SKILL.md](file:///<project_root>/.agents/skills/office_pptx/SKILL.md)
+- [references/design_principles.md](file:///<project_root>/.agents/skills/office_pptx/references/design_principles.md)
+- [references/recipes.md](file:///<project_root>/.agents/skills/office_pptx/references/recipes.md)

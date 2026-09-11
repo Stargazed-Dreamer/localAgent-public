@@ -24,6 +24,7 @@ browser_snapshot 端点从 server/browser.py 迁移至本文件（Ticket 04）�
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from lib.schema import BaseSchema
@@ -250,6 +251,9 @@ class BrowserSnapshotRequest(BaseSchema):
     - session_id: 持久 session id（推荐，热态 <250ms）。不传则按 url_pattern
       走 exec_python 子进程模型（0.5–1.4 秒固定开销）
     - url_pattern: 无 session 时匹配标签页（有 session 时忽略）
+    - tab_id: 无 session 时精确消歧用。传 browser_list_tabs 返回的 target_id，
+      会经 CDP /json/list 解析为 URL 做精确匹配，避免多同域 tab 触发 AMBIGUOUS_TAB
+      （修复问题②）。与 url_pattern 同时传时，tab_id 精确匹配优先。
     - root_selector: 限定快照根节点（CSS），不填则从页面根开始
     - interesting_only: True=只返回可交互元素（按钮/链接/输入框等），False=返回完整树
     - max_depth: 树最大深度（避免超大页面爆 token），不填则不限
@@ -257,6 +261,7 @@ class BrowserSnapshotRequest(BaseSchema):
     """
     session_id: str | None = None
     url_pattern: str | None = None
+    tab_id: str | None = None  # 无 session 时精确消歧（browser_list_tabs 的 target_id）
     root_selector: str | None = None
     interesting_only: bool = True
     max_depth: int | None = None
@@ -398,6 +403,25 @@ async def browser_snapshot(req: BrowserSnapshotRequest):
 
     # 无 session：走 exec_python 子进程模型（冷启动）
     # P0-1 修复：从本模块导入 ARIA JS，在子进程内通过 page.evaluate 执行
+    # 修复问题②：无会话模式支持 tab_id 精确消歧。先把 CDP target id 解析为 URL，
+    # 再作为精确匹配传给子进程 _find_page(tab_id=url)，避免多同域 tab 时
+    # _find_page 返回 AMBIGUOUS_TAB 且调用方无法消解。
+    _tab_id_url = None
+    if req.tab_id:
+        from .routes import _resolve_tab_id_to_url
+        _tab_id_url = await asyncio.to_thread(_resolve_tab_id_to_url, req.tab_id)
+        if _tab_id_url is None:
+            _elapsed = int((_time.perf_counter() - start) * 1000)
+            return BrowserSnapshotResponse(
+                success=False, nodes=[], truncated=False, elapsed_ms=_elapsed,
+                error=BrowserErrorResponse(
+                    error_code="TAB_NOT_FOUND",
+                    error_message=BROWSER_ERROR_CODES["TAB_NOT_FOUND"],
+                    phase="locate",
+                    debug_detail=f"tab_id {req.tab_id} 无法解析为 URL（可能已关闭或调试浏览器未运行）",
+                    elapsed_ms=_elapsed,
+                ),
+            )
     params = {
         "url_pattern": req.url_pattern,
         "root_selector": req.root_selector,
@@ -405,6 +429,7 @@ async def browser_snapshot(req: BrowserSnapshotRequest):
         "max_depth": req.max_depth,
         "max_nodes": req.max_nodes,
         "aria_js": _ARIA_SNAPSHOT_JS,
+        "tab_id": _tab_id_url,
     }
     body = """
 import json
@@ -421,7 +446,6 @@ async def main():
         if not page:
             print('ERROR:TAB_NOT_FOUND')
             return
-        await Stealth().apply_stealth_async(page)
         try:
             # P0-1 修复：用 page.evaluate + ARIA JS 替代 page.accessibility.snapshot()
             result = await page.evaluate(_PARAMS["aria_js"], {

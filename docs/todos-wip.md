@@ -13,21 +13,21 @@ todos 和 WIP 是两类不同的待办管理工具，**集成在同一模块** `
 
 ## 2. 模块结构
 
-文件位置：[server/todos/](file:///f:/<project_root>/server/todos/)
+文件位置：[server/todos/](file:///<project_root>/server/todos/)
 
 | 文件 | 类名/职责 |
 |------|-----------|
-| [__init__.py](file:///f:/<project_root>/server/todos/__init__.py) | 模块导出 `TodosStore`、`router`、`wip_router`、`get_todos_store`。包含两类待办：Todos（周期性任务）和 WipTasks（一次性未完成工作），数据存于 memory.db 的 todos / wip_tasks 表 |
-| [models.py](file:///f:/<project_root>/server/todos/models.py) | Pydantic 数据模型层。定义 `TodoFrequency`（daily/weekly/monthly/quarterly）、`TodoStatus`（pending/in_progress/done/blocked/skipped/archived）、`WipStatus`（active/paused/blocked/completed）三个枚举，以及 `TodoCreate`/`TodoUpdate`/`TodoDoneRequest`/`WipTaskCreate`/`WipTaskUpdate` 五个请求模型。`TodoCreate` 含 `validate_type_specific_fields` 校验器按 type 强制专属字段 |
-| [store.py](file:///f:/<project_root>/server/todos/store.py) | SQLite 存储层 `TodosStore` 类（共享 memory.db）。负责 todos + wip_tasks 两张表的 CRUD，含 schema 定义（`TODOS_SCHEMA_SQL`）、幂等迁移（`_migrate_schema`）、JSON 字段序列化、到期计算（`_compute_next_due`）、触发检查（`check_trigger`）、统计（`get_stats`）。线程安全（`_write_lock`），WAL 模式 |
-| [router.py](file:///f:/<project_root>/server/todos/router.py) | FastAPI 路由层。定义 `router`（prefix=/todos）和 `wip_router`（prefix=/wip）两个 APIRouter。含 `get_todos_store()` 单例工厂（懒加载）。所有端点用 `asyncio.to_thread` 包裹同步 store 调用 |
-| [migration.py](file:///f:/<project_root>/server/todos/migration.py) | 从旧记忆系统迁移数据。`migrate_from_memory()` 幂等迁移 task_reminders→todos、wip_index + .agents/wip/*.json→wip_tasks（检查 schema_info 'todos_migrated' 标志） |
+| [__init__.py](file:///<project_root>/server/todos/__init__.py) | 模块导出 `TodosStore`、`router`、`wip_router`、`get_todos_store`。包含两类待办：Todos（周期性任务）和 WipTasks（一次性未完成工作），数据存于 memory.db 的 todos / wip_tasks 表 |
+| [models.py](file:///<project_root>/server/todos/models.py) | Pydantic 数据模型层。定义 `TodoFrequency`（daily/weekly/monthly/quarterly）、`TodoStatus`（pending/in_progress/done/blocked/skipped/archived）、`WipStatus`（active/paused/blocked/completed）三个枚举，以及 `TodoCreate`/`TodoUpdate`/`TodoDoneRequest`/`WipTaskCreate`/`WipTaskUpdate` 五个请求模型。`TodoCreate` 含 `validate_type_specific_fields` 校验器按 type 强制专属字段 |
+| [store.py](file:///<project_root>/server/todos/store.py) | SQLite 存储层 `TodosStore` 类（共享 memory.db）。负责 todos + wip_tasks 两张表的 CRUD，含 schema 定义（`TODOS_SCHEMA_SQL`）、幂等迁移（`_migrate_schema`）、JSON 字段序列化、到期计算（`_compute_next_due`）、触发检查（`check_trigger`）、统计（`get_stats`）。线程安全（`_write_lock`），WAL 模式 |
+| [router.py](file:///<project_root>/server/todos/router.py) | FastAPI 路由层。定义 `router`（prefix=/todos）和 `wip_router`（prefix=/wip）两个 APIRouter。含 `get_todos_store()` 单例工厂（懒加载）。所有端点用 `asyncio.to_thread` 包裹同步 store 调用 |
+| [migration.py](file:///<project_root>/server/todos/migration.py) | 从旧记忆系统迁移数据。`migrate_from_memory()` 幂等迁移 task_reminders→todos、wip_index + .agents/wip/*.json→wip_tasks（检查 schema_info 'todos_migrated' 标志） |
 
 > **重要**：不存在独立的 `server/wip/` 目录，WIP 功能完全集成在 `server/todos/` 模块内。
 
 ## 3. Todo 三类型
 
-枚举与校验位置：[models.py 第 31-66 行](file:///f:/<project_root>/server/todos/models.py)（`TodoCreate.type` 字段 + `validate_type_specific_fields` 校验器）
+枚举与校验位置：[models.py 第 31-66 行](file:///<project_root>/server/todos/models.py)（`TodoCreate.type` 字段 + `validate_type_specific_fields` 校验器）
 
 ### 3.1 类型对比
 
@@ -39,7 +39,7 @@ todos 和 WIP 是两类不同的待办管理工具，**集成在同一模块** `
 
 ### 3.2 到期判断核心逻辑
 
-[store.py 第 271-303 行](file:///f:/<project_root>/server/todos/store.py) `get_due_todos()`：
+[store.py 第 271-303 行](file:///<project_root>/server/todos/store.py) `get_due_todos()`：
 - 只查 recurring + phased_recurring（**triggered 不进 due 列表**）
 - 跳过 archived
 - phased_recurring 在 start_date 之前不算 due
@@ -47,14 +47,14 @@ todos 和 WIP 是两类不同的待办管理工具，**集成在同一模块** `
 
 ### 3.3 mark_done 行为差异
 
-[store.py 第 240-269 行](file:///f:/<project_root>/server/todos/store.py)：
+[store.py 第 240-269 行](file:///<project_root>/server/todos/store.py)：
 - **recurring**：计算 next_due
 - **phased_recurring**：计算 next_due 但超出 end_date 置 archived
 - **triggered**：不计算 next_due（重置为 NULL，等下次事件）
 
 ### 3.4 triggered 任务的 loop 轮询
 
-文件：[server/activity_tracker/loop_actions.py](file:///f:/<project_root>/server/activity_tracker/loop_actions.py)
+文件：[server/activity_tracker/loop_actions.py](file:///<project_root>/server/activity_tracker/loop_actions.py)
 
 类：`TodosTriggerCheckAction`（L1349），`action_type = "todos_trigger_check"`（L1357）
 
@@ -70,7 +70,7 @@ todos 和 WIP 是两类不同的待办管理工具，**集成在同一模块** `
 
 ## 4. WIP 生命周期
 
-状态枚举位置：[models.py 第 24-28 行](file:///f:/<project_root>/server/todos/models.py) `WipStatus`
+状态枚举位置：[models.py 第 24-28 行](file:///<project_root>/server/todos/models.py) `WipStatus`
 
 ### 4.1 状态机
 
@@ -112,7 +112,7 @@ active ──暂停──> paused
 
 ## 5. task_closure 整合
 
-Skill 文件：[.agents/skills/task_closure.md](file:///f:/<project_root>/.agents/skills/task_closure.md)
+Skill 文件：[.agents/skills/task_closure.md](file:///<project_root>/.agents/skills/task_closure.md)
 
 task_type：`system.task_closure`（通过 `agent_guide(task_type='system.task_closure')` 获取 workflow）
 
@@ -124,7 +124,7 @@ task_type：`system.task_closure`（通过 `agent_guide(task_type='system.task_c
    - 任务中断 → `wip_create` 留档（必填 title/goal/progress/next_steps/current_state/related_skills/related_files）或 `wip_update` 更新现有 WIP
 3. **step_3 经验提炼 + 可消费性自检**：识别 preference/project/reference 候选，**强制填** `consumption_contexts`（哪些 task_type 读）+ `trigger_keywords`（什么词触发读取），无法明确消费场景的跳过
 4. **step_4 查重 + 写入**：`memory_list` 查重 → `memory_set(key, {data, merge: true})` 写结构化记忆
-5. **step_5 文档自查**：对照 [project_rules.md](file:///f:/<project_root>/.trae/rules/project_rules.md) 检查清单（路由注册/Pydantic/`/health`/硬编码/`_index.md`/`AGENTS.md`/`CHANGELOG.md`/`config.example.toml`/`tools_manifest.json`），不询问用户直接修小改或报告大改。ADR 评估 3/3 通过则写 ADR
+5. **step_5 文档自查**：对照 [project_rules.md](file:///<project_root>/.trae/rules/project_rules.md) 检查清单（路由注册/Pydantic/`/health`/硬编码/`_index.md`/`AGENTS.md`/`CHANGELOG.md`/`config.example.toml`/`tools_manifest.json`），不询问用户直接修小改或报告大改。ADR 评估 3/3 通过则写 ADR
 6. **step_6 收尾报告**：向用户报告 WIP 处理 + 经验提炼（含消费场景）+ 文档自查结果
 
 ### 5.2 核心原则
@@ -141,9 +141,9 @@ task_type：`system.task_closure`（通过 `agent_guide(task_type='system.task_c
 
 ## 6. API 端点表
 
-路由文件：[server/todos/router.py](file:///f:/<project_root>/server/todos/router.py)
+路由文件：[server/todos/router.py](file:///<project_root>/server/todos/router.py)
 
-路由注册：[server/main.py](file:///f:/<project_root>/server/main.py) 第 281-282 行（`app.include_router(todos_router)` + `app.include_router(todos_wip_router)`）
+路由注册：[server/main.py](file:///<project_root>/server/main.py) 第 281-282 行（`app.include_router(todos_router)` + `app.include_router(todos_wip_router)`）
 
 ### 6.1 Todos 端点（prefix=/todos）
 
@@ -172,11 +172,11 @@ task_type：`system.task_closure`（通过 `agent_guide(task_type='system.task_c
 
 高频查询走 MCP 直连免审批：
 - `todos_due` / `wip_list` / `wip_get` 为直连 MCP 工具
-- `wip_get` / `wip_delete` 走 `localagent_advanced_tool` 网关（见 [wip_archive.md](file:///f:/<project_root>/.agents/skills/wip_archive.md)）
+- `wip_get` / `wip_delete` 走 `localagent_advanced_tool` 网关（见 [wip_archive.md](file:///<project_root>/.agents/skills/wip_archive.md)）
 
 ## 7. 数据表 Schema
 
-定义位置：[store.py 第 13-57 行](file:///f:/<project_root>/server/todos/store.py) `TODOS_SCHEMA_SQL`
+定义位置：[store.py 第 13-57 行](file:///<project_root>/server/todos/store.py) `TODOS_SCHEMA_SQL`
 
 ### 7.1 todos 表
 
@@ -284,7 +284,7 @@ stateDiagram-v2
 
 ### 9.1 不主动查询原则
 
-文件：[AGENTS.md 第 109-117 行](file:///f:/<project_root>/AGENTS.md) "关于到期任务与待办"段
+文件：[AGENTS.md 第 109-117 行](file:///<project_root>/AGENTS.md) "关于到期任务与待办"段
 
 - **不要在会话开始时主动调** `todos_due` / `wip_list` 检查到期任务或未完成工作，避免污染上下文
 - 用户问"有什么任务"/"待办"/"上次没做完的" → 调 `agent_guide(task_type='system.task_reminder')`
@@ -293,7 +293,7 @@ stateDiagram-v2
 
 ### 9.2 模块变更检查清单
 
-文件：[project_rules.md 第 192-200 行](file:///f:/<project_root>/.trae/rules/project_rules.md) "待办模块变更"段
+文件：[project_rules.md 第 192-200 行](file:///<project_root>/.trae/rules/project_rules.md) "待办模块变更"段
 
 新增 todos/wip 端点时必查：
 - [ ] 新端点是否在 `server/main.py` 中注册？
@@ -306,10 +306,10 @@ stateDiagram-v2
 
 ## 10. 相关文档
 
-- [agent-guide.md](file:///f:/<project_root>/docs/agent-guide.md) — 任务路由系统（task_closure / task_reminder / wip_archive 的 GUIDE_REGISTRY 条目）
-- [chat-engine.md](file:///f:/<project_root>/docs/chat-engine.md) — v6-lite 对话引擎架构
-- [.agents/skills/task_closure.md](file:///f:/<project_root>/.agents/skills/task_closure.md) — task_closure 6 步收尾流程详细规范
-- [.agents/skills/wip_archive.md](file:///f:/<project_root>/.agents/skills/wip_archive.md) — WIP 归档工作流
-- [AGENTS.md "关于到期任务与待办"段](file:///f:/<project_root>/AGENTS.md) — 不主动查询原则
+- [agent-guide.md](file:///<project_root>/docs/agent-guide.md) — 任务路由系统（task_closure / task_reminder / wip_archive 的 GUIDE_REGISTRY 条目）
+- [chat-engine.md](file:///<project_root>/docs/chat-engine.md) — v6-lite 对话引擎架构
+- [.agents/skills/task_closure.md](file:///<project_root>/.agents/skills/task_closure.md) — task_closure 6 步收尾流程详细规范
+- [.agents/skills/wip_archive.md](file:///<project_root>/.agents/skills/wip_archive.md) — WIP 归档工作流
+- [AGENTS.md "关于到期任务与待办"段](file:///<project_root>/AGENTS.md) — 不主动查询原则
 - `server/todos/store.py` — SQLite 存储层（schema + CRUD + 到期计算 + 触发检查）
 - `server/todos/router.py` — FastAPI 路由层（13 个端点）

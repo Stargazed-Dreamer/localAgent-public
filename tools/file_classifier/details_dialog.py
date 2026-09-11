@@ -11,14 +11,19 @@
 import os
 import subprocess
 
+from folder_info import describe_folder, format_ext_distribution
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QLabel, QPushButton,
-    QHBoxLayout, QApplication, QGroupBox,
+    QApplication,
+    QDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
 )
-
-from folder_info import describe_folder, format_ext_distribution
 from type_descriptor import describe_file_type
 
 

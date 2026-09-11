@@ -146,7 +146,7 @@ tools / workspace 下的已有子项目如 maa-patch/disk_manager 等）。
 import shutil
 from pathlib import Path
 
-source = Path(r"f:\<project_root>\workspace\dev_toolkit")
+source = Path(r"<project_root>\workspace\dev_toolkit")
 target = Path(r"<用户指定的路径>")
 
 # 复制 .agents/ 目录

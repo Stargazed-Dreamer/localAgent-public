@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import time
 import uuid as _uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
@@ -390,6 +390,22 @@ class LLMGateway(Protocol):
     """LLM 网关协议（MockLLM / 真实 LLMPoolClient 都实现此协议）。"""
 
     async def call(self, request: LLMRequest) -> LLMResponse: ...
+
+    def stream(self, request: LLMRequest) -> AsyncIterator[dict]:
+        """SSE 流式调用，逐事件 yield（runner.py _stream_llm 依赖）。
+
+        注意：stream 是异步生成器（async generator function，内部 yield），
+        调用直接返回 AsyncIterator，无需 await——runner 用 `async for` 迭代。
+        所以协议声明为非 async def（若标 async def 会要求 Coroutine 返回，
+        与 async generator 的实现类型不匹配）。
+        事件格式（dict）：
+        - {"type": "text_delta", "delta": "..."}
+        - {"type": "thinking_delta", "delta": "..."}
+        - {"type": "tool_call_delta", "tool_call": {...}}
+        - {"type": "usage", ...}
+        - {"type": "done", ...}
+        """
+        ...
 
 
 @dataclass

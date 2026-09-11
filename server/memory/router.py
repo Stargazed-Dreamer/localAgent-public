@@ -400,6 +400,8 @@ async def memory_get(key: str = Path(..., pattern=_KEY_PATTERN, description="记
     data = await asyncio.to_thread(mgr.get, key)
     if data is None:
         raise HTTPException(status_code=404, detail=f"记忆 '{key}' 不存在")
+    # P2-3：路由层注入 key 字段——mgr.get 不返回 key，客户端详情页读 data["key"] 拿不到导致标题恒空白
+    data["key"] = key
     _enrich_with_staleness(data)
     return data
 

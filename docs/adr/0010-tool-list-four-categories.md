@@ -76,6 +76,6 @@ v6-lite 引擎的工具清单面临三重问题：
 
 ## References
 
-- 决策来源：[`temp/sdd/memory-prompt-tool-refactor/00-decisions.md`](file:///f:/<project_root>/temp/sdd/memory-prompt-tool-refactor/00-decisions.md) D8（分桶清单 + 常用工具直接给 + MCP 简化包装 + 内置基本工具）、D8.1（10 个内置基本工具清单）、D8.2（19 个核心 MCP 工具筛选）、D8.3（本项目 MCP 自动拆一层子桶，其他 MCP 给桶概览）、D12（7 段说明书自适应详略）、D8.1.1（file_read 支持 offset/limit）
-- 关键代码路径：[client/core/agent/builtin_tools/](file:///f:/<project_root>/client/core/agent/builtin_tools/)（10 个内置基本工具自实现）、[client/core/agent/tool_registry.py](file:///f:/<project_root>/client/core/agent/tool_registry.py)（ToolRegistry 物化 + 分类）、[server/agent_guide.py](file:///f:/<project_root>/server/agent_guide.py)（task_type 路由 + mcp_tools_priority）、[server/mcp_whitelist.py](file:///f:/<project_root>/server/mcp_whitelist.py)（直连工具白名单 + GATEWAY_EXCLUDE）
+- 决策来源：[`temp/sdd/memory-prompt-tool-refactor/00-decisions.md`](file:///<project_root>/temp/sdd/memory-prompt-tool-refactor/00-decisions.md) D8（分桶清单 + 常用工具直接给 + MCP 简化包装 + 内置基本工具）、D8.1（10 个内置基本工具清单）、D8.2（19 个核心 MCP 工具筛选）、D8.3（本项目 MCP 自动拆一层子桶，其他 MCP 给桶概览）、D12（7 段说明书自适应详略）、D8.1.1（file_read 支持 offset/limit）
+- 关键代码路径：[client/core/agent/builtin_tools/](file:///<project_root>/client/core/agent/builtin_tools/)（10 个内置基本工具自实现）、[client/core/agent/tool_registry.py](file:///<project_root>/client/core/agent/tool_registry.py)（ToolRegistry 物化 + 分类）、[server/agent_guide.py](file:///<project_root>/server/agent_guide.py)（task_type 路由 + mcp_tools_priority）、[server/mcp_whitelist.py](file:///<project_root>/server/mcp_whitelist.py)（直连工具白名单 + GATEWAY_EXCLUDE）
 - 相关 ADR：[ADR-0006](0006-v6-lite-scope-cut.md)（v6-lite 引擎，ToolRegistry 从 /openapi.json 物化是 W2 切片）、[ADR-0009](0009-toolresult-five-variant-enum.md)（ToolResult 5 变体，内置基本工具也使用该结构）

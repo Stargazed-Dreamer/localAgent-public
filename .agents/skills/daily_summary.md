@@ -230,8 +230,8 @@ r = requests.post(f'{API}/activity/daily/{filename}/review')
 
 ```bash
 # 检查今日 hourly 文件
-dir f:\<project_root>\data\activity\hourly\YYYYMMDD_*.md
+dir <project_root>\data\activity\hourly\YYYYMMDD_*.md
 
 # 生成日总结后检查
-dir f:\<project_root>\private_vault\activity\daily\YYYYMMDD.md
+dir <project_root>\private_vault\activity\daily\YYYYMMDD.md
 ```

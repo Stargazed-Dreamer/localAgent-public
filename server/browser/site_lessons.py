@@ -149,12 +149,12 @@ def build_site_lessons_hint(lessons: list[dict]) -> str | None:
     domains = [lesson.get("domain", "?") for lesson in lessons]
     total_chars = sum(len(lesson.get("body", "")) for lesson in lessons)
     staleness_parts = []
-    for l in lessons:
-        if l.get("staleness_level") == "critical":
-            staleness_parts.append(f"{l.get('domain', '?')}(已 {l.get('staleness_days')} 天未更新，高度可能过时)")
-        elif l.get("staleness_level") == "warn":
-            days_str = f"{l.get('staleness_days')} 天" if l.get("staleness_days") is not None else "未知时间"
-            staleness_parts.append(f"{l.get('domain', '?')}({days_str} 未更新，请验证)")
+    for les in lessons:
+        if les.get("staleness_level") == "critical":
+            staleness_parts.append(f"{les.get('domain', '?')}(已 {les.get('staleness_days')} 天未更新，高度可能过时)")
+        elif les.get("staleness_level") == "warn":
+            days_str = f"{les.get('staleness_days')} 天" if les.get("staleness_days") is not None else "未知时间"
+            staleness_parts.append(f"{les.get('domain', '?')}({days_str} 未更新，请验证)")
     staleness_note = ""
     if staleness_parts:
         staleness_note = f" ⚠️ 部分经验可能过时: {', '.join(staleness_parts)}"
@@ -270,12 +270,12 @@ async def browser_match_site(req: MatchSiteRequest):
         })
 
     staleness_parts = []
-    for l in results:
-        if l["staleness_level"] == "critical":
-            staleness_parts.append(f"{l['domain']}(已 {l['staleness_days']} 天未更新，高度可能过时)")
-        elif l["staleness_level"] == "warn":
-            days_str = f"{l['staleness_days']} 天" if l["staleness_days"] is not None else "未知时间"
-            staleness_parts.append(f"{l['domain']}({days_str} 未更新，请验证)")
+    for res in results:
+        if res["staleness_level"] == "critical":
+            staleness_parts.append(f"{res['domain']}(已 {res['staleness_days']} 天未更新，高度可能过时)")
+        elif res["staleness_level"] == "warn":
+            days_str = f"{res['staleness_days']} 天" if res["staleness_days"] is not None else "未知时间"
+            staleness_parts.append(f"{res['domain']}({days_str} 未更新，请验证)")
     staleness_note = "; ".join(staleness_parts) if staleness_parts else None
 
     return MatchSiteResponse(
@@ -414,10 +414,7 @@ def _insert_section_content(body: str, section: str, content: str) -> tuple[str,
     section_start = m.end()
     # 找下一个 ## 标题位置（章节末尾）
     next_section = re.search(r"^##\s+", body[section_start:], re.MULTILINE)
-    if next_section:
-        section_end = section_start + next_section.start()
-    else:
-        section_end = len(body)
+    section_end = section_start + next_section.start() if next_section else len(body)
     # 在 section 末尾插入 content
     insert_point = section_end
     while insert_point > section_start and body[insert_point - 1] in "\r\n":
@@ -610,8 +607,10 @@ async def browser_write_lesson(req: WriteLessonRequest):
 
     # 4. 文件不存在 → 按 _template 结构创建
     if not file_path.exists():
-        all_aliases = list({name, req_domain_safe, *(req.aliases or [])})
-        all_aliases = [a for a in all_aliases if a != name]
+        alias_items: set[str] = {name, req_domain_safe}
+        if req.aliases:
+            alias_items.update(req.aliases)
+        all_aliases = [a for a in alias_items if a != name]
         initial = _build_initial_file(req_domain_safe, all_aliases, today)
         new_body, found = _insert_section_content(initial, req.section, req.content)
         if not found:
@@ -787,7 +786,7 @@ async def browser_find_url(req: FindUrlRequest):
             return []
         try:
             kw_like = f"%{kw}%"
-            params = [kw_like, kw_like]
+            params: list[object] = [kw_like, kw_like]
             where = "WHERE (u.url LIKE ? OR u.title LIKE ?)"
             if since_days is not None:
                 cutoff_unix = time.time() - since_days * 86400

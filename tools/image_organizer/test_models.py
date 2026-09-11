@@ -18,7 +18,7 @@ test_images = [p for p in TEST_IMAGES if os.path.exists(p)]
 if not test_images:
     # 从DB随机取5张
     import sqlite3
-    conn = sqlite3.connect(r'f:\<project_root>\output\image_organizer\files.db')
+    conn = sqlite3.connect(r'<project_root>\output\image_organizer\files.db')
     rows = conn.execute(
         "SELECT source_path FROM files WHERE status='llm_done' ORDER BY RANDOM() LIMIT 5"
     ).fetchall()
@@ -36,8 +36,8 @@ def test_florence(model_name):
     print(f"测试 {model_name}")
     print(f"{'='*60}")
     import torch
-    from transformers import AutoModelForCausalLM, AutoProcessor
     from PIL import Image
+    from transformers import AutoModelForCausalLM, AutoProcessor
 
     t0 = time.time()
     proc = AutoProcessor.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
@@ -96,11 +96,11 @@ def test_florence(model_name):
 def test_qwen_vl():
     """测试 Qwen2.5-VL-3B-Instruct"""
     print(f"\n{'='*60}")
-    print(f"测试 Qwen2.5-VL-3B-Instruct")
+    print("测试 Qwen2.5-VL-3B-Instruct")
     print(f"{'='*60}")
     import torch
-    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
     from PIL import Image
+    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
     t0 = time.time()
     model_name = "Qwen/Qwen2.5-VL-3B-Instruct"

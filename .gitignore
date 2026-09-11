@@ -1,4 +1,8 @@
 chrome_debug/
+# chrome_debug2/ 调试浏览器第二实例产物（Edge 谱系调试配置 + 运行时数据）
+chrome_debug2/
+# chrome_debug.bak-<日期>/ 是调试浏览器用户数据的手工/脚本备份，同样不进仓库
+chrome_debug.bak-*/
 __pycache__/
 *.pyc
 .venv/
@@ -18,6 +22,7 @@ models/
 # 均已被 data/* 覆盖，切勿添加 !data/secret/ 或 !data/llm/ 例外规则
 data/*
 !data/project_structure.json
+!data/feature_map.json
 output/
 
 # 独立 Python 环境（venv 目录，环境产物不进仓库）
@@ -50,6 +55,12 @@ release/dist/*
 release/staging/*
 !release/staging/.gitkeep
 
+# release orchestrator（一键编排）本地状态（design: temp/sdd/release-orchestrator/design.md）
+# public_repo/ = public 仓库持久 clone（工作副本，远端才是真源）
+# triage/ = 敏感命中已批准快照（不含行内容，仅 path/rule/count + scan_digest）
+release/public_repo/
+release/triage/
+
 # temp 子目录例外：长期探索产出（非敏感），强制纳入备份
 # 排除项：chat_mgmt_probe(对话db)/disk_scan_cache(本机路径)/pdf_extract(版权)/pytest_tmp(测试产物)/探索-unfinish(个人信息档案)/杂文档产出-待消化(账单流水)
 !temp/architecture_analysis/
@@ -57,7 +68,7 @@ release/staging/*
 !temp/planning_archive/
 !temp/html/
 
-# file_classifier 个人本机状态（含本机路径 E:\<data_drive>:\<system_data_root>\<data_drive>:/Downloads）
+# file_classifier 个人本机状态（含本机路径 <data_drive>:\<system_data_root>\<data_drive>:/Downloads）
 tools/file_classifier/state.json
 
 # bilibili_gacha 个人数据（含 <data_drive>:\<bilibili_videos> UID，不上传）
@@ -110,9 +121,11 @@ workspace/dev_toolkit/dev_toolkit*.zip
 workspace/ocr_calibration/
 workspace/dev_toolkit.zip
 workspace/gkd_signin/
+workspace/model_data/
 
 # IDE 平台内部产物（不进仓库）
 # 注：.trae/<data_drive>:\Documents/ 下设计文档历史上一并纳入仓库，新文档由用户决定
+.workbuddy/
 
 # workspace/stock_advisor 数据库（行情快照+报告元数据+wisdom 调用记录，不入仓库）
 # holdings_personal.json 和 reports/ 已挪到 private_vault/stock_advisor/（obsidian vault，不进 release）
@@ -127,6 +140,14 @@ workspace/stock_advisor/reports/
 
 # workspace/web_archive 个人爬取内容+图片（不入仓库）
 workspace/web_archive/xiaoheihe/
+workspace/web_archive/weixin/
+workspace/web_archive/feishu/
+workspace/web_archive/tencent/
+# 个人文档链接收藏（与已移出仓库的 urls*.json 同类）
+workspace/web_archive/urls_feishu.json
+workspace/web_archive/urls_tencent.json
+# 回收暂存区（删除前中转，运行时数据）
+workspace/web_archive/_recycle_staging/
 
 # workspace/recorder/recordings 录制包（大体积本地数据：截图PNG + WAV音频 + 事件流，不入仓库）
 workspace/recorder/recordings/
@@ -146,9 +167,16 @@ backups/
 
 # MAA patch 工作区（用户自写维护文档 + 上游 MAA 仓库副本）
 # 结构：maa-patch/ 顶层放用户自写文件（跟踪），maa-upstream/ 放上游 MAA 仓库（ignore）
-# 这样 maa-patch/ 不再是嵌套 git 仓库（.git 在 maa-upstream/ 内），4 个自写文件可被外层仓库跟踪
+# 这样 maa-patch/ 不再是嵌套 git 仓库（.git 在 maa-upstream/ 内），自写文件可被外层仓库跟踪
 workspace/maa-patch/*
 !workspace/maa-patch/MAINTENANCE.md
 !workspace/maa-patch/LESSONS.md
 !workspace/maa-patch/mumu-keepalive.patch
 !workspace/maa-patch/sync-maa-patch.ps1
+!workspace/maa-patch/UPSTREAM_ISSUE_RECORD.md
+
+# ZCode 编辑器本地目录（plans/*.md 单次会话 plan 快照、watchdog 插件运行态，均不进仓库）
+/.zcode/
+
+# bilibili_gacha 脚本运行时自动生成的清理状态备份（cleanup_state.json.bak-<日期>）
+workspace/bilibili_gacha/*.bak-*

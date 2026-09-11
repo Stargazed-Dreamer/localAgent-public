@@ -1,4 +1,4 @@
-﻿"""待办模块 FastAPI 路由
+"""待办模块 FastAPI 路由
 
 WIP 任务拆到独立 wip_router（prefix=/wip），与周期待办分离。
 todos_router 的 /due 等固定路径仍需在 /{todo_id} 动态路由之前注册。

@@ -43,9 +43,21 @@ index_section = "components"
 [watch]
 paths = ["账单/", "data/accounting.db", "name_mapping.json", "review_config.json"]
 
+[backup]
+# 备份声明（与 [watch] 解耦）：仅含个人数据文件，由 WorkspaceBackupAction loop 调度
+# "账单/" 是目录 → 备份时打 zip（账单_YYYYMMDD_HHMMSS.zip）
+# 消费方：tools/backup_workspace.py → backups/workspace/accounting/<basename>_<ts>.<ext|zip>
+# 备份频次见 config.toml [loops.workspace_backup]
+paths = ["账单/", "data/accounting.db", "name_mapping.json", "review_config.json"]
+
 [config_schema]
 file = "config_schema.toml"
 
 [health_check]
 file = "health.py"
 function = "get_status"
+
+[tests]
+# 自动化测试声明：测试套件（run_all.py）扫描本段自动收集组件测试
+enabled = true
+paths = ["tests"]

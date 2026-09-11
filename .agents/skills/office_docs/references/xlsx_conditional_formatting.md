@@ -1,6 +1,6 @@
 # Excel 条件格式参考 (conditional_formatting)
 
-本文件是 [office_xlsx skill](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md) 的条件格式参考。openpyxl 提供 4 种条件格式 rule，本文件覆盖全部 4 种的完整规范 + 代码示例 + 应用场景 + 坑。
+本文件是 [office_xlsx skill](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md) 的条件格式参考。openpyxl 提供 4 种条件格式 rule，本文件覆盖全部 4 种的完整规范 + 代码示例 + 应用场景 + 坑。
 
 ## 3 flavors 完整规范
 
@@ -644,7 +644,7 @@ min | max | num | percent | percentile | formula
 ## 参考
 
 - [openpyxl 条件格式文档](https://openpyxl.readthedocs.io/en/stable/api/openpyxl.formatting.rule.html)
-- [SKILL.md](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md)
-- [basic.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/basic.md) - 基础元素
-- [financial_model.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/financial_model.md) - sensitivity grid 应用
-- [data_dashboard.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/data_dashboard.md) - KPI 状态指示器应用
+- [SKILL.md](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md)
+- [basic.md](file:///<project_root>/.agents/skills/office_xlsx/references/basic.md) - 基础元素
+- [financial_model.md](file:///<project_root>/.agents/skills/office_xlsx/references/financial_model.md) - sensitivity grid 应用
+- [data_dashboard.md](file:///<project_root>/.agents/skills/office_xlsx/references/data_dashboard.md) - KPI 状态指示器应用

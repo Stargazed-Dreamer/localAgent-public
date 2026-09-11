@@ -36,10 +36,10 @@ task_type: adhoc.office_pptx
 
 **不要一次读所有 references**——按用户场景读对应的一个：
 
-- 基础元素 → [references/pptx_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_basic.md)
-- 设计原则 → [references/pptx_design_principles.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_design_principles.md)
-- 融资路演 → [references/pptx_pitch_deck.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_pitch_deck.md)
-- 通用配方 → [references/pptx_recipes.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_recipes.md)
+- 基础元素 → [references/pptx_basic.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_basic.md)
+- 设计原则 → [references/pptx_design_principles.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_design_principles.md)
+- 融资路演 → [references/pptx_pitch_deck.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_pitch_deck.md)
+- 通用配方 → [references/pptx_recipes.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_recipes.md)
 
 ### 3. 增量构建（结构 → 内容 → 格式）
 
@@ -104,7 +104,7 @@ task_type: adhoc.office_pptx
 当不确定 python-pptx API 时，**先查文档**再写代码：
 
 - python-pptx 官方文档：https://python-pptx.readthedocs.io/
-- 不确定 shape 类型？查 [references/pptx_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_basic.md)
+- 不确定 shape 类型？查 [references/pptx_basic.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_basic.md)
 - 一次 help query 胜过 guess-fail-retry 循环
 
 ## Incremental Execution
@@ -151,7 +151,7 @@ task_type: adhoc.office_pptx
 5. **No emoji as iconography** — Use a shape or a real icon asset
 6. **Visual motif commitment** — Pick ONE distinctive element and carry it to **every slide**
 
-详细规范见 [references/pptx_design_principles.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_design_principles.md)
+详细规范见 [references/pptx_design_principles.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_design_principles.md)
 
 ## 依赖
 
@@ -168,10 +168,10 @@ task_type: adhoc.office_pptx
 
 每种场景的详细工作流、设计规范、反模式见 `references/`：
 
-- [references/pptx_basic.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_basic.md) - 基础元素参考（slide/shape/paragraph/run/chart/picture/connector/table/placeholder/group/animation/transition/notes）
-- [references/pptx_design_principles.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_design_principles.md) - 6 anti-AI-slop 设计原则 + Visual Floor + 字体配对 8 种 + 调色板 10 种
-- [references/pptx_pitch_deck.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_pitch_deck.md) - 融资路演场景（10 必备 slide + stage diagnosis + 6 layout canon）
-- [references/pptx_recipes.md](file:///f:/<project_root>/.agents/skills/office_docs/references/pptx_recipes.md) - 通用配方（cover/divider/content/chart/thank-you + project report 示例）
+- [references/pptx_basic.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_basic.md) - 基础元素参考（slide/shape/paragraph/run/chart/picture/connector/table/placeholder/group/animation/transition/notes）
+- [references/pptx_design_principles.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_design_principles.md) - 6 anti-AI-slop 设计原则 + Visual Floor + 字体配对 8 种 + 调色板 10 种
+- [references/pptx_pitch_deck.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_pitch_deck.md) - 融资路演场景（10 必备 slide + stage diagnosis + 6 layout canon）
+- [references/pptx_recipes.md](file:///<project_root>/.agents/skills/office_docs/references/pptx_recipes.md) - 通用配方（cover/divider/content/chart/thank-you + project report 示例）
 
 ## 与现有 skill 的集成
 

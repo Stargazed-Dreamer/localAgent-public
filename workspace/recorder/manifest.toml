@@ -29,3 +29,8 @@ index_section = "components"
 
 [watch]
 paths = ["recordings/"]
+
+[tests]
+# 自动化测试声明：测试套件（run_all.py）扫描本段自动收集组件测试
+enabled = true
+paths = ["tests"]

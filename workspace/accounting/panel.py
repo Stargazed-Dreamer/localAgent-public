@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from client.core.panel_base import PanelBase, PanelMeta
+from lib.ui import icon
 from workspace.accounting.panel_widgets import (
     _AccountingCalendar,
     _fmt_amount,
@@ -73,7 +74,7 @@ class AccountingPanel(PanelBase):
     PANEL_META = PanelMeta(
         id="accounting",
         title="记账",
-        icon="💰",
+        icon="wallet",
         order=30,
         category="main",
         requires_backend=False,  # 本地 SQLite，不需要后端
@@ -111,12 +112,12 @@ class AccountingPanel(PanelBase):
         layout.setSpacing(0)
 
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_import_tab(), "📥 导入")
-        self._tabs.addTab(self._build_review_tab(), "✏️ 审核")
-        self._tabs.addTab(self._build_monthly_tab(), "📅 月度")
-        self._tabs.addTab(self._build_summary_tab(), "📊 汇总")
-        self._tabs.addTab(self._build_mapping_tab(), "🔧 映射表")
-        self._tabs.addTab(self._build_export_tab(), "📤 导出")
+        self._tabs.addTab(self._build_import_tab(), icon("download"), "导入")
+        self._tabs.addTab(self._build_review_tab(), icon("pencil"), "审核")
+        self._tabs.addTab(self._build_monthly_tab(), icon("calendar"), "月度")
+        self._tabs.addTab(self._build_summary_tab(), icon("bar-chart"), "汇总")
+        self._tabs.addTab(self._build_mapping_tab(), icon("wrench"), "映射表")
+        self._tabs.addTab(self._build_export_tab(), icon("upload"), "导出")
         layout.addWidget(self._tabs)
 
     # ═══════════════════════════════════════════════════════════
@@ -171,7 +172,8 @@ class AccountingPanel(PanelBase):
         bottom_row = QHBoxLayout()
         self._import_status_label = QLabel("")
         bottom_row.addWidget(self._import_status_label, 1)
-        self._btn_import = QPushButton("📥 导入到数据库")
+        self._btn_import = QPushButton("导入到数据库")
+        self._btn_import.setIcon(icon("download"))
         self._btn_import.setEnabled(False)
         self._btn_import.clicked.connect(self._on_import)
         bottom_row.addWidget(self._btn_import)
@@ -963,11 +965,11 @@ class AccountingPanel(PanelBase):
 
         if tx_id:
             # 明细节点：支持重新审核
-            action_review = menu.addAction("✏️ 重新审核此条")
+            action_review = menu.addAction(icon("pencil"), "重新审核此条")
             action_review.triggered.connect(lambda: self._jump_to_review(tx_id))
 
         # 所有节点：复制文本
-        action_copy = menu.addAction("📋 复制文本")
+        action_copy = menu.addAction(icon("copy"), "复制文本")
         action_copy.triggered.connect(lambda: self._copy_tree_item_text(item))
 
         if menu.actions():
@@ -1058,7 +1060,8 @@ class AccountingPanel(PanelBase):
         self._summary_source_combo.addItems(["全部", "微信", "支付宝"])
         self._summary_source_combo.currentIndexChanged.connect(self._load_summary_data)
         filter_row.addWidget(self._summary_source_combo)
-        btn_calc = QPushButton("📊 计算")
+        btn_calc = QPushButton("计算")
+        btn_calc.setIcon(icon("bar-chart"))
         btn_calc.clicked.connect(self._load_summary_data)
         filter_row.addWidget(btn_calc)
         filter_row.addStretch()
@@ -1820,7 +1823,8 @@ class AccountingPanel(PanelBase):
         btn_row = QHBoxLayout()
         self._export_status_label = QLabel("")
         btn_row.addWidget(self._export_status_label, 1)
-        self._btn_export = QPushButton("📤 导出")
+        self._btn_export = QPushButton("导出")
+        self._btn_export.setIcon(icon("upload"))
         self._btn_export.clicked.connect(self._on_export)
         btn_row.addWidget(self._btn_export)
         layout.addLayout(btn_row)

@@ -29,11 +29,11 @@ def format_preview(package_path: Path | str) -> str:
     lines.append("")
 
     # 读 meta.json
-    meta = _read_json(package_root / "meta.json")
+    meta = _read_dict(package_root / "meta.json")
     _format_overview(meta, lines)
 
     # 读 timeline.json
-    timeline = _read_json(package_root / "timeline.json")
+    timeline = _read_dict(package_root / "timeline.json")
     if timeline is None:
         lines.append("[警告] timeline.json 不存在，请先运行 build_timeline")
         return "\n".join(lines)
@@ -44,8 +44,8 @@ def format_preview(package_path: Path | str) -> str:
     _format_time_span(blocks, timeline, lines)
 
     # 三时间戳对齐验证
-    keyframes = _read_json(package_root / "keyframes.json")
-    transcript = _read_json(package_root / "transcript.json")
+    keyframes = _read_list(package_root / "keyframes.json")
+    transcript = _read_list(package_root / "transcript.json")
     _format_timestamp_alignment(blocks, keyframes, transcript, meta, lines)
 
     # 帧压缩比
@@ -62,6 +62,18 @@ def _read_json(path: Path) -> dict | list | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _read_dict(path: Path) -> dict | None:
+    """读 JSON 对象文件，类型不匹配/不存在/损坏时返回 None。"""
+    data = _read_json(path)
+    return data if isinstance(data, dict) else None
+
+
+def _read_list(path: Path) -> list | None:
+    """读 JSON 数组文件，类型不匹配/不存在/损坏时返回 None。"""
+    data = _read_json(path)
+    return data if isinstance(data, list) else None
 
 
 def _format_overview(meta: dict | None, lines: list[str]) -> None:

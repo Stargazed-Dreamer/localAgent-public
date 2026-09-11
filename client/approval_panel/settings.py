@@ -22,7 +22,7 @@ def get_settings() -> QSettings:
 def get_show_in_tray() -> bool:
     """是否展示在托盘（关窗时最小化到托盘而非退出）。"""
     s = get_settings()
-    return s.value("show_in_tray", DEFAULT_SHOW_IN_TRAY, type=bool)
+    return bool(s.value("show_in_tray", DEFAULT_SHOW_IN_TRAY, type=bool))
 
 
 def set_show_in_tray(value: bool) -> None:

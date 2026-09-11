@@ -280,9 +280,13 @@ async def browser_set_http_credentials(req: BrowserSetHttpCredentialsRequest):
         )
 
     try:
+        # Playwright 1.44+ 已移除 BrowserContext.set_http_credentials（无法动态修改
+        # context 凭证，需在 browser.new_context(http_credentials=...) 创建时注入）。
+        # 此处调用在运行时必然抛 AttributeError，由下方 except 捕获返回错误；
+        # 未来接入凭证注入时移除这两处 type: ignore[attr-defined]。
         if req.clear:
             # 清除凭证
-            await context.set_http_credentials(None)
+            await context.set_http_credentials(None)  # type: ignore[attr-defined]
             logger.info(
                 "set_http_credentials: 已清除凭证（session=%s, host=%s）",
                 req.session_id[:8] if req.session_id else "N/A",
@@ -300,7 +304,7 @@ async def browser_set_http_credentials(req: BrowserSetHttpCredentialsRequest):
                         "debug_detail": "clear=False 时 username 和 password 必填",
                     },
                 )
-            await context.set_http_credentials({
+            await context.set_http_credentials({  # type: ignore[attr-defined]
                 "username": req.username,
                 "password": req.password,
             })

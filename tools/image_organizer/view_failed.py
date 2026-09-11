@@ -1,6 +1,7 @@
 """查看失败文件"""
 import sqlite3
-conn = sqlite3.connect(r'f:\<project_root>\output\image_organizer\files.db')
+
+conn = sqlite3.connect(r'<project_root>\output\image_organizer\files.db')
 rows = conn.execute(
     'SELECT source_path, status, error FROM files WHERE status="failed" OR status="florence_done"'
 ).fetchall()

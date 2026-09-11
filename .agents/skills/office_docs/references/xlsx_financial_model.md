@@ -1,6 +1,6 @@
 # Excel 财务模型参考 (financial_model)
 
-本文件是 [office_xlsx skill](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md) 的财务模型场景参考。借鉴 OfficeCli 项目的设计哲学（CFO 4-color code / Three-zone architecture / QA Delivery Gate / Incremental Execution），用 openpyxl 实现。
+本文件是 [office_xlsx skill](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md) 的财务模型场景参考。借鉴 OfficeCli 项目的设计哲学（CFO 4-color code / Three-zone architecture / QA Delivery Gate / Incremental Execution），用 openpyxl 实现。
 
 ## 何时用此 skill
 
@@ -19,7 +19,7 @@ trigger 关键词：
 - operational KPI sheet（运营 KPI 表，无公式链）
 - cap table without forecast logic（cap table 不含预测逻辑）
 
-→ 路由到 [basic.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/basic.md)
+→ 路由到 [basic.md](file:///<project_root>/.agents/skills/office_xlsx/references/basic.md)
 
 ## CFO 4-color code 完整规范
 
@@ -838,9 +838,9 @@ def gate_6_1_token_sweep(path):
 ## 参考
 
 - [openpyxl 官方文档](https://openpyxl.readthedocs.io/)
-- [SKILL.md](file:///f:/<project_root>/.agents/skills/office_xlsx/SKILL.md)
-- [basic.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/basic.md) - 基础元素
-- [conditional_formatting.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md) - sensitivity grid CF
-- [data_dashboard.md](file:///f:/<project_root>/.agents/skills/office_xlsx/references/data_dashboard.md) - financial model dashboard
+- [SKILL.md](file:///<project_root>/.agents/skills/office_xlsx/SKILL.md)
+- [basic.md](file:///<project_root>/.agents/skills/office_xlsx/references/basic.md) - 基础元素
+- [conditional_formatting.md](file:///<project_root>/.agents/skills/office_xlsx/references/conditional_formatting.md) - sensitivity grid CF
+- [data_dashboard.md](file:///<project_root>/.agents/skills/office_xlsx/references/data_dashboard.md) - financial model dashboard
 
 **说明**：OfficeCli 是 .NET CLI 项目，本项目用 openpyxl 等价实现其设计哲学。OfficeCli 的 CLI 命令（如 `officecli chart add`）已翻译为 openpyxl API 调用。CFO 4-color code / Three-zone architecture / QA Delivery Gate / Incremental Execution 方法论保留自 OfficeCli 项目。

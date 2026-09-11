@@ -9,7 +9,8 @@ enabled = true
 files = ["workspace/disk_manager/**"]
 
 [exports.source]
-files = ["workspace/disk_manager/**", "tests/test_disk_manager*.py"]
+# f10-b：删除 tests/test_disk_manager*.py glob（测试文件未创建，glob 永远不命中 → drift_detector G 节 MEDIUM）
+files = ["workspace/disk_manager/**"]
 
 [release_facts]
 contains_personal_data = false
@@ -29,3 +30,8 @@ index_section = "components"
 
 [watch]
 paths = ["scripts/scan_disk.py", "scripts/cleanup.py", "scripts/backup_env.py", "scan/", "system_rebuild/manifest.json"]
+
+[tests]
+# 自动化测试声明：测试套件（run_all.py）扫描本段自动收集组件测试
+enabled = true
+paths = ["tests"]

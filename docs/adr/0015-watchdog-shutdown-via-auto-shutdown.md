@@ -91,6 +91,6 @@ async def trigger_shutdown(req: TriggerRequest) -> dict:
 
 - SDD 来源：`temp/sdd/watchdog-mode/design-decisions.md` DD-2（关机命令预授权方式）
 - 关键代码：
-  - [server/auto_shutdown.py](file:///f:/<project_root>/server/auto_shutdown.py)（`trigger_shutdown` 调 `can_shutdown()` L160-L204；fail-closed 分支 L192-L197）
-  - [server/screen/session/manager.py](file:///f:/<project_root>/server/screen/session/manager.py)（`can_shutdown()` 双重校验 L234-L242；`shutdown_permitted` 字段 L72）
+  - [server/auto_shutdown.py](file:///<project_root>/server/auto_shutdown.py)（`trigger_shutdown` 调 `can_shutdown()` L160-L204；fail-closed 分支 L192-L197）
+  - [server/screen/session/manager.py](file:///<project_root>/server/screen/session/manager.py)（`can_shutdown()` 双重校验 L234-L242；`shutdown_permitted` 字段 L72）
 - 相关 ADR：ADR-0012（SessionManager 纯内存模型，本决策的 `can_shutdown()` 依赖此模型——重启后无授权 = 无关机权限）

@@ -1,32 +1,32 @@
 """<data_drive>:\<bilibili_videos>视频分类脚本 Phase 1
-- 扫描 I:\\<data_drive>:\<bilibili_videos> 和 I:\\<data_drive>:\<bilibili_videos_alt> (排除 暂存音乐/、充电视频限免/、加密文件)
+- 扫描 <media_root> 和 <media_root> (排除 暂存音乐/、充电视频限免/、加密文件)
 - 提取文件名 + 弹幕样本
 - LLM 高并发分类 (10类)
 - 保存结果到 JSON + JSONL
 - 输出分类统计
 """
+import concurrent.futures
 import json
 import os
 import re
-import sys
-import time
 import threading
-import requests
-import concurrent.futures
+import time
+from collections import Counter, defaultdict
 from pathlib import Path
-from collections import defaultdict, Counter
+
+import requests
 
 # ============ 配置 ============
-ROOTS = [r'I:\<data_drive>:\<bilibili_videos>', r'I:\<data_drive>:\<bilibili_videos_alt>', r'E:\<data_drive>:\<backup_root>\<data_drive>:\<bilibili_videos>视频']
+ROOTS = [r'<media_root>', r'<media_root>', r'E:\<data_drive>:\<backup_root>\<data_drive>:\<bilibili_videos>视频']
 EXCLUDE_DIRS = [
-    r'I:\<data_drive>:\<bilibili_videos>\暂存音乐',
-    r'I:\<data_drive>:\<bilibili_videos_alt>\充电视频限免',
+    r'<media_root>\暂存音乐',
+    r'<media_root>\充电视频限免',
     r'E:\<data_drive>:\<backup_root>\<data_drive>:\<bilibili_videos>视频\充电视频限免',
 ]
 EXCLUDE_EXTS = {'.qmcflac', '.mflac', '.qmcogg', '.aria2'}
 VIDEO_EXTS = {'.mp4', '.flv', '.aac'}        # 主视频/音频文件
 SUBTITLE_EXTS = {'.ass', '.srt'}             # 关联字幕/弹幕
-OUTPUT = Path(r'f:\<project_root>\output\<data_drive>:\<bilibili_organized_output>')
+OUTPUT = Path(r'<project_root>\output\<data_drive>:\<bilibili_organized_output>')
 API = 'http://127.0.0.1:8766'
 CONCURRENCY = 40
 PROJECT = '<data_drive>:\<bilibili_videos>视频分类'
@@ -77,7 +77,7 @@ def extract_danmaku_text(ass_path):
         # 尝试 UTF-8，失败则 GBK
         for enc in ('utf-8', 'gbk', 'utf-16'):
             try:
-                with open(ass_path, 'r', encoding=enc, errors='ignore') as f:
+                with open(ass_path, encoding=enc, errors='ignore') as f:
                     content = f.read()
                 break
             except Exception:
@@ -300,7 +300,7 @@ def load_done_ids(jsonl_file):
     """加载已处理的ID"""
     done = set()
     if jsonl_file.exists():
-        with open(jsonl_file, 'r', encoding='utf-8') as f:
+        with open(jsonl_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     obj = json.loads(line)
@@ -396,7 +396,7 @@ def generate_summary(jsonl_file, summary_file):
     samples = defaultdict(list)
 
     if jsonl_file.exists():
-        with open(jsonl_file, 'r', encoding='utf-8') as f:
+        with open(jsonl_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     obj = json.loads(line)
@@ -435,12 +435,12 @@ def generate_summary(jsonl_file, summary_file):
 
     print(f'\n=== 分类统计 (共 {total} 条) ===')
     print(f'错误/异常: {errors}')
-    print(f'\n分类分布:')
+    print('\n分类分布:')
     for cat, n in summary['categories'].items():
         pct = n / total * 100 if total else 0
         bar = '#' * int(pct / 2)
         print(f'  {cat:8s} {n:5d} ({pct:5.1f}%) {bar}')
-    print(f'\n置信度分布:')
+    print('\n置信度分布:')
     for k, v in confidence_buckets.items():
         print(f'  {k:15s} {v}')
     print(f'\n摘要已保存: {summary_file}')

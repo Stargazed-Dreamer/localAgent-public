@@ -2,8 +2,9 @@
 
 import subprocess
 import sys
+import time
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
@@ -15,14 +16,134 @@ from PySide6.QtWidgets import (
 )
 
 from client.core.constants import (
+    FAKE_PROXY_LOG_PATH,
     FAKE_PROXY_SCRIPT_PATH,
+    PROJECT_ROOT,
     START_BAT_PATH,
+    resolve_launch_python,
 )
 from client.core.format_utils import format_tokens, format_uptime
 from client.core.http_client import HttpClient
 from client.core.panel_base import PanelBase, PanelMeta
 from client.widgets.status_card import StatusCard
+from lib.ui import icon
 from lib.ui.theme import set_text_role
+
+
+def _stat_item(icon_name: str, text: str) -> QListWidgetItem:
+    """当前数据行：SVG 图标 + 文本（替代 emoji 前缀，统一 lib/ui 图标体系）。"""
+    item = QListWidgetItem(text)
+    item.setIcon(icon(icon_name))
+    return item
+
+# Fake Proxy 启动等待上限（uvicorn 冷启动通常 <2s，留足余量）
+FAKE_PROXY_STARTUP_TIMEOUT_S = 12.0
+
+
+def _fake_stats_details(stats: dict) -> dict:
+    """/api/stats → 卡片字段。
+
+    脚本实际返回 total / stream / non_stream（见 tools/fake_llm_proxy.py api_stats），
+    monitoring 面板用的就是这套；旧代码读 total_requests / streaming_requests，
+    取不到值恒显示 0。这里两种命名都兼容。
+    """
+    return {
+        "请求数": stats.get("total", stats.get("total_requests", stats.get("request_count", 0))),
+        "流式": stats.get("stream", stats.get("streaming_requests", 0)),
+        "非流式": stats.get("non_stream", stats.get("non_streaming_requests", 0)),
+    }
+
+
+class _FakeProxyOpThread(QThread):
+    """启停 Fake Proxy 的后台线程：Popen 与就绪等待都不占 UI 线程。"""
+
+    def __init__(self, http: HttpClient, op: str):
+        super().__init__()
+        self._http = http
+        self._op = op
+        self.stats: dict | None = None
+        self.ok = False
+        self.message = ""
+
+    def run(self) -> None:
+        if self._op == "stop":
+            self._run_stop()
+        else:
+            self._run_start()
+
+    def _run_start(self) -> None:
+        # 幂等：已在运行就别再 Popen，否则 uvicorn 抢不到 9999 直接崩
+        if self._http.fake_proxy_is_reachable():
+            self.stats = self._http.fake_proxy_stats()
+            self.ok = self.stats is not None
+            self.message = "Fake Proxy 已在运行"
+            return
+        if not FAKE_PROXY_SCRIPT_PATH.exists():
+            self.ok = False
+            self.message = f"脚本不存在：{FAKE_PROXY_SCRIPT_PATH}"
+            return
+
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        try:
+            FAKE_PROXY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            # 子进程继承句柄后，父进程 with 退出即可释放自己的副本
+            with open(str(FAKE_PROXY_LOG_PATH), "a", encoding="utf-8") as log_file:
+                proc = subprocess.Popen(
+                    [resolve_launch_python(), str(FAKE_PROXY_SCRIPT_PATH)],
+                    cwd=str(PROJECT_ROOT),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    **kwargs,
+                )
+        except Exception as e:
+            self.ok = False
+            self.message = f"启动进程失败：{e}"
+            return
+
+        deadline = time.time() + FAKE_PROXY_STARTUP_TIMEOUT_S
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                # 进程秒退：端口被占 / 依赖缺失都走这里，日志尾部带回真实原因
+                self.ok = False
+                self.message = f"进程退出（code={proc.returncode}）：{self._tail_log()}"
+                return
+            if self._http.fake_proxy_is_reachable():
+                self.stats = self._http.fake_proxy_stats()
+                self.ok = self.stats is not None
+                self.message = f"Fake Proxy 已启动（pid={proc.pid}）" if self.ok else "进程已起但 /api/stats 无响应"
+                return
+            time.sleep(0.4)
+        self.ok = False
+        self.message = f"启动超时（{FAKE_PROXY_STARTUP_TIMEOUT_S:.0f}s）：{self._tail_log()}"
+
+    def _run_stop(self) -> None:
+        if not self._http.fake_proxy_is_reachable():
+            self.ok = True
+            self.message = "Fake Proxy 未在运行"
+            return
+        if not self._http.fake_proxy_shutdown():
+            self.ok = False
+            self.message = "停止请求失败"
+            return
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            if not self._http.fake_proxy_is_reachable():
+                self.ok = True
+                self.message = "Fake Proxy 已停止"
+                return
+            time.sleep(0.3)
+        self.ok = False
+        self.message = "停止超时：9999 端口仍被占用"
+
+    def _tail_log(self, n: int = 3) -> str:
+        try:
+            lines = FAKE_PROXY_LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
+            tail = [ln for ln in lines[-n:] if ln.strip()]
+            return " | ".join(tail) if tail else "无日志输出"
+        except Exception:
+            return "日志不可读"
 
 
 class DashboardPanel(PanelBase):
@@ -45,7 +166,10 @@ class DashboardPanel(PanelBase):
         self._cached_config: dict | None = None
         self._refresh_btn = None
         self._start_backend_btn = None
+        self._start_fake_btn = None
+        self._stop_fake_btn = None
         self._refresh_thread = None
+        self._fake_op_thread: _FakeProxyOpThread | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -87,10 +211,10 @@ class DashboardPanel(PanelBase):
             subtitle="",
             status="unknown",
         )
-        cards_layout.addWidget(self._backend_card, 0, 0, alignment=Qt.AlignTop)
-        cards_layout.addWidget(self._fake_card, 0, 1, alignment=Qt.AlignTop)
-        cards_layout.addWidget(self._llm_pool_card, 0, 2, alignment=Qt.AlignTop)
-        cards_layout.addWidget(self._todos_card, 0, 3, alignment=Qt.AlignTop)
+        cards_layout.addWidget(self._backend_card, 0, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        cards_layout.addWidget(self._fake_card, 0, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        cards_layout.addWidget(self._llm_pool_card, 0, 2, alignment=Qt.AlignmentFlag.AlignTop)
+        cards_layout.addWidget(self._todos_card, 0, 3, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addLayout(cards_layout)
 
         # 快捷操作区
@@ -110,6 +234,12 @@ class DashboardPanel(PanelBase):
         start_fake_btn = QPushButton("启动 Fake Proxy")
         start_fake_btn.clicked.connect(self._start_fake_proxy)
         ops_row.addWidget(start_fake_btn)
+        self._start_fake_btn = start_fake_btn
+
+        stop_fake_btn = QPushButton("停止 Fake Proxy")
+        stop_fake_btn.clicked.connect(self._stop_fake_proxy)
+        ops_row.addWidget(stop_fake_btn)
+        self._stop_fake_btn = stop_fake_btn
 
         ops_row.addStretch()
         layout.addLayout(ops_row)
@@ -215,11 +345,7 @@ class DashboardPanel(PanelBase):
         """ServiceManager fake_proxy_status_changed 信号的 slot"""
         self._fake_card.set_status(stats is not None)
         if stats:
-            self._fake_card.set_details({
-                "请求数": stats.get("total_requests", stats.get("request_count", 0)),
-                "流式": stats.get("streaming_requests", 0),
-                "非流式": stats.get("non_streaming_requests", 0),
-            })
+            self._fake_card.set_details(_fake_stats_details(stats))
         else:
             self._fake_card.set_details({"提示": "未启动"})
 
@@ -263,16 +389,13 @@ class DashboardPanel(PanelBase):
     def _on_refresh_done(self) -> None:
         self._set_loading(False)
         t = self._refresh_thread
+        assert t is not None  # 契约：finished 信号必在 start() 后发出，_refresh_thread 已赋值
         if t.health is None:
             self._backend_card.set_status(False)
             self._backend_card.set_details({"提示": "后端未启动"})
             self._fake_card.set_status(t.fake_stats is not None)
             if t.fake_stats:
-                self._fake_card.set_details({
-                    "请求数": t.fake_stats.get("total_requests", 0),
-                    "流式": t.fake_stats.get("streaming_requests", 0),
-                    "非流式": t.fake_stats.get("non_streaming_requests", 0),
-                })
+                self._fake_card.set_details(_fake_stats_details(t.fake_stats))
             else:
                 self._fake_card.set_details({"提示": "未启动"})
             return
@@ -289,12 +412,15 @@ class DashboardPanel(PanelBase):
         version = h.get("version", "?")
         uptime = format_uptime(h.get("uptime_seconds", 0))
         self._activity_list.addItem(
-            QListWidgetItem(f"🖥️ 后端 {version} 运行 {uptime}")
+            _stat_item("monitor", f"后端 {version} 运行 {uptime}")
         )
 
         # —— 审批强度（来自 /config.command_guard.approval_level）——
         if t.config and isinstance(t.config, dict):
-            cmd_guard = t.config.get("command_guard", {}) or {}
+            # /config 响应带 {"config": {...}} 包装层，需先解包（与 settings 面板一致）
+            cfg = t.config.get("config")
+            cfg = cfg if isinstance(cfg, dict) else t.config
+            cmd_guard = cfg.get("command_guard", {}) or {}
             approval_level = cmd_guard.get("approval_level", "—")
             level_zh = {
                 "strict": "严格（strict）",
@@ -303,7 +429,7 @@ class DashboardPanel(PanelBase):
                 "none": "关闭（none）",
             }.get(approval_level, approval_level)
             self._activity_list.addItem(
-                QListWidgetItem(f"🛡️ 审批强度：{level_zh}")
+                _stat_item("shield", f"审批强度：{level_zh}")
             )
 
         # —— MCP 调用统计 ——
@@ -311,7 +437,7 @@ class DashboardPanel(PanelBase):
             total = t.mcp_stats.get("total_calls", t.mcp_stats.get("total", 0))
             tools = t.mcp_stats.get("unique_tools", t.mcp_stats.get("tools_count", 0))
             self._activity_list.addItem(
-                QListWidgetItem(f"📡 MCP 调用：{total} 次 / {tools} 个工具")
+                _stat_item("plug", f"MCP 调用：{total} 次 / {tools} 个工具")
             )
 
         # —— LLM 池状态（v10：含免费/paid 分布 + 模型数 + 近期调用）——
@@ -326,14 +452,16 @@ class DashboardPanel(PanelBase):
             free_models = llm_pool.get("free_models", 0)
             recent_calls_count = llm_pool.get("recent_calls_count", 0)
             self._activity_list.addItem(
-                QListWidgetItem(
-                    f"🤖 LLM 池：{avail_keys}/{total_keys} 可用 / {cooldown} 冷却 "
-                    f"（免费 {free_keys}+Paid {paid_keys}）"
+                _stat_item(
+                    "bot",
+                    f"LLM 池：{avail_keys}/{total_keys} 可用 / {cooldown} 冷却 "
+                    f"（免费 {free_keys}+Paid {paid_keys}）",
                 )
             )
             self._activity_list.addItem(
-                QListWidgetItem(
-                    f"📦 模型：{total_models} 总数 / {free_models} 免费 / 近期调用 {recent_calls_count}"
+                _stat_item(
+                    "package",
+                    f"模型：{total_models} 总数 / {free_models} 免费 / 近期调用 {recent_calls_count}",
                 )
             )
             # token 消耗（仅展示统计，不算钱）
@@ -344,9 +472,10 @@ class DashboardPanel(PanelBase):
                     total_input = sum(p.get("prompt_tokens", 0) for p in projects.values())
                     total_output = sum(p.get("completion_tokens", 0) for p in projects.values())
                     self._activity_list.addItem(
-                        QListWidgetItem(
-                            f"📊 Token：{format_tokens(total_input)} 输入 / "
-                            f"{format_tokens(total_output)} 输出 / {total_calls} 次调用"
+                        _stat_item(
+                            "bar-chart",
+                            f"Token：{format_tokens(total_input)} 输入 / "
+                            f"{format_tokens(total_output)} 输出 / {total_calls} 次调用",
                         )
                     )
 
@@ -358,30 +487,30 @@ class DashboardPanel(PanelBase):
             paused = loops.get("paused_count", 0)
             if task_count > 0 or active > 0 or paused > 0:
                 self._activity_list.addItem(
-                    QListWidgetItem(f"🔁 Loop：{active} 活跃 / {paused} 暂停 / {task_count} 总数")
+                    _stat_item("refresh", f"Loop：{active} 活跃 / {paused} 暂停 / {task_count} 总数")
                 )
 
         # —— 待办/收件箱/WIP ——
         todos = h.get("todos", {}) or {}
         if isinstance(todos, dict) and todos.get("available", False):
-            due_count = todos.get("due_count", 0)
-            wip_total = todos.get("wip_total", todos.get("wip_count", 0))
-            wip_active = todos.get("wip_active", todos.get("active_wip", 0))
+            due_count = todos.get("todos_due", 0)
+            wip_total = todos.get("wip_total", 0)
+            wip_active = todos.get("wip_active", 0)
             if due_count > 0:
                 self._activity_list.addItem(
-                    QListWidgetItem(f"⏰ 到期任务：{due_count} 个待处理")
+                    _stat_item("clock", f"到期任务：{due_count} 个待处理")
                 )
             if wip_active > 0:
                 self._activity_list.addItem(
-                    QListWidgetItem(f"🔧 WIP 任务：{wip_active} 活跃 / {wip_total} 总数")
+                    _stat_item("wrench", f"WIP 任务：{wip_active} 活跃 / {wip_total} 总数")
                 )
 
         inbox = h.get("inbox", {}) or {}
         if isinstance(inbox, dict) and inbox.get("available", False):
-            inbox_pending = inbox.get("pending", inbox.get("pending_count", 0))
+            inbox_pending = inbox.get("pending", 0)
             if inbox_pending and inbox_pending > 0:
                 self._activity_list.addItem(
-                    QListWidgetItem(f"📥 收件箱：{inbox_pending} 条待处理")
+                    _stat_item("inbox", f"收件箱：{inbox_pending} 条待处理")
                 )
 
         # —— 终端会话 ——
@@ -391,7 +520,7 @@ class DashboardPanel(PanelBase):
             term_total = exec_data.get("terminals_total", 0)
             if term_total > 0:
                 self._activity_list.addItem(
-                    QListWidgetItem(f"💻 终端：{term_running} 运行 / {term_total} 总数")
+                    _stat_item("monitor", f"终端：{term_running} 运行 / {term_total} 总数")
                 )
 
         # —— 浏览器 ——
@@ -399,7 +528,7 @@ class DashboardPanel(PanelBase):
         if isinstance(browser, dict) and browser.get("connected", False):
             tab_count = browser.get("tab_count", browser.get("tabs_count", 0))
             self._activity_list.addItem(
-                QListWidgetItem(f"🌐 浏览器：已连接 / {tab_count} 个标签页")
+                _stat_item("app-window", f"浏览器：已连接 / {tab_count} 个标签页")
             )
 
         # —— 记忆系统 ——
@@ -409,7 +538,7 @@ class DashboardPanel(PanelBase):
             facts = memory.get("fact_count", memory.get("facts", 0))
             summaries = memory.get("summary_count", memory.get("summaries", 0))
             self._activity_list.addItem(
-                QListWidgetItem(f"🧠 记忆：{msgs} 消息 / {facts} 事实 / {summaries} 摘要")
+                _stat_item("brain", f"记忆：{msgs} 消息 / {facts} 事实 / {summaries} 摘要")
             )
 
         # —— 用户补充指令 ——
@@ -418,7 +547,7 @@ class DashboardPanel(PanelBase):
             pending_msgs = user_msg.get("pending_count", user_msg.get("pending", 0))
             if pending_msgs and pending_msgs > 0:
                 self._activity_list.addItem(
-                    QListWidgetItem(f"📢 用户补充指令：{pending_msgs} 条待发送")
+                    _stat_item("message-square", f"用户补充指令：{pending_msgs} 条待发送")
                 )
 
         # —— 防休眠 ——
@@ -431,31 +560,27 @@ class DashboardPanel(PanelBase):
                 mode = "系统+显示器" if ka_display else "仅系统"
                 reason_text = f"（{ka_reason}）" if ka_reason else ""
                 self._activity_list.addItem(
-                    QListWidgetItem(f"☕ 防休眠：已开启 [{mode}]{reason_text}")
+                    _stat_item("settings", f"防休眠：已开启 [{mode}]{reason_text}")
                 )
 
         # —— Fake Proxy ——
         if t.fake_stats:
             fp_total = t.fake_stats.get("total_requests", t.fake_stats.get("request_count", 0))
             self._activity_list.addItem(
-                QListWidgetItem(f"🎭 Fake Proxy：在线 / {fp_total} 次请求")
+                _stat_item("bot", f"Fake Proxy：在线 / {fp_total} 次请求")
             )
 
         # —— 今日工作总结 ——
         if t.daily and t.daily.get("content"):
             preview = t.daily["content"][:80].replace("\n", " ")
             self._activity_list.addItem(
-                QListWidgetItem(f"📅 今日工作总结：{preview}...")
+                _stat_item("calendar", f"今日工作总结：{preview}...")
             )
 
         # Fake Proxy 卡片
         self._fake_card.set_status(t.fake_stats is not None)
         if t.fake_stats:
-            self._fake_card.set_details({
-                "请求数": t.fake_stats.get("total_requests", t.fake_stats.get("request_count", 0)),
-                "流式": t.fake_stats.get("streaming_requests", 0),
-                "非流式": t.fake_stats.get("non_streaming_requests", 0),
-            })
+            self._fake_card.set_details(_fake_stats_details(t.fake_stats))
         else:
             self._fake_card.set_details({"提示": "未启动"})
 
@@ -473,11 +598,38 @@ class DashboardPanel(PanelBase):
             self._activity_list.insertItem(0, QListWidgetItem(f"✗ 启动后端失败：{e}"))
 
     def _start_fake_proxy(self) -> None:
-        try:
-            subprocess.Popen(
-                [sys.executable, str(FAKE_PROXY_SCRIPT_PATH)],
-                cwd=str(FAKE_PROXY_SCRIPT_PATH.parent),
-            )
-            self._activity_list.insertItem(0, QListWidgetItem("▶ 启动 Fake Proxy：已发送"))
-        except Exception as e:
-            self._activity_list.insertItem(0, QListWidgetItem(f"✗ 启动 Fake Proxy 失败：{e}"))
+        self._run_fake_op("start")
+
+    def _stop_fake_proxy(self) -> None:
+        self._run_fake_op("stop")
+
+    def _run_fake_op(self, op: str) -> None:
+        """启停 Fake Proxy：Popen + 就绪等待都在后台线程，UI 只显示最终结果"""
+        if self._fake_op_thread is not None and self._fake_op_thread.isRunning():
+            return
+        self._set_fake_buttons_enabled(False)
+        self._activity_list.insertItem(
+            0, QListWidgetItem("⏳ Fake Proxy 启动中..." if op == "start" else "⏳ Fake Proxy 停止中...")
+        )
+        self._fake_op_thread = _FakeProxyOpThread(self._http, op)
+        self._fake_op_thread.finished.connect(self._on_fake_op_done)
+        self._fake_op_thread.start()
+
+    @Slot()
+    def _on_fake_op_done(self) -> None:
+        self._set_fake_buttons_enabled(True)
+        t = self._fake_op_thread
+        if t is None:
+            return
+        mark = "✓" if t.ok else "✗"
+        self._activity_list.insertItem(0, QListWidgetItem(f"{mark} {t.message}"))
+        self._fake_card.set_status(t.stats is not None)
+        if t.stats:
+            self._fake_card.set_details(_fake_stats_details(t.stats))
+        else:
+            self._fake_card.set_details({"提示": "未启动"})
+
+    def _set_fake_buttons_enabled(self, enabled: bool) -> None:
+        for btn in (self._start_fake_btn, self._stop_fake_btn):
+            if btn is not None:
+                btn.setEnabled(enabled)

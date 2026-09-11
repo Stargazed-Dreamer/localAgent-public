@@ -169,6 +169,33 @@ def _send_double_click(x: int, y: int) -> bool:
     return sent == len(flags_seq)
 
 
+def _send_mouse_button(x: int | None, y: int | None, button: str = "left", down: bool = True) -> bool:
+    """SendInput 单个鼠标按下/释放事件（mouse_down/mouse_up 分段原语）。
+
+    与 _send_double_click 同一事件结构。x/y 为 None 时在当前位置按键。
+    返回是否成功注入。
+    """
+    import win32con
+    if x is not None and y is not None:
+        ctypes.windll.user32.SetCursorPos(int(x), int(y))
+        time.sleep(0.02)
+    if button == "right":
+        flag = win32con.MOUSEEVENTF_RIGHTDOWN if down else win32con.MOUSEEVENTF_RIGHTUP
+    else:
+        flag = win32con.MOUSEEVENTF_LEFTDOWN if down else win32con.MOUSEEVENTF_LEFTUP
+    extra = ctypes.pointer(ctypes.c_ulong(0))
+    inputs = (_INPUT * 1)()
+    inputs[0].type = win32con.INPUT_MOUSE
+    inputs[0].mi = _MOUSEINPUT(
+        dx=0, dy=0, mouseData=0, dwFlags=flag, time=0, dwExtraInfo=extra,
+    )
+    sent = ctypes.windll.user32.SendInput(1, inputs, ctypes.sizeof(_INPUT))
+    if sent != 1:
+        logger.warning(f"_send_mouse_button({button}, down={down}) 注入失败，SendInput 返回 {sent}（可能被 UIPI 阻止）")
+        return False
+    return True
+
+
 # ========== 支持的操作类型及说明（用于防呆提示） ==========
 
 SUPPORTED_ACTIONS = {
@@ -180,6 +207,9 @@ SUPPORTED_ACTIONS = {
     "hotkey": "组合键（需要 keys 列表，如 ['ctrl', 'c']）",
     "scroll": "滚动（需要 x, y；可选 direction, amount）",
     "drag": "拖拽（需要 x, y, dx, dy）",
+    "mouse_down": "按下鼠标键不释放（SendInput；需要 x, y；可选 button=left/right；与 mouse_up 配对实现分段拖拽/长按）",
+    "mouse_up": "释放鼠标键（可选 x, y 先移动再释放；可选 button=left/right；必须与 mouse_down 配对）",
+    "mouse_move": "移动鼠标指针到指定位置（SetCursorPos，不点击；用于 hover 悬停/分段拖拽）",
 }
 
 
@@ -188,7 +218,7 @@ SUPPORTED_ACTIONS = {
 def _validate_action_params(action: str, x: int | None = None, y: int | None = None,
                             text: str | None = None, keys: list[str] | None = None,
                             direction: str = "down", amount: int = 3,
-                            dx: int = 0, dy: int = 0) -> tuple[bool, str]:
+                            dx: int = 0, dy: int = 0, button: str = "left") -> tuple[bool, str]:
     """防呆参数检查。返回 (ok, message)。
 
     ok=False 时 message 包含错误原因和推荐做法。
@@ -197,7 +227,8 @@ def _validate_action_params(action: str, x: int | None = None, y: int | None = N
         supported = "; ".join(f"{k}({v})" for k, v in SUPPORTED_ACTIONS.items())
         return False, f"未知 action='{action}'。支持的 action: {supported}"
 
-    if action in ("click", "double_click", "right_click", "scroll", "drag"):
+    if action in ("click", "double_click", "right_click", "scroll", "drag",
+                  "mouse_down", "mouse_move"):
         if x is None or y is None:
             return False, f"action='{action}' 需要 x 和 y 坐标参数（当前 x={x}, y={y}）。推荐：先用 screen_snapshot 获取窗口位置，或用 list_windows 查看窗口 bbox"
     if action in ("type", "type_immediate"):
@@ -213,6 +244,9 @@ def _validate_action_params(action: str, x: int | None = None, y: int | None = N
         # direction 仅允许 down/up（pyautogui 正数=向上，负数=向下）
         if direction not in ("down", "up"):
             return False, f"action='scroll' 的 direction 只能是 'down' 或 'up'（当前 '{direction}'）"
+    if action in ("mouse_down", "mouse_up"):
+        if button not in ("left", "right"):
+            return False, f"action='{action}' 的 button 只支持 'left' 或 'right'（当前 '{button}'）"
     return True, ""
 
 
@@ -221,7 +255,7 @@ def _validate_action_params(action: str, x: int | None = None, y: int | None = N
 def _execute_action(action: str, x: int | None = None, y: int | None = None,
                     text: str | None = None, keys: list[str] | None = None,
                     direction: str = "down", amount: int = 3,
-                    dx: int = 0, dy: int = 0) -> dict:
+                    dx: int = 0, dy: int = 0, button: str = "left") -> dict:
     """执行键鼠操作，返回结果"""
     if not _ADMIN_STATUS:
         return {"success": False, "message": "键鼠操控需要管理员权限！请以管理员身份启动后端。"}
@@ -248,14 +282,16 @@ def _execute_action(action: str, x: int | None = None, y: int | None = None,
             if x is not None and y is not None:
                 pyautogui.click(x, y)
                 time.sleep(0.1)
-            _send_unicode_text(text, interval=0.02)
+            if text is not None:
+                _send_unicode_text(text, interval=0.02)
         elif action == "type_immediate":
             if x is not None and y is not None:
                 pyautogui.click(x, y)
                 time.sleep(0.1)
-            _send_unicode_text(text, interval=0.0)
+            if text is not None:
+                _send_unicode_text(text, interval=0.0)
         elif action == "hotkey":
-            pyautogui.hotkey(*keys)
+            pyautogui.hotkey(*(keys or []))
         elif action == "scroll":
             # pyautogui: 正数=向上滚，负数=向下滚（与 scroll_capture 的约定一致）
             clicks = -amount if direction == "down" else amount
@@ -263,6 +299,23 @@ def _execute_action(action: str, x: int | None = None, y: int | None = None,
         elif action == "drag":
             pyautogui.moveTo(x, y)
             pyautogui.drag(dx, dy, duration=0.5)
+        elif action == "mouse_down":
+            if x is None or y is None:
+                return {"success": False, "message": "mouse_down 需要 x, y 参数"}
+            ok_down = _send_mouse_button(int(x), int(y), button=button, down=True)
+            if not ok_down:
+                return {"success": False, "message": "mouse_down 注入失败（可能被 UIPI 阻止）"}
+        elif action == "mouse_up":
+            if x is not None and y is not None:
+                ok_up = _send_mouse_button(int(x), int(y), button=button, down=False)
+            else:
+                ok_up = _send_mouse_button(None, None, button=button, down=False)
+            if not ok_up:
+                return {"success": False, "message": "mouse_up 注入失败（可能被 UIPI 阻止）"}
+        elif action == "mouse_move":
+            if x is None or y is None:
+                return {"success": False, "message": "mouse_move 需要 x, y 参数"}
+            ctypes.windll.user32.SetCursorPos(int(x), int(y))
         else:
             return {"success": False, "message": f"未知操作类型: {action}"}
 

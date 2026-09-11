@@ -36,12 +36,15 @@ def take_focused_value_snapshot() -> dict[str, Any] | None:
         if fg_window is None:
             return None
         # GetFocusControl 返回窗口内当前焦点控件
-        focused = fg_window.GetFocusControl()
+        _fg_dynamic: Any = fg_window  # ua 桩把 GetForegroundWindow 标为 int，运行时是 Control
+        focused = _fg_dynamic.GetFocusControl()
         if focused is None:
             return None
         # 取 ValuePattern（不是所有控件都支持，不支持时 value=""）
+        # 注：uiautomation 2.0.29 无 GetValuePattern 便捷方法，用通用 GetPattern；
+        # PatternId 不存在或 pattern 不支持时由外层 except 降级为空值
         try:
-            vp = focused.GetValuePattern()
+            vp = focused.GetPattern(ua.PatternId.ValuePattern)
             value = vp.Value if vp is not None else ""
             is_password = bool(getattr(vp, "IsPassword", False)) if vp is not None else False
         except Exception:

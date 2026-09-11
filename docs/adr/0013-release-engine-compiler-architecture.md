@@ -64,9 +64,9 @@ artifact: Artifact = build_release(prepared, approval)
 
 - SDD 来源：`temp/sdd/release-engine/design-decisions.md` 一.1（目标架构）+ 一.2（三层责任分离）+ 四.4（审计 = 构建）+ 三.3（dataclass 载体）+ 三.4（旧 CLI 适配器）
 - 关键代码：
-  - [tools/release/engine/models.py](file:///f:/<project_root>/tools/release/engine/models.py)（`PreparedRelease` frozen dataclass L61-L117，13 字段含 4 digest）
-  - [tools/release/engine/prepare.py](file:///f:/<project_root>/tools/release/engine/prepare.py)（`prepare_release()`）
-  - [tools/release/engine/build.py](file:///f:/<project_root>/tools/release/engine/build.py)（`build_release()`）
-  - [tools/release/engine/audience.py](file:///f:/<project_root>/tools/release/engine/audience.py)（friend / public policy seam）
-  - [tools/release/engine/manifest.py](file:///f:/<project_root>/tools/release/engine/manifest.py)（组件中立事实）
+  - [tools/release/engine/models.py](file:///<project_root>/tools/release/engine/models.py)（`PreparedRelease` frozen dataclass L61-L117，13 字段含 4 digest）
+  - [tools/release/engine/prepare.py](file:///<project_root>/tools/release/engine/prepare.py)（`prepare_release()`）
+  - [tools/release/engine/build.py](file:///<project_root>/tools/release/engine/build.py)（`build_release()`）
+  - [tools/release/engine/audience.py](file:///<project_root>/tools/release/engine/audience.py)（friend / public policy seam）
+  - [tools/release/engine/manifest.py](file:///<project_root>/tools/release/engine/manifest.py)（组件中立事实）
 - 相关 ADR：ADR-0014（digest 绑定 > 人工审批，依赖本决策的 PreparedRelease 不可变性）

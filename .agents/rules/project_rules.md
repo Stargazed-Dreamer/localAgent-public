@@ -201,7 +201,7 @@
 
 ## 项目结构变更
 
-- [ ] 新增/删除/重命名一级或二级目录？→ 用 `exec_python` 调 `server.project_structure.update_baseline_descriptions({"新路径/": "描述"})` 补全 baseline（`data/project_structure.json`）
+- [ ] 新增/删除/重命名一级或二级目录？→ 用 `exec_python` 调 `server.project_structure.sync_baseline(add_descriptions={"新路径/": "描述"})` 归位 baseline（`data/project_structure.json`；`update_baseline_descriptions()` 仅补 top_level 描述，二级目录要用它会静默无效）
 - [ ] `data/project_structure.json` 是否同步更新？（baseline 是漂移检测的真源，task_closure 自动用 `structure_diff` 检测）
 - [ ] `/health` 中 `project_structure.baseline_exists` / `baseline_entries` / `baseline_updated` 是否正确反映状态？
 - [ ] 新增模块是否需要在 `agent_guide(include_structure=true)` 响应的 `project_structure` 字段中体现？

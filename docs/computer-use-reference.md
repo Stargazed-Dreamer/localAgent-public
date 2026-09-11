@@ -23,6 +23,8 @@
 
 确认窗中：normal 模式只有允许/拒绝按钮；watchdog 模式额外显示时长输入（1-999h，默认 10）和"允许关机"复选框（默认勾选）。授权不会写盘，也不会跨后端重启保留。
 
+> **GUI 用户开关（2026-09-05 起）**：用户也可以不经 agent 发起，直接在 client 的 **Monitoring 面板**（"电脑操作许可"复选框）或**系统工具面板**（"电脑操作许可"卡）打开/关闭授权——打开同样要经过后端确认窗（安全闸门保留），请求固定 `source="gui_panel"`。开关勾选态以 `/health.screen.takeover_persistent` 为唯一真源轮询回写，agent 调 `screen_release_control`、idle 自动撤销或 watchdog 到期降级后开关自动回弹。
+
 ### 三档权限模式
 
 会话管理层（`server/screen/session/`）维护全局 SessionManager 单例，状态机分三档：
@@ -104,8 +106,33 @@ Windows UI Automation 语义层，让 agent 像 Browser Use 操作 DOM 一样操
 
 | 接口 | operation_id | 用途 |
 |------|--------------|------|
-| `POST /screen/accessibility/snapshot` | `screen_accessibility_snapshot` | 拿 UIA accessibility tree 快照（role/name/value/checked/bounds/element_id） |
+| `POST /screen/accessibility/snapshot` | `screen_accessibility_snapshot` | 拿 UIA accessibility tree 快照（role/name/value/checked/bounds/element_id + **flags/actions 能力标志**） |
 | `POST /screen/accessibility/action` | `screen_semantic_action` | 对 element_id 执行语义动作（invoke/select/toggle/set_value/expand/collapse/scroll） |
+
+### 元素能力标志（ZCode 对齐，2026-09-05）
+
+snapshot 的每个元素带 `flags`（空格连接短串）和 `actions`（语义动作列表），一次观察即知"能做什么"，不用按 role 猜 pattern：
+
+| flag | 含义 | 对应 action |
+|------|------|------------|
+| `pressable` | 支持 InvokePattern | `invoke` |
+| `editable` | ValuePattern 非只读 | `set_value` |
+| `toggleable` | 支持 TogglePattern | `toggle` |
+| `selectable` | 支持 SelectionItemPattern | `select` |
+| `expandable` | 支持 ExpandCollapsePattern | `expand` / `collapse` |
+| `focused` | 当前持有键盘焦点 | — |
+
+### 坐标点击 UIA 融合（strategy 参数，默认 auto）
+
+`execute_action` / `batch_actions` 的 `action="click"` 支持 `strategy` 参数（ZCode computer-use 同款机制）：
+
+- **`auto`（默认）**：先 UIA hit-test（`ControlFromPoint` + 祖先链 ≤5 层找最近可点击元素）；命中 → 直接 UIA invoke（**后台执行、不抢焦点、零键鼠事件**），响应 `transport_status="sent_uia_invoke"`；未命中 → 自动回退原始键鼠（`transport_status="sent"`）
+- **`event`**：强制原始键鼠（旧行为回归口）
+- **`uia_only`**：必须命中 UIA 可点击元素，否则 `blocked` 不回退（防 agent 在自绘界面上误用真实键鼠）
+
+关键行为：融合命中时**跳过窗口激活**（不抢焦点是核心收益）；danger/takeover/confirm 等安全检查不受影响；`expected`/`verify_prompt` 后验照走；融合路径任何异常自动回退原始键鼠（auto 下绝不因融合而失败）。仅 `click` 参与融合——double_click/right_click/scroll/drag 始终走原始键鼠。总闸：`config.toml [screen] coordinate_uia_fusion = false` 时全部走原始键鼠。
+
+**选型建议**：标准 Win32/Qt/WinUI 应用直接 `strategy=auto`（默认）即可获得后台点击；DirectX 游戏/自绘 UI 会自然落入未命中分支回退原始键鼠，无需干预。
 
 ### 语义动作 vs 坐标动作
 
@@ -173,6 +200,41 @@ UIA 语义层与键鼠操作共用同一套安全机制。`screen_semantic_actio
 | 安全机制 | 共用 takeover_confirm | 共用 takeover_confirm + 焦点校验 |
 
 两者**都受安全机制保护**，不存在绕过安全机制的路径。选择依据是目标应用是否支持 UIA 树。
+
+## 剪贴板 / zoom / 鼠标分段原语（ZCode 对齐，2026-09-05）
+
+### 剪贴板读写
+
+| 接口 | operation_id | 用途 |
+|------|--------------|------|
+| `GET /screen/clipboard` | `read_clipboard` | 读剪贴板文本（默认截断 2000 字符，`full=true` 取全文；`has_text=false` 表示无文本内容） |
+| `POST /screen/clipboard` | `write_clipboard` | 写文本到剪贴板（body `{"text": "..."}`；响应只回前 100 字符摘要） |
+
+典型用法：**长文本/特殊字符输入前置**——write_clipboard 后 `hotkey ctrl+v`，绕过逐字符 SendInput 的 IME/丢字问题；粘贴后 read_clipboard 验证内容。安全：读写都受会话权限保护（403）；write 过危险关键词 block 级拦截（confirm 级不拦——写入本身不执行任何内容）。
+
+### zoom 局部放大（最近帧复用）
+
+| 接口 | operation_id | 用途 |
+|------|--------------|------|
+| `POST /screen/zoom` | `screen_zoom` | 对最近一帧截图按 region 裁剪（可选 scale 放大 0.5-4x），**不重新截图** |
+| `POST /screen/ocr`（带 `snapshot_id`/`region`） | `screen_ocr` | 对缓存帧做局部 OCR（小字更准），不重拍、不扰动覆盖层 |
+
+- `snapshot_id` 来自 `capture_screen` 返回值（服务端缓存最近 3 帧，TTL 5min，LRU 淘汰）；过期/未知返回 404 提示重拍
+- `region = [x0, y0, x1, y1]` 截图内像素坐标（与 capture 响应 width/height 同坐标系），越界自动 clamp，clamp 后 <4px 报 400
+- `output=inline` 走 MCP ImageContent（多模态 LLM 直接看图，不进文本上下文）；`output=path` 返回临时 PNG 路径（可传 `ocr_file`）
+- 适用场景：小字/图标/密集控件近距离辨认——capture → zoom 放大看细节，省一次全屏截图
+
+### 鼠标分段原语
+
+`execute_action` / `batch_actions` / `desktop_transaction` 新增三个动作：
+
+| action | 参数 | 用途 |
+|--------|------|------|
+| `mouse_down` | x, y 必填；`button=left/right` | 按下不释放（与 mouse_up 配对：分段拖拽、长按、自绘滑块） |
+| `mouse_up` | x, y 可选（提供则先移动再释放）；`button` | 释放按键（必须与 mouse_down 配对） |
+| `mouse_move` | x, y 必填 | 移动指针不点击（hover 悬停、拖拽中间步进） |
+
+三者均纳入 `_COORDINATE_ACTIONS`（窗口范围检查/STALE_COORDINATES/确认流程与 click 一致）。一体化拖拽仍用 `drag`；需要中途停顿或路径控制的拖拽才用 down/move/up 组合。
 
 ## 桌面事务与批量操作
 
@@ -624,8 +686,6 @@ POST /screen/overlay {action:"hide"}
 - **`understand_image`**：远程 VL 图像描述，用 **`question`** 参数（不是 prompt）提问。用于布局、状态、遮挡、弹窗、选中状态描述。不要把其坐标回答当像素用（详见"VL 坐标归一化"章节）。
 - **`vision_locate`**（`POST /vision/locate`）：无文字元素坐标兜底。参数：`target`（目标描述）、`window_title`+`process_name`（窗口模式，与 `image` 二选一）、`image`（base64 直传）。自动处理 VL 归一化坐标 + 加窗口偏移，返回屏幕物理像素坐标 `{x, y, nx, ny, image_size, description, elapsed_ms}`。不接受 `hwnd`。精度约 +/-20 像素。详见"VL 坐标归一化"章节。
 
-> OmniParser（原 `parse_screen`）已于 2026-07-31 移除（MCP 调用 0 次）。纯图标/无文字元素场景改用 `understand_image` 描述 + `vision_locate` 兜底。
-
 ## 注意事项
 
 - 游戏窗口截图可能黑屏（DirectX渲染），需要特殊处理
@@ -700,7 +760,7 @@ PT 站点可能同时满足多个特殊条件，多重叠加时根因难以快�
 ### qBittorrent 配置注意事项
 
 > qBittorrent 的完整结构化经验（UIA 友好度/快捷键/菜单路径/已知坑）已迁移到
-> [`.agents/skills/computer_use/apps/qbittorrent.md`](file:///f:/<project_root>/.agents/skills/computer_use/apps/qbittorrent.md)。
+> [`.agents/skills/computer_use/apps/qbittorrent.md`](file:///<project_root>/.agents/skills/computer_use/apps/qbittorrent.md)。
 > 调 `screen_match_app(process_name="qbittorrent.exe")` 可一键查询。以下仅保留历史摘要。
 
 - 配置优先通过界面操作，不要直接改 ini（界面保存会覆盖 ini 修改）

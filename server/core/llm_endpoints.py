@@ -1,5 +1,6 @@
 """LLM 并发池端点：/llm/pool/*"""
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -36,10 +37,14 @@ def _chunk_text(text: str, chunk_size: int = 8) -> list[str]:
 
 
 class LLMPoolCallRequest(BaseSchema):
-    """LLM 池完整调用请求"""
+    """LLM 池完整调用请求
+
+    temperature / max_tokens 默认 None = 不下发给 provider，用 provider 自己的默认值
+    （池是通道，不替调用方决定采样参数与输出预算）。要约束就显式传值。
+    """
     messages: list[dict]
-    temperature: float = 0.3
-    max_tokens: int = 4096
+    temperature: float | None = None
+    max_tokens: int | None = None
     timeout: int = 120
     retries: int = 4
     project: str = "default"
@@ -51,11 +56,11 @@ class LLMPoolCallRequest(BaseSchema):
 
 
 class LLMPoolCallSimpleRequest(BaseSchema):
-    """LLM 池简化调用请求"""
+    """LLM 池简化调用请求（temperature / max_tokens 语义同 LLMPoolCallRequest）"""
     prompt: str
     system_prompt: str | None = None
-    temperature: float = 0.3
-    max_tokens: int = 4096
+    temperature: float | None = None
+    max_tokens: int | None = None
     timeout: int = 120
     retries: int = 4
     project: str = "default"
@@ -75,8 +80,8 @@ class LLMPoolChatToolsRequest(BaseSchema):
     避免引擎把它当作工具调用造成递归。
     """
     messages: list[dict]
-    temperature: float = 0.3
-    max_tokens: int = 4096
+    temperature: float | None = None
+    max_tokens: int | None = None
     timeout: int = 120
     retries: int = 4
     project: str = "default"
@@ -278,14 +283,16 @@ def register_llm_routes(app: FastAPI):
                 if kf in seen or not Path(kf).exists():
                     continue
                 seen.add(kf)
-                result = check_keys_health(kf)
+                # v12 起 key_store 函数不再接受 filepath 参数（统一走 lib.secret 单一真源）；
+                # 健康检查含网络探测，用 asyncio.to_thread 避免阻塞事件循环
+                result = await asyncio.to_thread(check_keys_health)
                 if "error" in result:
                     merged_result["files"].append({"file": kf, "error": result["error"]})
                     continue
                 if cleanup and result.get("removed", 0) > 0:
-                    cleanup_result = cleanup_expired_keys(kf, backup=True)
+                    cleanup_result = await asyncio.to_thread(cleanup_expired_keys, backup=True)
                     result["cleanup"] = cleanup_result
-                result["auto_check_needed"] = should_run_health_check(kf)
+                result["auto_check_needed"] = should_run_health_check()
                 merged_result["files"].append({"file": kf, **result})
                 merged_result["total"] += result.get("total", 0)
                 merged_result["ok"] += result.get("ok", 0)
@@ -315,7 +322,7 @@ def register_llm_routes(app: FastAPI):
                 if kf in seen or not Path(kf).exists():
                     continue
                 seen.add(kf)
-                result = cleanup_expired_keys(kf, backup=True)
+                result = await asyncio.to_thread(cleanup_expired_keys, backup=True)
                 if "error" in result:
                     merged_result["files"].append({"file": kf, "error": result["error"]})
                     continue
@@ -351,7 +358,7 @@ def register_llm_routes(app: FastAPI):
                     data, _wrapper = _load_keys_records(kf)
                 except Exception:
                     continue  # 非 JSON 文件（如纯文本 key），跳过健康状态统计
-                needs_check = should_run_health_check(str(kf))
+                needs_check = should_run_health_check()
                 last_check = ""
                 if data:
                     # 找该文件中所有记录的最晚 last_health_check

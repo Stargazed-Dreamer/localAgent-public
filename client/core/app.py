@@ -11,6 +11,8 @@
 """
 
 
+from typing import cast
+
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -28,6 +30,11 @@ from client.core.panel_base import PanelBase
 from client.core.panel_registry import PanelRegistry
 from client.core.services import ServiceManager
 from client.core.state import AppState
+from client.panels.chat import ChatPanel
+from client.panels.dashboard import DashboardPanel
+from client.panels.llm_pool import ModelPoolPanel
+from client.panels.monitoring import MonitoringPanel
+from client.panels.tasks import TasksPanel
 from lib.ui import icons as _icons
 from lib.ui import tokens as _T
 from lib.ui.theme import set_text_role
@@ -43,12 +50,15 @@ class _SidebarItemWidget(QWidget):
 
     def __init__(self, icon: str, title: str, parent=None):
         super().__init__(parent)
+        # UIA 可达性：自定义行 widget 在无障碍树里默认无名（row 9/10...），
+        # 显式给出面板名（C14 最小集）
+        self.setAccessibleName(title)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 14, 0)
         layout.setSpacing(8)
         self._icon_label = QLabel()
         self._icon_label.setFixedWidth(22)
-        self._icon_label.setAlignment(Qt.AlignCenter)
+        self._icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         try:
             # 优先 SVG 图标名渲染（T4：emoji 全部迁移到 lib/ui/icons）
             pm = _icons.icon_pixmap(icon, _T.ICON_DEFAULT, 18)
@@ -58,12 +68,13 @@ class _SidebarItemWidget(QWidget):
             self._icon_label.setText(icon)
         layout.addWidget(self._icon_label)
         self._label = QLabel(title)
-        self._label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._label.setAccessibleName(title)
+        self._label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self._label)
         layout.addStretch()
         self._count_label = QLabel("")
         set_text_role(self._count_label, "warning")
-        self._count_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self._count_label)
         self.setMinimumHeight(40)
 
@@ -76,10 +87,12 @@ class _SidebarCategoryWidget(QWidget):
 
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
+        self.setAccessibleName(title)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 14, 0)
         label = QLabel(title)
-        label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        label.setAccessibleName(title)
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         set_text_role(label, "title")
         layout.addWidget(label)
 
@@ -91,7 +104,7 @@ class Sidebar(QListWidget):
         super().__init__(parent)
         self.setFixedWidth(180)
         self.setObjectName("sidebar")
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # 按分类分组的项
         self._panel_indexes: dict[str, int] = {}  # panel_id -> row index
         self._panel_base_texts: dict[str, str] = {}  # panel_id -> base text (icon + title)
@@ -100,8 +113,9 @@ class Sidebar(QListWidget):
 
     def add_category_header(self, label: str) -> None:
         item = QListWidgetItem()
-        item.setFlags(item.flags() & ~Qt.ItemIsSelectable & ~Qt.ItemIsEnabled)
-        item.setData(Qt.UserRole, "__header__")
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable & ~Qt.ItemFlag.ItemIsEnabled)
+        item.setData(Qt.ItemDataRole.UserRole, "__header__")
+        item.setData(Qt.ItemDataRole.AccessibleTextRole, label)
         item.setSizeHint(QSize(0, 32 if label else 12))
         self.addItem(item)
         if label:
@@ -111,7 +125,10 @@ class Sidebar(QListWidget):
         base_text = f"{icon}  {title}"
         self._panel_base_texts[panel_id] = base_text
         item = QListWidgetItem()
-        item.setData(Qt.UserRole, panel_id)
+        item.setData(Qt.ItemDataRole.UserRole, panel_id)
+        # AccessibleTextRole：只喂无障碍树、不参与界面绘制——
+        # 解决"item.setText 有名但文字透出行 widget 成重影 / 不设则 UIA 无名"的互斥
+        item.setData(Qt.ItemDataRole.AccessibleTextRole, title)
         item.setSizeHint(QSize(0, 40))
         self.addItem(item)
         row = self.count() - 1
@@ -175,7 +192,7 @@ class MainWindow(QMainWindow):
         # 空状态
         if not self._panel_order:
             placeholder = QLabel("无可用面板\n请在 client/panels/ 下添加面板")
-            placeholder.setAlignment(Qt.AlignCenter)
+            placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
             set_text_role(placeholder, "tertiary")
             self.stack.addWidget(placeholder)
 
@@ -210,23 +227,25 @@ class MainWindow(QMainWindow):
         self.services.start()
 
         # 6. 连接数据信号到需要它们的 panel
-        dashboard = self.panels.get("dashboard")
+        # 初始化不变量：这些 panel_id 对应已注册面板，__init__ 时已实例化
+        # （cast 收敛类型，让 pyright 能验证具体面板的信号方法）
+        dashboard = cast(DashboardPanel, self.panels.get("dashboard"))
         if dashboard is not None:
             self.services.backend_health_changed.connect(dashboard.on_health_changed)
             self.services.todos_due_changed.connect(dashboard.on_todos_changed)
             self.services.fake_proxy_status_changed.connect(dashboard.on_fake_proxy_changed)
 
-        monitoring = self.panels.get("monitoring")
+        monitoring = cast(MonitoringPanel, self.panels.get("monitoring"))
         if monitoring is not None:
             self.services.backend_health_changed.connect(monitoring.on_health_changed)
 
         # LLM 池监控面板：接收 health 变化信号以更新摘要栏
-        llm_pool_panel = self.panels.get("llm_pool")
+        llm_pool_panel = cast(ModelPoolPanel, self.panels.get("llm_pool"))
         if llm_pool_panel is not None:
             self.services.backend_health_changed.connect(llm_pool_panel.on_health_changed)
 
         # 待办总览面板：接收到期任务信号 + 切换子面板
-        tasks = self.panels.get("tasks")
+        tasks = cast(TasksPanel, self.panels.get("tasks"))
         if tasks is not None:
             self.services.todos_due_changed.connect(tasks.on_todos_changed)
             tasks.switch_panel_requested.connect(self.switch_to_panel)
@@ -296,7 +315,7 @@ class MainWindow(QMainWindow):
     def _on_sidebar_changed(self, current: QListWidgetItem, _previous: QListWidgetItem) -> None:
         if current is None:
             return
-        panel_id = current.data(Qt.UserRole)
+        panel_id = current.data(Qt.ItemDataRole.UserRole)
         if not isinstance(panel_id, str) or panel_id == "__header__":
             return
         self.switch_to_panel(panel_id)
@@ -402,7 +421,7 @@ class MainWindow(QMainWindow):
         self.sidebar.update_badge("memory", memory_stale)
 
         # 同步到 tasks 面板的子入口卡片
-        tasks = self.panels.get("tasks")
+        tasks = cast(TasksPanel, self.panels.get("tasks"))
         if tasks is not None:
             tasks._inbox_count = inbox_count
             tasks._due_count = due_count
@@ -415,7 +434,7 @@ class MainWindow(QMainWindow):
         # D24: 防关机丢会话 — 中断活跃 runner + 更新 session.status=interrupted（毫秒级，非阻塞）
         # auto_shutdown 关机时 OS 自动触发 closeEvent（WM_QUERYENDSESSION），无需额外 hook
         try:
-            chat_panel = self.panels.get("chat")
+            chat_panel = cast(ChatPanel, self.panels.get("chat"))
             if chat_panel is not None and hasattr(chat_panel, "interrupt_active_session"):
                 chat_panel.interrupt_active_session()
         except Exception:

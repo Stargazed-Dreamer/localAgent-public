@@ -16,6 +16,8 @@ import random
 import re
 import base64
 import io
+import os
+import sys
 from pathlib import Path
 from collections import deque
 from datetime import datetime
@@ -25,6 +27,12 @@ API = "http://127.0.0.1:8766"
 WINDOW = "异环  "
 OUTPUT_DIR = Path("workspace/yihuan_gacha")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# 调试模式：YIYUAN_DEBUG=1 开启后打印每步耗时（截图/OCR/翻页）
+DEBUG = os.environ.get("YIYUAN_DEBUG") == "1"
+
+# OCR 超时（秒）：CPU 推理大图约 15-40s/页，留足余量；超时说明后端异常，避免脚本永久挂死
+OCR_TIMEOUT = 180
 
 # 骰子图标中心x坐标（v2 修正：通过5张样本图分析确认实际中心x=610，bbox [584,636]）
 # 原 v1 用的 629 也落在骰子区域内但非中心，导致 y 裁切范围偏移截断骰子下半部分
@@ -85,8 +93,15 @@ def capture_window():
 
 
 def ocr_image(image_b64):
-    """OCR识别图片"""
-    resp = requests.post(f"{API}/ocr/base64", data={"data": image_b64})
+    """OCR识别图片（带超时，防止后端挂死时脚本永久阻塞）"""
+    try:
+        resp = requests.post(f"{API}/ocr/base64", data={"data": image_b64}, timeout=OCR_TIMEOUT)
+    except requests.exceptions.Timeout:
+        print(f"[!] OCR 超时（{OCR_TIMEOUT}s），后端可能异常（GPU 推理挂死？），放弃本页")
+        return None, []
+    except requests.exceptions.RequestException as e:
+        print(f"[!] OCR 请求异常: {e}")
+        return None, []
     data = resp.json()
     if not data.get("success"):
         print(f"OCR失败: {data}")
@@ -95,21 +110,57 @@ def ocr_image(image_b64):
 
 
 def capture_and_ocr():
-    """截图+OCR一步完成"""
+    """截图+OCR一步完成（调试模式下打印各步耗时）"""
+    t0 = time.perf_counter()
     image = capture_window()
     if not image:
         return None, []
+    t1 = time.perf_counter()
     text, details = ocr_image(image)
+    t2 = time.perf_counter()
+    if DEBUG:
+        print(f"    [debug] 截图 {t1-t0:.1f}s | OCR {t2-t1:.1f}s | {len(details)} 项")
     return image, details
 
 
+def ensure_authorization():
+    """申请屏幕控制授权（采集前主动调用，防后端重启/授权过期导致点击 403）
+
+    POST /screen/control/request 会弹窗阻塞等待用户批准（后端默认 30s 超时），
+    响应 status="authorized" 表示成功。已授权时重新请求也会覆盖刷新（幂等）。
+    """
+    try:
+        resp = requests.post(f"{API}/screen/control/request", json={
+            "source": "yihuan_gacha",
+            "task_description": "异环抽卡记录采集：需要自动翻页读取掷骰记录",
+        }, timeout=60)
+        data = resp.json()
+    except Exception as e:
+        print(f"[!] 授权申请失败: {e}")
+        return False
+    if data.get("status") == "authorized":
+        print("屏幕控制授权: 已通过")
+        return True
+    print(f"[!] 屏幕控制授权未通过: status={data.get('status')} {data.get('message', '')}")
+    return False
+
+
 def click_at(x, y, element_text="", require_confirm=False):
-    """点击指定坐标（窗口相对坐标）"""
+    """点击指定坐标（窗口相对坐标）；403 时自动申请授权并重试一次"""
     resp = requests.post(f"{API}/screen/action", json={
         "action": "click", "x": int(x), "y": int(y),
         "window_title": WINDOW, "element_text": element_text,
         "require_confirm": require_confirm
     })
+    if resp.status_code == 403:
+        # 授权丢失/过期（后端重启或 idle 超时撤销）→ 申请后重试一次
+        print("  [!] 点击被拒（403 未授权），尝试申请屏幕控制授权...")
+        if ensure_authorization():
+            resp = requests.post(f"{API}/screen/action", json={
+                "action": "click", "x": int(x), "y": int(y),
+                "window_title": WINDOW, "element_text": element_text,
+                "require_confirm": require_confirm
+            })
     if resp.status_code == 422:
         errors = resp.json().get("detail", [])
         err_info = "; ".join(
@@ -1281,11 +1332,14 @@ def print_summary(result):
 
 
 if __name__ == "__main__":
-    import sys
+    # 行缓冲输出：后台运行（RunCommand/终端重定向）时 print 立即可见，不再被块缓冲吞掉
+    sys.stdout.reconfigure(line_buffering=True)
     weapon_mode = "--weapon" in sys.argv
     force_mode = "--force" in sys.argv
 
     print("异环抽卡记录收集器 v5")
+    if DEBUG:
+        print("  [调试模式] 每步打印截图/OCR 耗时（YIYUAN_DEBUG=1）")
     if weapon_mode:
         print("  [武器池模式] 仅采集弧盘研募（请先在游戏中打开 弧盘研募→研募记录 页面）")
     if force_mode:
@@ -1299,6 +1353,11 @@ if __name__ == "__main__":
 
     if not admin:
         print("警告: 没有管理员权限，键鼠操作可能失败！")
+
+    # 采集前申请屏幕控制授权（后端重启后授权会丢失；弹窗会等你批准一次）
+    if not ensure_authorization():
+        print("无法获得屏幕控制授权，退出。请在弹窗中批准后重试。")
+        sys.exit(1)
 
     # 加载已有数据库，用于自动终止检测（--force 跳过）
     db_data = load_existing_database()

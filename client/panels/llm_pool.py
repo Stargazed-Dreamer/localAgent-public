@@ -161,10 +161,10 @@ class ModelPoolPanel(PanelBase):
         """构造一个摘要小卡片（label + value）"""
         v = QLabel("—")
         set_text_role(v, "title")
-        v.setAlignment(Qt.AlignCenter)
+        v.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl = QLabel(label_text)
         set_text_role(lbl, "secondary")
-        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box = QVBoxLayout()
         box.setSpacing(2)
         box.setContentsMargins(8, 6, 8, 6)
@@ -536,7 +536,9 @@ class ModelPoolPanel(PanelBase):
     def _on_refresh_done(self) -> None:
         self._set_loading(False)
         t = self._refresh_thread
-        if t.health is None:
+        # 初始化不变量：_refresh_thread 仅由 _refresh_async 创建，finished 触发时必非 None；
+        # health None 表示后端离线（RefreshThread 内已判定）
+        if t is None or t.health is None:
             self._stack.setCurrentWidget(self._offline_widget)
             return
         self._stack.setCurrentWidget(self._normal_widget)
@@ -654,18 +656,18 @@ class ModelPoolPanel(PanelBase):
         tok = stats.get("total_tokens", 0)
         pw = k.get("privacy_warning", "") or ""
 
-        # ⚠️ 表示隐私不安全（后端 is_free=True）
-        privacy_tag = " ⚠️" if is_free else " ✓"
+        # 免费源标记为隐私不安全（后端 is_free=True），安全源打 ✓
+        privacy_tag = "" if is_free else " ✓"
         proto_tag = f" [{protocol}]" if protocol != "openai" else ""
         title = f"{name}{privacy_tag}{proto_tag}"
         if pw:
-            title += " ⚠️隐私"
+            title += "（隐私）"
 
         if expired:
             status_text = "✗ 失效"
             status_color = tokens.DANGER_TEXT
         elif cooldown > 0:
-            status_text = f"⏳ 冷却 {cooldown}s"
+            status_text = f"冷却 {cooldown}s"
             status_color = tokens.WARNING_TEXT
         elif is_available:
             status_text = "✓ 可用"
@@ -678,7 +680,7 @@ class ModelPoolPanel(PanelBase):
         models = k.get("models", []) or []
         all_models_disabled = bool(models) and all(m.get("disabled", False) for m in models)
         if all_models_disabled and not expired:
-            status_text = "⚠️ 全禁用"
+            status_text = "已全禁用"
             status_color = tokens.DANGER_TEXT
 
         concurrency = f"{active}/{max_c}"
@@ -695,12 +697,12 @@ class ModelPoolPanel(PanelBase):
         item.setForeground(6, QColor(tokens.TEXT_SECONDARY))
         tip_parts = []
         if pw:
-            tip_parts.append(f"⚠ 隐私不安全: {pw}")
+            tip_parts.append(f"隐私不安全: {pw}")
         err = stats.get("last_error", "")
         if err:
             tip_parts.append(f"最近错误: {err[:120]}")
         if all_models_disabled:
-            tip_parts.append("⚠️ 该 key 的所有 model 都被 disabled，等待探针恢复")
+            tip_parts.append("注意：该 key 的所有 model 都被 disabled，等待探针恢复")
         if tip_parts:
             item.setToolTip(0, "\n".join(tip_parts))
 
@@ -728,19 +730,19 @@ class ModelPoolPanel(PanelBase):
         m_tok = ms.get("total_tokens", 0)
         m_consec = m.get("consecutive_fails", 0) or 0
 
-        # v15: 状态列——✓可用 / 🔄冷却 / ⛔禁用（探针中用浅色）
+        # v15: 状态列——✓可用 / 冷却 / 禁用（探针中用浅色）
         if m_disabled:
             if m_probe:
-                status = "⛔ 探针"
+                status = "探针"
                 status_color = tokens.WARNING_TEXT
             else:
-                status = "⛔ 禁用"
+                status = "禁用"
                 status_color = tokens.DANGER_TEXT
         elif m_in_cooldown:
-            status = "🔄 冷却"
+            status = "冷却"
             status_color = tokens.WARNING_TEXT
         elif m_free:
-            status = "⚠️"
+            status = "隐私"
             status_color = tokens.WARNING_TEXT
         else:
             status = "✓"
@@ -765,7 +767,7 @@ class ModelPoolPanel(PanelBase):
             di = m.get("disabled_info")
             if isinstance(di, dict):
                 tip_parts.append(
-                    f"⛔ disabled @ {di.get('disabled_at', '?')}, "
+                    f"disabled @ {di.get('disabled_at', '?')}, "
                     f"上次探针 {di.get('last_probe_at', '?')}"
                 )
             if m_probe:
@@ -811,23 +813,23 @@ class ModelPoolPanel(PanelBase):
             total_keys_for_model = len(keys_list)
 
             disp_text = display_name if display_name != name else name
-            # ⚠️ 隐私不安全，✓ 安全
-            privacy_text = "⚠️" if is_free else "✓"
+            # 隐私不安全（空文本），✓ 安全
+            privacy_text = "" if is_free else "✓"
 
-            # v15: 状态列——✓可用 / 🔄冷却 / ⛔禁用 / ❌全禁用
+            # v15: 状态列——✓可用 / 冷却 / 禁用 / 全禁
             if avail_now:
                 status_text = "✓"
                 status_color = tokens.SUCCESS_TEXT
             elif total_keys_for_model > 0 and disabled_count >= total_keys_for_model:
                 # 所有 key 都把该 model 标 disabled → 完全不可用
-                status_text = "⛔全禁"
+                status_text = "全禁"
                 status_color = tokens.DANGER_TEXT
             elif disabled_count > 0:
                 # 部分 disabled，其他可能在 cooldown
-                status_text = f"⛔{disabled_count}"
+                status_text = f"禁{disabled_count}"
                 status_color = tokens.WARNING_TEXT
             else:
-                status_text = "🔄"
+                status_text = "冷却"
                 status_color = tokens.WARNING_TEXT
 
             # v15: 连续失败列

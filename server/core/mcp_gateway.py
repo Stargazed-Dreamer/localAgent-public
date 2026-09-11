@@ -3,12 +3,38 @@
 import asyncio
 import json
 import logging
+from typing import Any
 
 logger = logging.getLogger("localagent.mcp_gateway")
 
 # 响应大小保护：单个 TextContent 超阈值时截断 + 强制上报用户
 MAX_MCP_RESPONSE_CHARS = 50000   # 单个 TextContent 硬上限
 MCP_TRUNCATE_TAIL_CHARS = 2000   # 截断时保留尾部字符数
+
+
+def _approval_body(args) -> bytes:
+    """计算审批指纹用的 body：剥离 _approval_token 后紧凑 JSON 序列化。
+
+    签发（user_review_for_llm_deny 路径）与验证（token 重试 check_approval）
+    必须用同一 body，否则指纹不匹配 → 人审批准后 token 无效（审批死循环）。
+    旧 bug：验证固定用 b""，签发用完整 arguments 序列化（2026-08-25 修复对齐）。
+    模块级函数以便测试直接导入（tests/test_mcp_gateway_approval_fingerprint.py）。
+    """
+    if isinstance(args, dict):
+        filtered = {k: v for k, v in args.items() if k != "_approval_token"}
+        return json.dumps(filtered, ensure_ascii=False).encode("utf-8")
+    return b""
+
+
+def _content_text(content: object) -> str:
+    """读取 MCP 内容块的 text 字段。
+
+    mcp 类型 stub 不全：ImageContent / EmbeddedResource 存在但缺 text 属性声明，
+    pyright 会把字面量名 getattr 当成员访问校验。参数收窄为 object 即不再误报。
+    运行时这些对象总是 fastapi-mcp 的 TextContent（带 text）。
+    """
+    text = getattr(content, "text", "")
+    return text if isinstance(text, str) else ""
 
 
 def setup_mcp(app):
@@ -57,9 +83,11 @@ def setup_mcp(app):
             try:
                 from server.http_guard import check_approval
                 from server.route_tags import build_operation_safety_map
-                if not hasattr(mcp, '_operation_safety_map'):
-                    mcp._operation_safety_map = build_operation_safety_map(app)
-                safety_map = mcp._operation_safety_map
+                # FastApiMCP 未声明 _operation_safety_map，动态属性用 Any 承载（getattr/setattr 字面量名仍会被校验）
+                _mcp_dynamic: Any = mcp
+                if getattr(_mcp_dynamic, "_operation_safety_map", None) is None:
+                    _mcp_dynamic._operation_safety_map = build_operation_safety_map(app)
+                safety_map = _mcp_dynamic._operation_safety_map
 
                 # 确定"有效 operation_id"用于审批检查：
                 # - 直接调用 MCP 工具：用 tool_name 本身
@@ -79,11 +107,16 @@ def setup_mcp(app):
                     from server.route_tags import classify_safety_runtime_by_op
                     runtime_safety = classify_safety_runtime_by_op(effective_op)
                     if runtime_safety == "approval_required":
+                        # token 指纹统一用"剥离 _approval_token 后序列化的 arguments"：
+                        # 签发（user_review_for_llm_deny）与验证（check_approval）必须用同一
+                        # body，否则指纹必然不匹配 → 人审批准后 token 永远无效（审批死循环）。
                         token = arguments.get("_approval_token", "") if isinstance(arguments, dict) else ""
+
+                        approval_body = _approval_body(arguments)
                         virtual_path = f"/mcp/tool/{effective_op}"
                         if token:
                             # 带 token 重试：验证 token，不跑 LLM 审查
-                            approval_id = check_approval("POST", virtual_path, b"", token)
+                            approval_id = check_approval("POST", virtual_path, approval_body, token)
                             from server.approval_review import log_approval_detailed
                             log_approval_detailed({
                                 "event": "mcp_gateway_token_retry",
@@ -91,7 +124,8 @@ def setup_mcp(app):
                                 "path": virtual_path,
                                 "token_present": True,
                                 "token_valid": approval_id is None,
-                                "note": "check_approval 用空 body 验证 token，可能因 body 指纹不匹配导致 token 无效",
+                                "body_sha16": __import__("hashlib").sha256(approval_body).hexdigest()[:16],
+                                "note": "check_approval 用与签发一致的 arguments 指纹验证 token（2026-08-25 修复）",
                             })
                             if approval_id is not None:
                                 return [
@@ -132,9 +166,9 @@ def setup_mcp(app):
                             if not proceed and review.get("layer1_static") in ("block", "pass"):
                                 user_reviewed = True
                                 block_decision = "static_block" if review.get("layer1_static") == "block" else review.get("layer2_llm", "deny")
-                                args_body = json.dumps(
-                                    arguments, ensure_ascii=False
-                                ).encode("utf-8") if isinstance(arguments, dict) else b""
+                                # 与 token 重试验证用同一 body（_approval_body），
+                                # 保证签发/验证指纹一致
+                                args_body = _approval_body(arguments)
                                 user_result = await user_review_for_llm_deny(
                                     effective_op,
                                     arguments if isinstance(arguments, dict) else {},
@@ -226,7 +260,7 @@ def setup_mcp(app):
                     if getattr(content, "type", None) != "text":
                         continue
                     try:
-                        parsed = json.loads(content.text)
+                        parsed = json.loads(_content_text(content))
                     except (ValueError, TypeError):
                         continue
                     if isinstance(parsed, (dict, list)):
@@ -246,7 +280,7 @@ def setup_mcp(app):
                     if getattr(content, "type", None) != "text":
                         continue
                     try:
-                        data = json.loads(content.text)
+                        data = json.loads(_content_text(content))
                     except (ValueError, TypeError):
                         continue
                     if not isinstance(data, dict):
@@ -303,7 +337,7 @@ def setup_mcp(app):
                 for i, content in enumerate(result):
                     if getattr(content, "type", None) != "text":
                         continue
-                    text = content.text
+                    text = getattr(content, "text", "")
                     original_len = len(text)
                     if original_len <= MAX_MCP_RESPONSE_CHARS:
                         continue
@@ -336,12 +370,23 @@ def setup_mcp(app):
         # 让 MCP 客户端（如仅通过 MCP 连接的外部 agent）能区分只读 vs 破坏性工具。
         try:
             from mcp.types import ToolAnnotations as _MCPToolAnnotations
+
             from server.mcp_whitelist import TOOL_ANNOTATIONS as _TOOL_ANNOTATIONS
             _annotated = 0
             for _tool in mcp.tools:
                 _anns = _TOOL_ANNOTATIONS.get(_tool.name)
                 if _anns:
-                    _tool.annotations = _MCPToolAnnotations(**_anns)
+                    # TOOL_ANNOTATIONS 值类型为 dict[str, bool]，与 ToolAnnotations 的
+                    # title: str|None 参数不兼容（** 展开会误把 bool 传给 title），显式构造。
+                    # 缺失键传 None（保持库默认 unset 语义）而非 False——
+                    # False 会把"未声明"翻转为"明确声明非 openWorld/只读/无副作用"，语义不同
+                    _tool.annotations = _MCPToolAnnotations(
+                        title=None,
+                        readOnlyHint=_anns.get("readOnlyHint"),
+                        destructiveHint=_anns.get("destructiveHint"),
+                        idempotentHint=_anns.get("idempotentHint"),
+                        openWorldHint=_anns.get("openWorldHint"),
+                    )
                     _annotated += 1
             logger.info(f"MCP annotations 已注入: {_annotated}/{len(mcp.tools)} 个工具")
         except Exception as _e:

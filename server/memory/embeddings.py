@@ -6,9 +6,11 @@
 模型：BAAI/bge-small-zh-v1.5（中文优化，512 维，~90MB）
 """
 
+import gc
 import hashlib
 import logging
 import os
+from typing import Any
 
 import numpy as np
 
@@ -45,14 +47,16 @@ class EmbeddingEngine:
                 if os.path.isdir(_c):
                     self.model_dir = _c
                     break
-            self.dim = 512  # 设置模型输出的嵌入向量维度
-            self.max_length = 512  # 设置模型处理的最大输入序列长度
-            self._session = None  # 初始化模型推理会话为空，待后续加载
-            self._tokenizer = None  # 初始化文本分词器为空，待后续加载
+            self.dim: int = 512  # 设置模型输出的嵌入向量维度
+            self.max_length: int = 512  # 设置模型处理的最大输入序列长度
+            # onnxruntime InferenceSession / tokenizers.Tokenizer / sentence_transformers
+            # .SentenceTransformer 的 typing stub 不全，用 Any 承载（推理侧已有判空）
+            self._session: Any = None  # 初始化模型推理会话为空，待后续加载
+            self._tokenizer: Any = None  # 初始化文本分词器为空，待后续加载
             self._ready = False  # 标记模型是否已完全加载并准备好推理
             self._download_attempted = False  # 标记是否已尝试下载模型，避免重复尝试
             self._hf_mirror = hf_mirror  # 存储Hugging Face镜像地址，用于模型下载优化
-            self._st_model = None  # sentence-transformers 降级模型（预初始化避免 hasattr 检查）
+            self._st_model: Any = None  # sentence-transformers 降级模型（预初始化避免 hasattr 检查）
             self._use_st_fallback = False  # 是否使用 sentence-transformers 降级路径
 
     @property
@@ -70,8 +74,36 @@ class EmbeddingEngine:
             logger.warning(f"嵌入引擎加载失败: {e}，语义检索将不可用")
             return False
 
+    def unload(self) -> None:
+        """释放模型资源（design §5.2，model-lifecycle-manager T3）
+
+        - 置空 ONNX session / tokenizer / ST 模型
+        - `_ready=False`（消费者先查 `ready`，自动降级到 BM25-only / 返回零向量）
+        - **重置 `_use_st_fallback`**：避免卸载后再次初始化误走降级路径
+          （_load_model 路径由 _has_local_st_structure 重判，重置后语义干净）
+        - **不重置 `_download_attempted`**：避免每次 unload/load 循环重复触发下载
+        - gc.collect() 触发 ONNX session 立即回收
+        """
+        self._session = None
+        self._tokenizer = None
+        self._st_model = None
+        self._use_st_fallback = False
+        self._ready = False
+        gc.collect()
+        logger.info(f"嵌入引擎已卸载: {self.model_name}")
+
     def _load_model(self) -> bool:
-        """尝试加载模型：优先 ONNX，本地仅有 safetensors/pytorch 时走 sentence-transformers 降级"""
+        """尝试加载模型：ONNX 优先，其次本地权重转 ONNX，最后才联网下载
+
+        加载优先级（2026-08-31 修订）：
+            1. 本地已有 model.onnx                → 直接加载
+            2. 本地有 sentence-transformers 结构   → 先试 ST 降级；失败则本地权重导 ONNX（均不联网）
+            3. 以上都不行                          → 联网下载
+
+        历史 bug：原实现在分支 2 无条件 `return self._ready`，一旦运行环境未安装
+        sentence-transformers，降级失败后直接返回 False，永远走不到分支 3 与
+        torch→ONNX 导出路径，记忆系统静默退化为 BM25-only 且不报错。
+        """
         onnx_path = os.path.join(self.model_dir, "model.onnx")
         tokenizer_path = os.path.join(self.model_dir, "tokenizer.json")
 
@@ -79,16 +111,24 @@ class EmbeddingEngine:
         if os.path.exists(onnx_path) and os.path.exists(tokenizer_path):
             return self._load_onnx(onnx_path, tokenizer_path)
 
-        # 本地无 ONNX，但有 sentence-transformers 结构（safetensors/pytorch + 1_Pooling + modules.json）：
-        # 直接走降级路径，不重复下载
+        # 本地有 sentence-transformers 结构（safetensors/pytorch + 1_Pooling + modules.json）：
+        # 不联网，先试 ST 降级，失败再用本地权重导出 ONNX
         if self._has_local_st_structure():
             logger.info(
-                f"本地模型 {self.model_dir} 非 ONNX 格式，使用 sentence-transformers 降级加载"
+                f"本地模型 {self.model_dir} 非 ONNX 格式，先尝试 sentence-transformers 降级加载"
             )
             self._setup_sentence_transformers_fallback()
-            return self._ready
+            if self._ready:
+                return True
+            # 降级不可用时不能就此放弃——本地权重仍在，可离线转 ONNX
+            logger.info(
+                "sentence-transformers 不可用，改为从本地权重导出 ONNX（不联网）"
+            )
+            self._export_onnx(fallback_to_st=False)
+            if os.path.exists(onnx_path) and os.path.exists(tokenizer_path):
+                return self._load_onnx(onnx_path, tokenizer_path)
 
-        # 本地既无 ONNX 也无 ST 结构：尝试下载
+        # 本地既无 ONNX 也无可用权重结构：尝试下载
         if not self._download_attempted:
             self._download_attempted = True
             logger.info(f"嵌入模型未找到，尝试下载 {self.model_name}...")
@@ -155,9 +195,24 @@ class EmbeddingEngine:
             download_kwargs = {
                 "repo_id": self.model_name,
                 "local_dir": self.model_dir,
+                # 2026-08-31 修订：原 allow_patterns 只有 "model.onnx" + tokenizer 配置。
+                # 但 BAAI/bge-small-zh-v1.5 官方仓库（HF 与 ModelScope 均无 ONNX 变体）
+                # 只有 model.safetensors / pytorch_model.bin，导致三重失效：
+                #   ① "model.onnx" 匹配不到任何文件；
+                #   ② 即便下载成功本地也没有权重 → _export_onnx 的 from_pretrained 必失败；
+                #   ③ 缺 1_Pooling/ 与 modules.json → sentence-transformers 降级同样缺件。
+                # 现按三类补齐：ONNX（含 onnx/ 子目录）、权重、ST 结构与词表。
                 "allow_patterns": [
-                    "model.onnx", "tokenizer.json", "config.json",
-                    "special_tokens_map.json", "tokenizer_config.json",
+                    # ONNX：仓库若提供则取（bge-small-zh-v1.5 实际没有，兼容其他模型）
+                    "model.onnx", "onnx/*",
+                    # tokenizer 与配置（vocab.txt 是 BERT 中文分词必需）
+                    "tokenizer.json", "tokenizer_config.json", "vocab.txt",
+                    "config.json", "special_tokens_map.json",
+                    # 权重：导出 ONNX 必需
+                    "model.safetensors", "pytorch_model.bin",
+                    # sentence-transformers 结构：ST 降级路径必需
+                    "modules.json", "config_sentence_transformers.json",
+                    "sentence_bert_config.json", "1_Pooling/*",
                 ],
             }
 
@@ -195,19 +250,32 @@ class EmbeddingEngine:
                     else:
                         raise
 
-            # 检查 ONNX 模型是否存在，如果不存在则尝试转换
             onnx_path = os.path.join(self.model_dir, "model.onnx")
+
+            # 部分仓库把 ONNX 放在 onnx/ 子目录（onnx/model.onnx），提到 model_dir 根，
+            # 否则 _load_model 永远找不到它
+            nested_onnx = os.path.join(self.model_dir, "onnx", "model.onnx")
+            if not os.path.exists(onnx_path) and os.path.exists(nested_onnx):
+                os.replace(nested_onnx, onnx_path)
+                logger.info("已从 onnx/ 子目录提取 model.onnx")
+
+            # 检查 ONNX 模型是否存在，如果不存在则尝试转换
             if not os.path.exists(onnx_path):
                 logger.info("ONNX 模型不存在，尝试从 PyTorch 转换...")
                 self._export_onnx()
 
-            return os.path.exists(onnx_path)
+            # 导出失败时 _export_onnx 可能已通过 ST 降级把 _ready 置 True，此时也算成功
+            return os.path.exists(onnx_path) or self._ready
         except Exception as e:
             logger.warning(f"模型下载失败: {e}")
             return False
 
-    def _export_onnx(self) -> None:
-        """从 PyTorch 模型导出 ONNX（需要 torch + transformers）"""
+    def _export_onnx(self, fallback_to_st: bool = True) -> None:
+        """从 PyTorch 模型导出 ONNX（需要 torch + transformers，纯本地不联网）
+
+        fallback_to_st: 导出失败时是否回退 sentence-transformers。
+        _load_model 的分支 2 调用时传 False——ST 已在那里试过并失败，不应重试。
+        """
         try:
             import torch
             from transformers import AutoModel, AutoTokenizer
@@ -239,8 +307,10 @@ class EmbeddingEngine:
             )
             logger.info(f"ONNX 模型已导出: {onnx_path}")
         except Exception as e:
-            logger.warning(f"ONNX 导出失败: {e}，将尝试使用 sentence-transformers 直接推理")
-            self._setup_sentence_transformers_fallback()
+            logger.warning(f"ONNX 导出失败: {e}")
+            if fallback_to_st:
+                logger.info("将尝试使用 sentence-transformers 直接推理")
+                self._setup_sentence_transformers_fallback()
 
     def _setup_sentence_transformers_fallback(self) -> None:
         """设置 sentence-transformers 降级方案
@@ -295,13 +365,20 @@ class EmbeddingEngine:
 
     def _embed_onnx(self, texts: list[str]) -> np.ndarray:
         """ONNX Runtime 推理路径"""
+        # 局部快照（design §5.2 竞态微修）：unload 在推理期间清空 _session 时
+        # 仍持有引用完成本次推理，避免 AttributeError 上抛 → search 500。
+        # 快照为 None（unload 已发生但 _ready 检查与快照之间存在窗口）→ 返回零向量降级。
+        session = self._session
+        tokenizer = self._tokenizer
+        if session is None or tokenizer is None:
+            return np.zeros((len(texts), self.dim), dtype=np.float32)
         # 分词
-        encoded = self._tokenizer.encode_batch(texts)
+        encoded = tokenizer.encode_batch(texts)
         input_ids = np.array([e.ids for e in encoded], dtype=np.int64)
         attention_mask = np.array([e.attention_mask for e in encoded], dtype=np.int64)
 
         # 检查模型是否需要 token_type_ids
-        input_names = {inp.name for inp in self._session.get_inputs()}
+        input_names = {inp.name for inp in session.get_inputs()}
         inputs = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
@@ -310,7 +387,7 @@ class EmbeddingEngine:
             inputs["token_type_ids"] = np.zeros_like(input_ids)
 
         # 推理
-        outputs = self._session.run(None, inputs)
+        outputs = session.run(None, inputs)
 
         # Mean pooling + 归一化
         last_hidden = outputs[0]  # (batch, seq_len, dim)
@@ -328,7 +405,11 @@ class EmbeddingEngine:
 
     def _embed_st(self, texts: list[str]) -> np.ndarray:
         """sentence-transformers 降级路径"""
-        embeddings = self._st_model.encode(texts, normalize_embeddings=True)
+        # 局部快照（design §5.2 竞态微修，同 _embed_onnx）
+        st = self._st_model
+        if st is None:
+            return np.zeros((len(texts), self.dim), dtype=np.float32)
+        embeddings = st.encode(texts, normalize_embeddings=True)
         return embeddings.astype(np.float32)
 
     def text_hash(self, text: str) -> str:

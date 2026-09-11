@@ -12,17 +12,22 @@ R1（流式模态窗口）定好每项的分类后，由「审核」按钮打开
 纯同步对话框（无跨线程信号连接），返回结果供主窗口回写。
 """
 
-import os
 from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
     QAbstractItemView,
+    QComboBox,
+    QDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
-
 from type_descriptor import describe_file_type
 
 # 配色（与主窗口/流式窗口一致，局部定义保持零耦合）

@@ -46,6 +46,6 @@ SessionManager 状态纯内存，无任何 load/save 持久化逻辑（`manager.
 
 - SDD 来源：`temp/sdd/computer-use-session-refactor/00-context-and-decisions.md` 决策 11
 - 关键代码：
-  - [server/screen/session/manager.py](file:///f:/<project_root>/server/screen/session/manager.py)（`class SessionManager` L28；`shutdown_permitted` 默认 False L72；无 load/save 方法）
-  - [server/auto_shutdown.py](file:///f:/<project_root>/server/auto_shutdown.py)（`trigger_count` 也纯内存不持久化 L13；`trigger_shutdown` 调 `can_shutdown()` fail-closed L192-L197）
+  - [server/screen/session/manager.py](file:///<project_root>/server/screen/session/manager.py)（`class SessionManager` L28；`shutdown_permitted` 默认 False L72；无 load/save 方法）
+  - [server/auto_shutdown.py](file:///<project_root>/server/auto_shutdown.py)（`trigger_count` 也纯内存不持久化 L13；`trigger_shutdown` 调 `can_shutdown()` fail-closed L192-L197）
 - 相关 ADR：ADR-0015（watchdog 关机预授权走 auto_shutdown 模块，依赖本决策的纯内存模型——重启后无授权 = 无关机权限）

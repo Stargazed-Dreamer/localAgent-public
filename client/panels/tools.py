@@ -5,7 +5,7 @@ CategoryPageWidget，增加 user_facing 过滤和"显示全部工具"切换。
 """
 
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
 )
@@ -30,7 +31,7 @@ from client.widgets.tool_runner import (
     get_category_map,
     load_manifest,
 )
-from lib.ui import tokens
+from lib.ui import icon, tokens
 from lib.ui.theme import set_text_role
 
 
@@ -182,6 +183,9 @@ class ToolsPanel(PanelBase):
 
     def _load_tools(self) -> None:
         """加载/重新加载工具列表（按当前 show_all 状态过滤）"""
+        # 重建前记住当前分类（"显示全部工具"切换不应重置选中）
+        current_item = self._category_list.currentItem()
+        prev_cat_id = current_item.data(Qt.ItemDataRole.UserRole) if current_item else None
         # 清空旧内容
         self._category_list.clear()
         for page in self._category_pages.values():
@@ -199,7 +203,8 @@ class ToolsPanel(PanelBase):
             cat_tools.setdefault(cat_id, []).append(tool)
 
         visible_cats = filter_categories(self._manifest, show_all=self._show_all)
-        for cat in visible_cats:
+        target_row = 0
+        for row, cat in enumerate(visible_cats):
             cat_id = cat["id"]
             cat_name = cat["name"]
             page = CategoryPageWidget(
@@ -210,16 +215,25 @@ class ToolsPanel(PanelBase):
             for detail in page.detail_widgets:
                 self._tool_widgets[detail.tool_id] = detail
 
-            item = QListWidgetItem(f"{cat.get('icon', '📁')}  {cat_name}")
+            item = QListWidgetItem(cat_name)
+            cat_icon = cat.get("icon", "folder")
+            try:
+                # manifest icon 存 SVG 图标名（B5 迁移），未命中回退 emoji/文本前缀
+                item.setIcon(icon(cat_icon))
+            except KeyError:
+                item.setText(f"{cat_icon}  {cat_name}")
             item.setSizeHint(QSize(180, 38))
+            item.setData(Qt.ItemDataRole.UserRole, cat_id)
             self._category_list.addItem(item)
+            if cat_id == prev_cat_id:
+                target_row = row
 
         # 更新状态
         total = len(self._manifest.get("tools", []))
         self._status_label.setText(f"显示 {len(tools)}/{total} 个工具")
 
         if self._category_list.count() > 0:
-            self._category_list.setCurrentRow(0)
+            self._category_list.setCurrentRow(target_row)
 
     # —— 面板钩子 ——
 
@@ -289,7 +303,10 @@ class ToolsPanel(PanelBase):
             if tabs:
                 for i in range(tabs.count()):
                     tab_page = tabs.widget(i)
-                    detail = tab_page.widget() if hasattr(tab_page, "widget") else tab_page
+                    if tab_page is None:
+                        continue
+                    # 分类页用 QScrollArea 包一层：滚动区域内才是真实详情页
+                    detail = tab_page.widget() if isinstance(tab_page, QScrollArea) else tab_page
                     if isinstance(detail, ToolDetailWidget) and detail.tool_id == tool_id:
                         self._category_list.setCurrentRow(cat_idx)
                         tabs.setCurrentIndex(i)

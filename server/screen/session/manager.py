@@ -462,10 +462,24 @@ def get_session_manager() -> SessionManager:
     return _session_manager
 
 
-def reset_session_manager() -> None:
-    """重置单例（测试隔离用）。"""
+def reset_session_manager(start_worker: bool = True) -> None:
+    """重置并重建单例（测试隔离用）。
+
+    Args:
+        start_worker: 重建出的单例是否启动 worker 线程。测试隔离场景传 False：
+            根 conftest 的 autouse fixture 每个测试都调用本函数，若每次都起
+            computer-use-session-manager 线程，全量测试的高频线程生灭与
+            client_ui 的 Qt 测试并发时是 access violation 的结构性诱因
+            （2026-09-06 盘点实测，详见 temp/sdd/qt-segfault-conftest/）。
+            授权状态机不受影响：worker 只做周期过期检查，grant/release 等
+            语义照旧；过期逻辑的单测本就以 start_worker=False + 假 clock
+            直接调 _check_expiry()。生产调用保持默认 True。
+    """
     global _session_manager
     with _singleton_lock:
         if _session_manager is not None:
             _session_manager.shutdown()
-        _session_manager = None
+        _session_manager = SessionManager(
+            policy=TimePolicy.from_config(),
+            start_worker=start_worker,
+        )

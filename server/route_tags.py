@@ -22,8 +22,9 @@ safety 四级：
 - agent_blocked: agent 永不可调（当前无此级别端点）
 
 审批严格性 approval_level（运行时生效，由 config.toml [command_guard].approval_level 控制）：
-- strict   : 当前完整审批清单（系统/loop/activity/browser/exec/terminals/mindforge/user_message/模型卸载 + PUT/DELETE 默认审批）
-- moderate : strict 减去 6 个低风险运维端点（loop 任务/活动日报/浏览器关闭/OCR 模型卸载与保持）
+- strict   : 完整审批清单（系统/exec/terminals/mindforge/user_message/模型管理/activity/browser 关闭/PUT/DELETE 默认审批）
+             注：loop 控制（pause/resume/run）已于 2026-08-25 移出清单（低风险运维，有自动熔断兜底）
+- moderate : strict 减去低风险运维端点（活动日报/浏览器关闭/OCR 与 MLM 模型管理操作）
 - loose    : 仅拦截代码执行类（exec_python / exec_apply_patch / exec_cmd），PUT/DELETE 全放行
 - none     : 不拦截任何端点（仅 dcg 二进制预检查仍独立生效，受 enabled 控制）
 
@@ -58,8 +59,10 @@ _APPROVAL_POST_PATTERNS: list[str] = [
     "/mcp/stats/reset",
     # apikey 写操作
     "/apikey/keys",  # POST (create), PUT/DELETE 由 method 判断
-    # loop 控制
-    "/loop/tasks",
+    # loop 控制已移出审批清单（2026-08-25）：
+    # pause/resume/run 是低风险运维操作，有 fail_threshold 自动熔断 +
+    # auto_failed 自动恢复机制兜底，审批价值低、打扰成本高。
+    # 详见 docs/operations-manual.md「command_guard 双开关语义」章节。
     # activity 写操作
     "/activity/daily",
     # browser 关闭
@@ -75,17 +78,24 @@ _APPROVAL_POST_PATTERNS: list[str] = [
     "/mindforge/unload", "/mindforge/daemon/stop",
     # user_message（用户指令不应被 agent 改）
     "/user/message",
-    # model unload（OCR）
+    # model unload（OCR 旧端点）
     "/ocr/models/unload", "/ocr/models/keep",
+    # Model Lifecycle Manager 控制面（design §10 P0）：/models 前缀覆盖该前缀下
+    # 全部变更类 POST（load/unload/pause/resume）。fail-open 默认会把这些端点暴露给
+    # agent 且判为 safe——必须显式纳入审批清单，否则 agent 可无审批卸载 OCR
+    # （瘫痪 Computer Use 文字定位主路径）或 MindForge（1-2GB 重载 10-30s）。
+    "/models",
 ]
 
 # 适中级从 strict 移除的端点（用户决策：这些操作风险低，放行）
+# /models 镜像 /ocr/models/* 的 moderate 排除策略（design §10 P0）：
+# 在 moderate 级别下，模型 load/unload/pause/resume 视为低风险运维操作放行。
 _MODERATE_EXCLUDE_PATTERNS: list[str] = [
-    "/loop/tasks",
     "/activity/daily",
     "/browser/close",
     "/ocr/models/unload",
     "/ocr/models/keep",
+    "/models",
 ]
 
 # 宽松级仅保留代码执行类（用户决策：只拦 python/apply/cmd）

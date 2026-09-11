@@ -1,7 +1,8 @@
 """生成标注所有OCR文本框的图片"""
-import requests
 import base64
 import io
+
+import requests
 from PIL import Image, ImageDraw, ImageFont
 
 API = "http://127.0.0.1:8766"

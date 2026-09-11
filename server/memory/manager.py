@@ -6,7 +6,7 @@
 import logging
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from server.memory.compress import CompressionPipeline
 from server.memory.config import MemoryConfig, get_memory_config
@@ -82,8 +82,10 @@ class MemoryManager:
             config=self.config,  # 传入配置对象
         )
         # v3: 注入 SearchTracer 和 EvidenceLedger 到 maintainer，用于定期清理过期数据
-        self.maintainer._search_tracer = self.search_tracer
-        self.maintainer._evidence_ledger = self.evidence_ledger
+        # maintainer 未声明这两个属性，走 Any 承载避免 pyright 校验
+        maintainer_dynamic: Any = self.maintainer
+        maintainer_dynamic._search_tracer = self.search_tracer
+        maintainer_dynamic._evidence_ledger = self.evidence_ledger
         self.recorder = InteractionRecorder(  # 初始化交互记录器
             store=self.store,  # 传入存储对象
             recent=self.recent,  # 传入最近记忆模块
@@ -178,11 +180,12 @@ class MemoryManager:
                 data = json.loads(msg["content"])
                 if isinstance(data, dict):
                     data["_id"] = msg["id"]
-                    data["_source"] = msg["source"]
+                    # source 统一字段名（原 _source 与 facts 分支 source 不一致导致客户端详情页该行缺失）
+                    data["source"] = msg["source"]
                     return data
             except (json.JSONDecodeError, TypeError):
                 return {"value": msg["content"], "_id": msg["id"],
-                        "_source": msg["source"]}
+                        "source": msg["source"]}
 
         return None
 
@@ -281,8 +284,9 @@ class MemoryManager:
                 pass
             results.append({
                 "key": f["key"],
-                "source": "fact",
-                "fact_source": f.get("source"),        # 'auto' | 'manual'（谁写入的）
+                # source 统一为 'auto' | 'manual'（谁写入的），与 get 端点 facts 分支对齐
+                # 客户端用 fact_type 字段是否存在判断是 fact 还是 message（messages 分支不返回 fact_type）
+                "source": f.get("source"),
                 "fact_type": f.get("fact_type"),        # preference/project/reference/...
                 "summary": summary or f["value"][:60],  # 解析后的可读摘要，非裸 JSON
                 "value_preview": f["value"][:100],      # 向后兼容
@@ -324,9 +328,10 @@ class MemoryManager:
                 days_since = None
                 stale = False
                 try:
-                    updated_dt = _dt.strptime(updated_at, "%Y-%m-%d %H:%M:%S")
-                    days_since = (_dt.now() - updated_dt).days
-                    stale = days_since >= self.config.maintain_stale_days
+                    if isinstance(updated_at, str):  # 收窄为 str 再 strptime，规避 Optional
+                        updated_dt = _dt.strptime(updated_at, "%Y-%m-%d %H:%M:%S")
+                        days_since = (_dt.now() - updated_dt).days
+                        stale = days_since >= self.config.maintain_stale_days
                 except (ValueError, TypeError):
                     pass
 
@@ -527,9 +532,10 @@ class MemoryManager:
             days_since = None
             stale = False
             try:
-                updated_dt = _dt.strptime(updated_at, "%Y-%m-%d %H:%M:%S")
-                days_since = (_dt.now() - updated_dt).days
-                stale = days_since >= self.config.maintain_stale_days
+                if isinstance(updated_at, str):  # 收窄为 str 再 strptime，规避 Optional
+                    updated_dt = _dt.strptime(updated_at, "%Y-%m-%d %H:%M:%S")
+                    days_since = (_dt.now() - updated_dt).days
+                    stale = days_since >= self.config.maintain_stale_days
             except (ValueError, TypeError):
                 pass
 
@@ -649,6 +655,8 @@ class MemoryManager:
         stats["pending_messages"] = len(self.recorder._pending_messages)
         stats["initialized"] = self._initialized
         stats["maintainer"] = self.maintainer.get_status()
+        # Ticket 01：DB 大小历史采样（7 天滚动，in-memory，向后兼容字段）
+        stats["db_size_history"] = self.store.query_db_size_history()
         return stats
 
     def shutdown(self) -> None:

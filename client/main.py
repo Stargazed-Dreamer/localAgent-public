@@ -4,6 +4,7 @@
 """
 
 import sys
+from typing import cast
 
 from PySide6.QtWidgets import QApplication
 
@@ -12,7 +13,7 @@ from lib.ui import apply_theme
 
 
 def main():
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = cast(QApplication, QApplication.instance() or QApplication(sys.argv))
     app.setApplicationName("LocalAgent Client")
     app.setOrganizationName("LocalAgent")
     app.setApplicationDisplayName("LocalAgent 客户端")
