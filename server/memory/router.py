@@ -130,29 +130,32 @@ async def memory_list():
 async def memory_cleanup_orphaned():
     """清理超过 orphan_cleanup_days 天的已压缩消息和超过 summary_cleanup_days 天的旧摘要"""
     mgr = get_memory_manager()
-    cutoff = time.time() - mgr.config.orphan_cleanup_days * 86400
 
-    # 清理旧消息
-    old_messages = mgr.store.query_messages(until=cutoff, compressed=1, limit=1000)
-    deleted_msgs = 0
-    for msg in old_messages:
-        # 只删除已压缩的旧消息
-        mgr.store.delete_message(msg["id"])
-        deleted_msgs += 1
+    # 5-6: 循环逐条删除 + 摘要清理为同步重活，包 to_thread（与同文件 search/list 一致）
+    def _do_cleanup() -> dict:
+        cutoff = time.time() - mgr.config.orphan_cleanup_days * 86400
 
-    # 清理旧摘要
-    summary_cutoff = time.time() - mgr.config.summary_cleanup_days * 86400
-    mgr.store.conn.execute(
-        "DELETE FROM summaries WHERE end_time < ?", (summary_cutoff,)
-    )
-    mgr.store.conn.commit()
+        # 清理旧消息
+        old_messages = mgr.store.query_messages(until=cutoff, compressed=1, limit=1000)
+        deleted_msgs = 0
+        for msg in old_messages:
+            # 只删除已压缩的旧消息
+            mgr.store.delete_message(msg["id"])
+            deleted_msgs += 1
 
-    return {
-        "deleted_messages": deleted_msgs,
-        "message_cutoff_days": mgr.config.orphan_cleanup_days,
-        "summary_cutoff_days": mgr.config.summary_cleanup_days,
-        "status": "ok",
-    }
+        # 清理旧摘要（5-9: 改走 store 方法，DELETE+commit 包入 _write_lock）
+        summary_cutoff = time.time() - mgr.config.summary_cleanup_days * 86400
+        deleted_summaries = mgr.store.delete_summaries_before(summary_cutoff)
+
+        return {
+            "deleted_messages": deleted_msgs,
+            "deleted_summaries": deleted_summaries,
+            "message_cutoff_days": mgr.config.orphan_cleanup_days,
+            "summary_cutoff_days": mgr.config.summary_cleanup_days,
+            "status": "ok",
+        }
+
+    return await asyncio.to_thread(_do_cleanup)
 
 
 # ─── 新增端点 ───────────────────────────────────────────────
@@ -213,19 +216,23 @@ async def memory_compress(force: bool = Query(False, description="是否强制�
 async def memory_record(req: MemoryRecordRequest):
     """手动记录一条交互（也可由自动记录器调用）"""
     mgr = get_memory_manager()
-    msg_id = mgr.store.insert_message(
-        content=req.content,
-        source=req.source,
-        role=req.role,
-        key=req.key,
-        session_id=req.session_id,
-    )
-    # 建立语义索引
-    mgr.semantic.index_message(msg_id, req.content)
-    # 写入 Recent 层
-    mgr.recent.add(req.content, source=req.source, role=req.role, key=req.key)
 
-    return {"id": msg_id, "status": "ok"}
+    # 5-6: insert + ONNX 语义索引（数十至数百 ms）+ Recent 写入为同步重活，包 to_thread
+    def _do_record() -> dict:
+        msg_id = mgr.store.insert_message(
+            content=req.content,
+            source=req.source,
+            role=req.role,
+            key=req.key,
+            session_id=req.session_id,
+        )
+        # 建立语义索引
+        mgr.semantic.index_message(msg_id, req.content)
+        # 写入 Recent 层
+        mgr.recent.add(req.content, source=req.source, role=req.role, key=req.key)
+        return {"id": msg_id, "status": "ok"}
+
+    return await asyncio.to_thread(_do_record)
 
 
 @router.get("/stats", operation_id="memory_stats",
@@ -233,17 +240,18 @@ async def memory_record(req: MemoryRecordRequest):
 async def memory_stats():
     """获取详细的记忆系统统计信息"""
     mgr = get_memory_manager()
-    stats = mgr.get_status()
 
-    # 添加 BM25 统计
-    bm25_stats = mgr.store.get_bm25_stats()
-    stats["bm25"] = bm25_stats
+    # 5-6: get_status + BM25/摘要统计为同步 SQLite 读，包 to_thread
+    def _do_stats() -> dict:
+        stats = mgr.get_status()
+        # 添加 BM25 统计
+        stats["bm25"] = mgr.store.get_bm25_stats()
+        # 添加摘要统计
+        summaries = mgr.store.query_summaries(limit=5)
+        stats["recent_summaries"] = len(summaries)
+        return stats
 
-    # 添加摘要统计
-    summaries = mgr.store.query_summaries(limit=5)
-    stats["recent_summaries"] = len(summaries)
-
-    return stats
+    return await asyncio.to_thread(_do_stats)
 
 
 @router.post("/reindex", operation_id="memory_reindex",
@@ -252,17 +260,16 @@ async def memory_reindex():
     """重建向量索引和 BM25 统计（维护操作）"""
     mgr = get_memory_manager()
 
-    # 重建向量索引
-    vector_result = mgr.semantic.rebuild_vector_index()
+    # 5-6: 全量向量索引重建在消息多时分钟级，包 to_thread（参照 compress 的包装模式）
+    def _do_reindex() -> dict:
+        # 重建向量索引
+        vector_result = mgr.semantic.rebuild_vector_index()
+        # 重建 BM25 统计
+        bm25_result = mgr.semantic.bm25.rebuild_stats()
+        return {"vectors": vector_result, "bm25": bm25_result}
 
-    # 重建 BM25 统计
-    bm25_result = mgr.semantic.bm25.rebuild_stats()
-
-    return {
-        "vectors": vector_result,
-        "bm25": bm25_result,
-        "status": "ok",
-    }
+    result = await asyncio.to_thread(_do_reindex)
+    return {**result, "status": "ok"}
 
 
 # ─── 维护器端点（必须在 /{key} 动态路由之前） ────────────────
@@ -420,26 +427,29 @@ async def memory_set(key: str = Path(..., pattern=_KEY_PATTERN), req: MemorySetR
     """
     mgr = get_memory_manager()
 
-    if req.merge:
-        # 深度合并模式
-        existing = mgr.get(key)
-        merged = _deep_merge(existing, req.data) if existing and isinstance(existing, dict) else req.data
-    else:
-        merged = req.data
+    # 5-6: merge 读 + ONNX 侧写入为同步重活，包 to_thread（与 memory_status/search 一致）
+    def _do_set() -> dict:
+        if req.merge:
+            # 深度合并模式
+            existing = mgr.get(key)
+            merged = _deep_merge(existing, req.data) if existing and isinstance(existing, dict) else req.data
+        else:
+            merged = req.data
 
-    # v3 结构化字段（仅传非 None 的，None 表示未指定，保留现有值）
-    structured: dict = {}
-    if req.fact_type is not None:
-        structured["fact_type"] = req.fact_type
-    if req.occurred_at is not None:
-        structured["occurred_at"] = req.occurred_at
-    if req.consumption_contexts is not None:
-        structured["consumption_contexts"] = req.consumption_contexts
-    if req.trigger_keywords is not None:
-        structured["trigger_keywords"] = req.trigger_keywords
+        # v3 结构化字段（仅传非 None 的，None 表示未指定，保留现有值）
+        structured: dict = {}
+        if req.fact_type is not None:
+            structured["fact_type"] = req.fact_type
+        if req.occurred_at is not None:
+            structured["occurred_at"] = req.occurred_at
+        if req.consumption_contexts is not None:
+            structured["consumption_contexts"] = req.consumption_contexts
+        if req.trigger_keywords is not None:
+            structured["trigger_keywords"] = req.trigger_keywords
 
-    result = mgr.set(key, merged, structured=structured or None)
-    return result
+        return mgr.set(key, merged, structured=structured or None)
+
+    return await asyncio.to_thread(_do_set)
 
 
 @router.delete("/{key}", operation_id="memory_delete",

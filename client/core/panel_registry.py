@@ -101,7 +101,10 @@ class PanelRegistry:
             module_name = f"workspace.{name}.{m.client_panel.file[:-3]}"
             try:
                 module = importlib.import_module(module_name)
-            except ImportError as e:
+            except Exception as e:
+                # 8-6: 与 _discover_from_package 对齐——组件 panel.py 的模块级
+                # SyntaxError/AttributeError 等任意异常不能从 discover() 炸穿到
+                # MainWindow.__init__（一个写坏的组件面板拖死整个 GUI 启动）
                 logger.warning("manifest 组件 %s 面板模块加载失败 (%s): %s", name, module_name, e)
                 continue
 

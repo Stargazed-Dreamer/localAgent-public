@@ -7,6 +7,7 @@ client 不再依赖 server.config，直接从 lib.config_reader 读取配置。
 """
 
 from pathlib import Path
+import threading
 from typing import Any
 
 from pydantic import Field
@@ -49,21 +50,26 @@ def get_config_masked() -> dict:
     return _mask_config(load_config())
 
 
+# 串行化 update_config 的 load-modify-save，防止并发更新（GUI + agent 同时改）互相覆盖丢写
+_update_config_lock = threading.Lock()
+
+
 def update_config(path: str, value: Any) -> dict:
     """更新配置中的指定字段
 
     path: 点分隔的路径，如 "llm.providers.mimo.api_key"
     value: 新值
     """
-    config = load_config()
-    keys = path.split(".")
-    obj = config
-    for key in keys[:-1]:
-        if key not in obj:
-            obj[key] = {}
-        obj = obj[key]
-    obj[keys[-1]] = value
-    save_config(config)
+    with _update_config_lock:
+        config = load_config()
+        keys = path.split(".")
+        obj = config
+        for key in keys[:-1]:
+            if key not in obj:
+                obj[key] = {}
+            obj = obj[key]
+        obj[keys[-1]] = value
+        save_config(config)
     return _mask_config(config)
 
 

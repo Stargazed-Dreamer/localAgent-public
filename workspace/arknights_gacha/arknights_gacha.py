@@ -236,6 +236,58 @@ async def _get_categories(page) -> list:
     """)
 
 
+async def _restore_window_via_cdp(page) -> None:
+    """把浏览器窗口恢复 normal 并移到主屏可见区（采集的前提）。
+
+    窗口挂在副屏/最小化时 Chromium occlusion tracker 会挂起渲染，
+    getBoundingClientRect 返回全 0 → 可见性过滤把分类全丢掉 → 误判"未登录"。
+    tab 级 bring_to_front 解不了窗口级挂起，必须用 CDP 窗口级恢复。
+    """
+    try:
+        cdp = await page.context.new_cdp_session(page)
+        win = await cdp.send("Browser.getWindowForTarget")
+        window_id = win["windowId"]
+        await cdp.send(
+            "Browser.setWindowBounds",
+            {"windowId": window_id, "bounds": {"windowState": "normal"}},
+        )
+        await cdp.send(
+            "Browser.setWindowBounds",
+            {
+                "windowId": window_id,
+                "bounds": {"left": 60, "top": 60, "width": 1440, "height": 950},
+            },
+        )
+        print("  已将浏览器窗口恢复 normal 并移至主屏（副屏窗口渲染被挂起）")
+    except Exception as e:  # noqa: BLE001
+        print(f"  CDP 窗口恢复失败（继续重试）: {e}")
+
+
+async def _wait_categories(page, timeout_s: float = 25.0) -> list:
+    """轮询等待寻访分类渲染完成。
+
+    SPA 渲染可能远超固定 sleep(3)；页面刷新/重载后分类出现耗时波动大，
+    轮询（每秒一次，最多 timeout_s）代替单次查询，避免把"渲染中"误判为"未登录"。
+    """
+    import asyncio as _asyncio
+    loop = _asyncio.get_event_loop()
+    deadline = loop.time() + timeout_s
+    restored = False
+    while True:
+        cats = await _get_categories(page)
+        if cats:
+            return cats
+        # DOM 里有分类但 rect 全 0：窗口渲染被挂起（副屏/最小化），CDP 恢复窗口
+        dom_count = await page.evaluate("() => document.querySelectorAll('div.LbzcSW').length")
+        if dom_count and not restored:
+            print("  分类在 DOM 中但不可见（窗口渲染被挂起）")
+            await _restore_window_via_cdp(page)
+            restored = True
+        if loop.time() > deadline:
+            return []
+        await _asyncio.sleep(1)
+
+
 async def _find_next_page_btn(page) -> dict | None:
     """查找'下一页'按钮的位置和状态"""
     return await page.evaluate("""
@@ -547,38 +599,48 @@ async def main_async(force: bool = False, token: str = ""):
         browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
         context = browser.contexts[0]
 
-        # 找到或打开鹰角页面
+        # 找到或打开鹰角页面：优先 ak 主站页面，排除 protocol 等子域遗留 tab 的干扰
         page = None
         for pg in context.pages:
-            if 'hypergryph.com' in pg.url:
+            if 'ak.hypergryph.com' in pg.url:
                 page = pg
                 break
+        if not page:
+            for pg in context.pages:
+                if 'hypergryph.com' in pg.url:
+                    page = pg
+                    break
 
         if not page:
             page = await context.new_page()
             await page.goto(AK_HOME_URL, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(3)
 
         print(f"  当前页面: {page.url}")
 
-        # 登录态必须由真实寻访分类确认；隐藏登录模板不能作为判断依据。
+        # 窗口挂在副屏/被遮挡时 Chromium 会挂起渲染（rect 全 0），点击坐标与可见性过滤都会失效，
+        # 先把 tab 激活到前台
+        await page.bring_to_front()
+
+        # 登录态由"寻访分类成功加载"确认（SKILL.md 关键规则的最终证据）；
+        # 轮询等待渲染，页面刷新/重载后分类出现耗时波动大，固定 sleep 会误判。
         if "headhunting" not in page.url:
             await page.goto(AK_GACHA_URL, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(3)
-        is_logged_in = bool(await _get_categories(page)) and not await _has_visible_login_prompt(page)
+        categories = await _wait_categories(page)
+        is_logged_in = bool(categories)
 
         if not is_logged_in:
-            print("  未检测到有效登录态，需要在浏览器中完成登录")
+            print("  未检测到有效登录态（分类未加载），需要在浏览器中完成登录")
             auth_token = await login_browser(page)
             if not auth_token:
                 print("  登录超时或失败，退出")
                 raise RuntimeError("登录超时或失败")
-            await page.goto(AK_GACHA_URL, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(3)
-            if not await _get_categories(page):
+            if "headhunting" not in page.url:
+                await page.goto(AK_GACHA_URL, wait_until="domcontentloaded", timeout=30000)
+            categories = await _wait_categories(page)
+            if not categories:
                 raise RuntimeError("登录后仍未加载出寻访分类")
         else:
-            print("  已确认登录：寻访分类已加载")
+            print(f"  已确认登录：寻访分类已加载（{len(categories)} 个）")
 
         # 获取寻访记录
         raw_records = await fetch_gacha_records(page)

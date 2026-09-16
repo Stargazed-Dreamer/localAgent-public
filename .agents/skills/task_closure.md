@@ -6,6 +6,7 @@ description: >
   agent_guide(task_type='system.task_closure') 获取统一收尾指引。整合 WIP 更新、
   经验提炼（含可消费性自检）、文档自查、收尾报告。不替代 memory_generation/
   neat-freak/wip_tracker，而是编排入口。
+task_type: system.task_closure
 ---
 
 # 任务收尾 (task_closure)

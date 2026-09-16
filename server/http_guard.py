@@ -95,7 +95,12 @@ def create_pending(method: str, path: str, body: bytes) -> str:
 
 
 def consume_token(token: str, method: str, path: str, body: bytes) -> bool:
-    """验证并消费一次性 approval token。"""
+    """验证并消费一次性 approval token。
+
+    有意设计（同 command_guard.consume_token，code review 1-5）：先 pop 再比对，
+    指纹不匹配时 token 已作废（fail-closed，防令牌被跨请求试探），改参数重试
+    需重新人审。
+    """
     if not token:
         return False
     _cleanup()

@@ -4,6 +4,7 @@ description: >
   创建新 Skill、修改和优化已有 Skill。当用户想要从零创建一个 Skill、编辑或优化现有 Skill、
   或规范化 Skill 格式时触发。触发词：创建skill、新建skill、写个skill、优化skill、
   skill-creator、创建技能、新建技能。当用户提到"skill怎么写"、"skill格式"时也触发。
+task_type: dev.skill_creation
 ---
 
 # Skill 创建器 (skill-creator)

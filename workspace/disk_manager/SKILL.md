@@ -2,9 +2,10 @@
 name: disk_manager
 description: >
   磁盘空间分析与清理建议、系统环境全面备份（浏览器/游戏存档/桌面/系统设置）。
-  触发词：清理硬盘、磁盘清理、空间不足、备份系统、环境备份、游戏存档备份。
+  触发词：清理硬盘、磁盘清理、空间不足、备份系统、环境备份、游戏存档备份、SpaceSniffer、sns快照。
   当用户提到磁盘空间、清理垃圾文件、备份电脑环境、系统迁移时触发。
   ⚠️ 全面备份功能未经测试，执行时必须提醒用户并全程跟进。
+task_type: adhoc.disk_cleanup
 ---
 
 # 磁盘管理 Skill
@@ -57,21 +58,37 @@ QQMusicCache                       → QQ音乐播放缓存（可达10GB+）
 
 用户说"清理磁盘/空间不足"时，走以下闭环：
 
-**Step 1: scan — 空间概览**
+**Step 0（推荐起点）: 有 .sns 快照则导入，跳过 live scan**
+
+用户有 SpaceSniffer 导出的 .sns 快照（或愿意先开 SpaceSniffer 扫一遍盘导出）时，优先走快照导入——GUI 并行扫描 + 二进制导入，等效一次全盘 Python scan，且零磁盘 IO、无截断、可离线反复分析：
+
 ```
-scan_disk.py scan <path> --json -d 4 -n 10
+parse_sns.py parse <快照.sns> --json          # 导入 → temp/disk_scan_cache/sns_*.json
+scan_disk.py tree --cache <cache_path> -n 10   # Step 1 以下查询全部复用 scan_disk，只是加 --cache
+scan_disk.py caches --cache <cache_path>       # 缓存清单直接匹配
+scan_disk.py files --cache <cache_path> -n 20  # 大文件
 ```
-拿到紧凑 tree JSON（每层 top 10 目录 + other 折叠），快速定位大目录。
+
+- 快照是全量扫描结果（导入结果 `unknown_bytes=0` 即完整），比 live scan 的硬上限截断更可信
+- 快照体积 ≈ 盘内容 0.06%（百万级文件 ≈ 67MB），建议清理前后各留一份做对比
+- 没有快照、或只分析局部目录时，回退 Step 1 的 live scan
+- .sns 二进制格式规范见 `references/sns_format.md`；解析失败会报结构违例（截断/栈不平衡），此时不要信任该快照
+
+**Step 1: scan — 空间概览（无快照时）**
+```
+scan_disk.py scan <path> --json
+```
+单次物理遍历建缓存（JSON 输出 `cache_path`），紧凑 tree 快速定位大目录。
 
 **Step 2: drill — 下钻定位**
 ```
-scan_disk.py drill <path>/<大目录> --json -d 5
+scan_disk.py tree --cache <cache_path> --path <大目录> --depth 5
 ```
-对 scan 发现的大目录下钻，收窄路径看更细的 tree。
+对 scan/导入发现的大目录下钻（`--path` 前缀过滤），收窄看更细的 tree。注意 `--cache` 必传：slug 匹配按 scan 根路径生成，下钻路径不同会查不到。
 
 **Step 3: find — 按目录名定位（可选）**
 ```
-scan_disk.py find <path> node_modules .venv __pycache__ --json
+scan_disk.py find --cache <cache_path> --names node_modules .venv __pycache__
 ```
 全树搜指定目录名，返回路径+大小，适合批量定位已知费空间目录。
 
@@ -90,7 +107,8 @@ cleanup.py --delete --items cache-0,cache-3,cache-6 --json
 **补充：**
 - Chrome缓存提醒用户用 `chrome://settings/clearBrowserData` 清理
 - E/F盘用户自行管理，不干预
-- 需要找最大单个文件时用 `scan_disk.py files <path> -n 10 --json`
+- 需要找最大单个文件时用 `scan_disk.py files --cache <cache_path> -n 10`
+- 缓存目录批量匹配用 `scan_disk.py caches --cache <cache_path>`（内置清单：node_modules/.venv/DXCache/Temp/updater 等 30+ 类）
 
 ### 定期清理清单（每次清理检查这些位置）
 
@@ -305,8 +323,10 @@ E:\<data_drive>:\<backup_root>\SystemBackup → <backup_drive> |重复文件:检
 - 清理硬盘、磁盘清理、空间不足、清理文件
 - 备份系统、全面备份、系统迁移、环境备份
 - 游戏存档备份、浏览器备份
+- SpaceSniffer、sns 快照、快照导入
 
 ## 工具脚本
-- `scan_disk.py` - 磁盘空间扫描（子命令：scan/drill/find/files，--json 直返上下文，symlink/junction 不跟随，硬上限保护）
+- `parse_sns.py` - SpaceSniffer .sns 快照导入（`parse <快照> --json` → scan_disk 兼容缓存 `temp/disk_scan_cache/sns_*.json`，后续 tree/files/find/caches/dups 全部 --cache 复用；格式规范见 `references/sns_format.md`）
+- `scan_disk.py` - 磁盘空间扫描（子命令：scan/tree/files/find/caches/dups/resume，--json 直返上下文，symlink/junction 不跟随，硬上限保护）
 - `cleanup.py` - 磁盘清理（--dry-run 出逐项回执 → --delete --items <ids> 走 ctypes 回收站，路径白名单保护）
 - `backup_env.py` - 系统环境备份（浏览器数据/游戏存档/桌面布局/系统设置/软件列表）

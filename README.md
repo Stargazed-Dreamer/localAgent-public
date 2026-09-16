@@ -114,7 +114,7 @@ start_client.bat
 
 **C. 桌面 GUI**（PySide6 客户端）
 
-`start_client.bat` 启动自带 GUI，8 个面板（Dashboard / Tools / Keys / Accounting / Monitoring / DailySummary / Settings / Chat）通过 HTTP + SSE 直连后端。
+`start_client.bat` 启动自带 GUI，多分组面板（对话 / 概览 / 待办 / 工具 / 监控 / 设置等）通过 HTTP + SSE 直连后端。
 
 ## 配置概览
 
@@ -139,7 +139,7 @@ start_client.bat
                                               │  │  agent_guide     │ ← 任务路由入口
 ┌──────────────┐   HTTP / SSE                │  │  memory (×3 层)  │    │
 │  PySide6 GUI │ ────────────────────────── │  │  llm_pool        │    │
-│  (8 个面板)  │                            │  │  ocr / vl / exec │    │
+│  (多分组面板)│                            │  │  ocr / vl / exec │    │
 └──────────────┘                            │  │  browser (CDP)   │    │
                                               │  │  screen / uia    │    │
 ┌──────────────┐                            │  │  todos / wip     │    │
@@ -185,12 +185,13 @@ Agent 会调 `agent_guide(task='你的描述')` 路由到对应 Skill，按 `fir
 
 **B. 通过 GUI 面板查状态/改配置/审核**
 
-启动 `start_client.bat`，8 个面板：
-- **Dashboard**：后端模块状态总览
-- **Tools**：工具脚本启动器
-- **Keys**：LLM 密钥管理
-- **Monitoring**：OCR / Vision / Browser 等模块状态 + 在线配置编辑
-- **Chat**：v6-lite 对话引擎（真 SSE 流式 + 打字机 + 工具调用块 + steer 引导）
+启动 `start_client.bat`，常用面板：
+- **概览 / 状态监控**：后端模块状态总览 + 在线配置编辑（敏感字段自动脱敏）
+- **工具**：工具脚本启动器
+- **密钥**：LLM 密钥管理
+- **对话**：v6-lite 对话引擎（真 SSE 流式 + 打字机 + 工具调用块 + steer 引导）
+
+（面板由 `PanelRegistry` 自动发现，按 main / monitor / advanced 分组，完整清单以 `client/panels/` 为准。）
 
 **C. 通过 headless_session 跑定时任务**
 
@@ -236,14 +237,14 @@ server/                # FastAPI 后端（200+ REST 路由 + MCP 网关）
   memory/              # 三层记忆系统（SQLite + 向量 + BM25 + EvidenceLedger）
   activity_tracker/    # 活动追踪 Loop
   todos/               # 待办系统
-client/                # PySide6 GUI（8 个面板）
+client/                # PySide6 GUI（多分组面板 + 对话面板）
   core/agent/          # v6-lite 对话引擎核心库（SessionRunner / EventStore / Compactor 等）
 lib/                   # 共享库（recorder 录制器 / ui 设计系统 / secret 密钥中转 / uia）
 .agents/skills/        # 60+ Skill 定义（按 scope 分桶：dev/daily/_vendor/_deprecated）
 docs/                  # 二级文档（架构 / API / MCP / 记忆 / LLM 池 / Computer Use / ADR 等）
 tools/                 # 通用工具脚本（browser / debug / disk / release 等）
 workspace/             # 任务工作区（按任务分目录，含专属脚本和数据）
-tests/                 # 测试（123 个文件，3000+ 用例）
+tests/                 # 测试（文件数与用例数随迭代增长，跑法见下）
 data/                  # 运行时数据（gitignore，仅 project_structure.json 进仓库）
 temp/                  # 临时脚本 + SDD 产物 + HTML 展示（gitignore）
 release/               # 源码分发引擎（profile 驱动 + 4 静态 gate + 4 构建期 gate）
@@ -265,7 +266,7 @@ release/               # 源码分发引擎（profile 驱动 + 4 静态 gate + 4
 
 ### 三层 MCP 兜底：在 token 成本和能力覆盖之间找平衡
 
-后端有 200+ 个 REST 路由，但全塞进 LLM 工具目录会炸上下文。所以分三层：直连白名单（40 个高频 GET 工具，免审批）→ `localagent_advanced_tool` 网关（116 个工具统一入口，LLM 看到的工具目录只有一个）→ `localagent_template_tool` 预定义工作流。路由通过 `x-agent-callable` 标记决定是否进入 Agent 工具目录，默认 fail-closed。
+后端有 200+ 个 REST 路由，但全塞进 LLM 工具目录会炸上下文。所以分三层：直连白名单（高频 GET 工具，免审批，清单见 `server/mcp_whitelist.py`）→ `localagent_advanced_tool` 网关（其余工具统一入口，LLM 看到的工具目录只有一个）→ `localagent_template_tool` 预定义工作流。路由通过 `x-agent-callable` 标记决定是否进入 Agent 工具目录，默认 fail-open（新端点自动暴露），安全靠 `safety_map` + 审批级别的第二道防线兜底（见 ADR-0018）。
 
 ## 关于这个项目
 
@@ -286,7 +287,7 @@ release/               # 源码分发引擎（profile 驱动 + 4 静态 gate + 4
 
 ## 安全风险登记
 
-项目按"个人单机使用"尺度设计。已知风险登记在 [SECURITY-RISKS.md](SECURITY-RISKS.md)（13 项）：
+项目按"个人单机使用"尺度设计。已知风险登记在 [SECURITY-RISKS.md](SECURITY-RISKS.md)（条目随代码审查持续追加，以该文件为准）：
 
 - **高危（个人用暂不修）**：后端无认证、凭据明文存储、路径白名单缺失。
 - **查证后确认安全**：MCP 审批、memory 路径校验、token 重放防御（已补回归测试）。
@@ -311,9 +312,7 @@ release/               # 源码分发引擎（profile 驱动 + 4 静态 gate + 4
 
 **给架构读者（深度决策）**：
 - [docs/architecture.md](docs/architecture.md) — 架构总览 + 3 个深度设计决策论述
-- [docs/adr/](docs/adr/) — 17 个 ADR（架构决策记录）
-- [docs/code-knowledge-graph.md](docs/code-knowledge-graph.md) — 代码知识图谱（模块 / 数据流 / 控制流）
-- [docs/walkthroughs.md](docs/walkthroughs.md) — 4 个全栈业务场景 walkthrough + VS Code 调试配置
+- [docs/adr/](docs/adr/) — ADR（架构决策记录，数量随迭代增长，索引见目录内 README）
 - [CHANGELOG.md](CHANGELOG.md) + [docs/changelog-archive.md](docs/changelog-archive.md) — 完整开发轨迹
 
 **给 AI Agent**（接入项目的 LLM）：

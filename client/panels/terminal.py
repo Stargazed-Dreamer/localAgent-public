@@ -203,13 +203,34 @@ class TerminalPanel(PanelBase):
         self._refresh_terminals()
 
     def _refresh_terminals(self) -> None:
-        resp = self._http.get("/terminals")
-        if resp is None or not isinstance(resp, dict):
+        # 8-7: HTTP 移到 worker 线程——原实现在主线程同步 GET /terminals（8s 超时），
+        # 由 15s QTimer + on_show + 后端恢复三处触发，后端 hang 时每 15s 冻结 UI 至多 8s。
+        # 同 due_todos._refresh_async 的 isRunning 模式：在飞则跳过本轮
+        if self._refresh_thread is not None and self._refresh_thread.isRunning():
+            return
+        from PySide6.QtCore import QThread
+
+        class TerminalsRefreshThread(QThread):
+            def __init__(self, http):
+                super().__init__()
+                self._http = http
+                self.data = None
+
+            def run(self):
+                self.data = self._http.get("/terminals")
+
+        self._refresh_thread = TerminalsRefreshThread(self._http)
+        self._refresh_thread.finished.connect(self._on_refresh_terminals_done)
+        self._refresh_thread.start()
+
+    def _on_refresh_terminals_done(self) -> None:
+        t = self._refresh_thread
+        if t is None or t.data is None or not isinstance(t.data, dict):
             self._term_count_label.setText("（无法获取终端列表）")
             return
-        self._terminals = resp.get("terminals", []) or []
-        running = resp.get("running", 0)
-        total = resp.get("count", len(self._terminals))
+        self._terminals = t.data.get("terminals", []) or []
+        running = t.data.get("running", 0)
+        total = t.data.get("count", len(self._terminals))
         self._term_count_label.setText(f"共 {total} 个 / {running} 运行中")
         self._fill_terminals()
 

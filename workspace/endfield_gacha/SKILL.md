@@ -4,6 +4,7 @@ description: >
   终末地寻访记录采集与统计。触发词：终末地抽卡、终末地寻访、endfield抽卡、终末地抽卡记录、
   终末地寻访记录、更新终末地记录。当用户要求获取或更新终末地（Endfield）的寻访（抽卡）记录时触发。
   ⚠️ 本地日志路径读取功能未经测试，使用时必须提醒用户并全程跟进。
+task_type: recurring.endfield_gacha
 ---
 
 # 终末地寻访记录 (endfield_gacha)

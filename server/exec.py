@@ -52,6 +52,7 @@ _MAX_HISTORY = 10
 _terminals: dict[str, dict] = {}  # tid -> session dict
 _MAX_TERMINALS = 20  # 最多保留20个终端会话
 _MAX_RUNNING_TERMINALS = 10
+_spawn_inflight = 0  # 4-8: spawn await 窗口内的占位计数（上限检查原子化用）
 _TERMINAL_MEMORY_TAIL_CHARS = 64 * 1024
 _TERMINAL_DETAIL_DEFAULT_CHARS = 8000
 _TERMINAL_OUTPUT_MAX_BYTES = 256 * 1024
@@ -904,8 +905,9 @@ async def exec_cmd(req: CmdRequest):
     - git commands
     - running .bat/.ps1 scripts
     """
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    exec_id = f"cmd_{timestamp}_{id(req)}"
+    # 4-9: exec_id 换 uuid4().hex——秒级时间戳 + id(req) 对象地址在地址复用时可碰撞，
+    # 覆盖 _output_buffers 中的历史输出
+    exec_id = f"cmd_{uuid.uuid4().hex[:12]}"
 
     try:
         work_dir = _resolve_work_dir(req.cwd)
@@ -1014,6 +1016,17 @@ def _terminal_log_path(tid: str, channel: str) -> Path:
     return TERMINAL_DIR / f"{tid}.{channel}.log"
 
 
+def _wake_output_waiters(session: dict) -> None:
+    """唤醒该终端的所有 SSE 流消费者。
+
+    每消费者持有独立 Event（session["_consumer_events"]），生产侧广播 set——
+    共享单 Event 时先醒的消费者 clear() 会丢掉其他消费者的唤醒
+    （2026-09-13 code review 4-5）。
+    """
+    for ev in list(session.get("_consumer_events") or ()):
+        ev.set()
+
+
 def _append_terminal_text(session: dict, channel: str, text: str) -> None:
     """将终端输出写入磁盘真源，并只在内存保留有界尾部。"""
     if not text:
@@ -1026,9 +1039,7 @@ def _append_terminal_text(session: dict, channel: str, text: str) -> None:
     session[f"{channel}_bytes"] += len(encoded)
     session["output_version"] += 1
     # 唤醒 SSE 等待者（事件驱动，避免 0.5s 轮询）
-    event = session.get("_output_event")
-    if event is not None:
-        event.set()
+    _wake_output_waiters(session)
 
 
 def _read_terminal_tail(session: dict, channel: str, tail_chars: int) -> str:
@@ -1085,6 +1096,27 @@ async def _wait_terminal_for_inline(tid: str, secs: int) -> bool:
     except Exception:
         # collector 抛异常（终端以 error 结束）→ 视为已结束，done 路径读已落盘的输出
         return True
+
+
+async def wait_terminal_completion(tid: str, timeout_secs: float) -> dict:
+    """等待 terminal 子进程结束（或超时），返回 {done, stdout, stderr, exit_code, missing}。
+
+    公共 helper（2026-09-13 code review 4-1）：browser/_execute_playwright 等
+    模块在 exec_python 内联等待超时（status="running"）后，需要按自己的 timeout
+    继续等待并取回完整输出，不应各自触碰 _terminals 内部结构。
+    missing=True 表示 tid 对应会话已不存在（被清理）；done=False 表示超时仍在运行。
+    """
+    done = await _wait_terminal_for_inline(tid, max(1, int(timeout_secs)))
+    session = _terminals.get(tid)
+    if session is None:
+        return {"done": False, "stdout": "", "stderr": "", "exit_code": None, "missing": True}
+    return {
+        "done": done,
+        "stdout": _read_terminal_full(session, "stdout"),
+        "stderr": _read_terminal_full(session, "stderr"),
+        "exit_code": session.get("exit_code"),
+        "missing": False,
+    }
 
 
 def _read_terminal_range(session: dict, channel: str, offset: int, limit: int) -> dict:
@@ -1297,13 +1329,21 @@ async def terminal_spawn(req: TerminalSpawnRequest):
             "agent_instruction": AGENT_BLOCK_MESSAGE,
         }
 
-    running_count = sum(1 for terminal in _terminals.values() if terminal["status"] == "running")
+    # 4-8: 上限检查与占位原子化——create_subprocess_exec 的 await 是唯一交错窗口，
+    # 用预留计数同步增减覆盖该窗口（事件循环单线程，检查+自增之间无 await，天然原子），
+    # 并发 spawn 不再能同时通过同一检查突破 _MAX_RUNNING_TERMINALS
+    global _spawn_inflight
+    running_count = (
+        sum(1 for terminal in _terminals.values() if terminal["status"] == "running")
+        + _spawn_inflight
+    )
     if running_count >= _MAX_RUNNING_TERMINALS:
         return {
             "success": False,
             "error": f"运行中终端已达上限（{_MAX_RUNNING_TERMINALS}），请等待或终止旧会话",
             "running": running_count,
         }
+    _spawn_inflight += 1
     try:
         spawn_options = {}
         if sys.platform == "win32":
@@ -1321,6 +1361,10 @@ async def terminal_spawn(req: TerminalSpawnRequest):
         )
     except Exception as e:
         return {"success": False, "error": str(e), "tid": tid}
+    finally:
+        # spawn 返回/失败即解除占位：此后到 _terminals[tid] = session 之间无 await，
+        # 登记在本轮同步代码内完成，不会再与并发 spawn 交错
+        _spawn_inflight -= 1
 
     # 生成 owner_token：agent 自建终端后续 kill/delete/input 凭此 token 免审
     # 简短（8 字符 hex），便于 agent 传递；token 不匹配时走标准审批流程
@@ -1351,7 +1395,7 @@ async def terminal_spawn(req: TerminalSpawnRequest):
         "_proc": proc,  # 保留进程引用，用于 stdin 写入
         "_stdout_path": _terminal_log_path(tid, "stdout"),
         "_stderr_path": _terminal_log_path(tid, "stderr"),
-        "_output_event": asyncio.Event(),  # 输出事件，SSE 事件驱动唤醒
+        "_consumer_events": set(),  # SSE 流消费者独立唤醒事件集合（见 _wake_output_waiters）
         "last_activity_at": time.time(),  # T00: TTL 清理用（spec D11 第三层）
         "temp_file": None,  # T01: exec_python 改造后写入临时 .py 路径，TTL 清理时删除
     }
@@ -1411,9 +1455,7 @@ async def _collect_terminal_output(tid: str, proc: asyncio.subprocess.Process):
             if not task.done():
                 task.cancel()
         # 唤醒 SSE 等待者，确保它们能收到结束信号
-        event = session.get("_output_event")
-        if event is not None:
-            event.set()
+        _wake_output_waiters(session)
         _cleanup_old_terminals()
 
 
@@ -1485,6 +1527,13 @@ async def terminal_stream(tid: str, stdout_offset: int | None = None, stderr_off
     if not t:
         return {"error": f"终端不存在: {tid}"}
 
+    # 每消费者独立 Event（2026-09-13 code review 4-5：共享 Event 时先醒的消费者
+    # clear 会丢掉其他消费者的唤醒）。注册先于首次读，注册后的写入必唤醒。
+    consumer_event = asyncio.Event()
+    consumers = t.get("_consumer_events")
+    if consumers is not None:
+        consumers.add(consumer_event)
+
     async def event_generator():
         current_stdout_offset = stdout_offset
         current_stderr_offset = stderr_offset
@@ -1512,21 +1561,25 @@ async def terminal_stream(tid: str, stdout_offset: int | None = None, stderr_off
                 yield f"data: {json.dumps({'type': 'end', 'status': current_t['status'], 'exit_code': current_t['exit_code']})}\n\n"
                 break
 
-            # 事件驱动：等待新输出或 5 秒超时兜底
-            event = current_t.get("_output_event")
-            if event is not None:
-                try:
-                    await asyncio.wait_for(event.wait(), timeout=5.0)
-                except TimeoutError:
-                    pass  # 超时也无妨，继续 yield 心跳
-                event.clear()
-            else:
-                await asyncio.sleep(0.5)
+            # 事件驱动：等待新输出或 5 秒超时兜底心跳（自己的 Event，clear 安全）
+            try:
+                await asyncio.wait_for(consumer_event.wait(), timeout=5.0)
+                consumer_event.clear()
+            except TimeoutError:
+                pass  # 超时也无妨，继续 yield 心跳
+
+    # 流结束（含客户端断开触发的 generator close）后注销消费者事件，防集合滞留
+    from starlette.background import BackgroundTask
+
+    def _unregister_consumer() -> None:
+        if consumers is not None:
+            consumers.discard(consumer_event)
 
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        background=BackgroundTask(_unregister_consumer),
     )
 
 

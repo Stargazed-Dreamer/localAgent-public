@@ -130,6 +130,8 @@ async def approvals_submit_decision(approval_id: str, req: DecisionRequest) -> S
         # approve/deny：通知等待中的 await_decision（approval_token 留空，由调用方签发）
         if not _router.notify_decision(approval_id, req.decision, req.feedback, ""):
             raise HTTPException(status_code=409, detail="审批请求状态不可重置")
+        # decided 条目由 store 在 add/list_pending 时惰性清理（超 expires_at 后移除），
+        # 立即 remove 会破坏"窗口内重复提交→409"语义
     return SimpleResponse(ok=True)
 
 

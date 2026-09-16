@@ -370,6 +370,9 @@ clone 完整 git 历史可获取历史密钥。
 | 2026-08-18 | 密钥备份明文存储（第 15 项） | 中危，设计选择（个人用暂不处理；明文副本 + 双位置 + 保留策略 + 仅手动恢复） |
 | 2026-08-18 | workspace 个人数据明文备份（第 16 项） | 中危，设计选择（与密钥备份同频次 + 独立配置目录和保留策略；ADR-0029） |
 | 2026-09-03 | 入站请求/响应正文明文落库（第 17 项） | 中危，本机开启 + 默认关 + 窗口上限（50 条/500MB/单条 100MB）+ 无读取端点 |
+| 2026-09-13 | apply_patch 不进三层审批静态规则（第 18 项） | 中危，用户决策记录暂不修（code review 1-2） |
+| 2026-09-13 | 内置工具不经审批链（第 19 项） | 中危，用户决策记录暂不修（code review 8-10） |
+| 2026-09-13 | apikey unmasked 明文无鉴权（第 20 项） | 低危，风险实质由第 1 项覆盖（code review 5-15） |
 
 ---
 
@@ -539,3 +542,71 @@ agent 通过 `localagent_advanced_tool` 网关可调这些端点，传 `C:\<user
 
 **个人用调试需要开启**（2026-09-03 本机 config.toml 置 true）。中危，接受并记录。开关由 `[inbound.detail_logging]` 控制，无需时置 false 即关闭。
 
+
+---
+
+## 18. exec_apply_patch 的 patch 内容不进三层审批静态规则与缓存（中危，code review 1-2）
+
+### 描述
+
+三层递进审批（`server/approval_review.py`）的静态危险 API 扫描、人审批准缓存 key、审查 prompt 主字段均只取 `code`/`cmd`/`command` 三个键；`exec_apply_patch` 的载荷在 `patch` 键——静态规则对 patch 内容永远扫描空串（危险删除类 patch 不可见）、patch 永不命中审批缓存（LLM deny 后每次重复人审）、大 patch 走 prompt 的 `other` 区块不截断。
+
+### 影响
+
+- 破坏性 patch（删库/删目录）不被 Layer1 静态规则拦截，全靠 Layer2 LLM 审查与 Layer3 人审兜底
+- apply_patch 每次被 LLM 拒后都要重复人审（无缓存复用）
+
+### 缓解措施
+
+- Layer2 LLM 审查仍能看到 patch 内容（untrusted_data 区块），deny/manual 会转人审
+- 一次性 token + 请求指纹绑定、dcg 二进制命令拦截在子进程层仍然生效
+
+### 当前处置
+
+**用户决策（2026-09-13）：记录暂不修。** 权衡：纳入静态扫描会让 apply_patch 人审频率明显上升（patch 几乎总含"写文件"形态）。未来若纳入，需同步扩展 `_compute_approval_cache_key` / `_static_review` / `_build_review_prompt` 三处的键集合。
+
+---
+
+## 19. 内置工具（builtin_executor）不经审批链（中危，code review 8-10）
+
+### 描述
+
+v6-lite runner 对 `builtin_executor.has_tool(name)` 命中的工具**直接本地执行**（runner.py 约 L1048-1052），不经过 HTTP 中间件/MCP 网关的 `x-tool-safety=approval_required` 审批链——该标注对内置工具无强制执行力。
+
+### 利用条件
+
+模型被 prompt 注入或幻觉驱使，选择用内置工具执行危险本地操作。
+
+### 影响
+
+绕过三层审批的内置工具可做本地危险操作；但内置工具集合有限，shell 类危险操作实际走 exec_*（有审批 + dcg 拦截）。
+
+### 缓解措施
+
+- 危险 shell/代码执行不在内置工具集（走 exec_python/exec_cmd，有三层审批 + dcg）
+- 工具结果回灌与 DoomLoopDetector 提供行为层兜底
+
+### 当前处置
+
+**用户决策（2026-09-13）：记录暂不修。** 未来可对 `destructiveHint` 类内置工具在 runner 层强制走 facade 审批回调。
+
+---
+
+## 20. apikey 端点支持 unmasked=true 返回明文 key 且无独立鉴权（低危，code review 5-15）
+
+### 描述
+
+`/keys`、`/keys/{key_id}` 端点支持 `unmasked=true` 查询参数返回**明文** key，无 token/审批校验。后端本身无认证（见第 1 项），任何能访问 127.0.0.1:8766 的本机进程都可读取全部 key 明文。
+
+### 影响
+
+与第 1 项"后端无认证"攻击前提完全相同，属其子集——能打到本端点的进程本来就能调 exec_python 读 `keys.json` 原文件。
+
+### 缓解措施
+
+- 仅监听 127.0.0.1
+- GUI 密钥面板的"显示明文"功能依赖此参数
+
+### 当前处置
+
+**用户确认记入风险文档（2026-09-13），不独立加固。** 风险实质被第 1 项覆盖；若未来后端引入认证，本端点应纳入同一鉴权体系。

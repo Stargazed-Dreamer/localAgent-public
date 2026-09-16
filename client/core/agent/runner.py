@@ -568,7 +568,10 @@ class SessionRunner:
             messages = await store.load_messages(session_id)
 
             # 2. 构建 LLM 请求
-            request = self._build_request(messages)
+            # to_thread（2026-09-13 code review 8-1）：_build_request →
+            # _build_system_prompt → 首轮同步 requests.get 调 agent_guide（5s
+            # timeout），不包线程会阻塞 worker 事件循环
+            request = await asyncio.to_thread(self._build_request, messages)
 
             # 3. 调 LLM
             # v6-lite-streaming-gui T02: use_stream=True 时用 gateway.stream() 流式调用
@@ -871,6 +874,7 @@ class SessionRunner:
                 source="assistant",
                 tool_calls=response.tool_calls,
                 thinking=response.thinking,
+                model=response.model or "",
             )
             appended = await store.append_message(session_id, assistant_msg)
             # T02: stream 模式下，完整 Message 已落库，标记 streaming 事件 invalidated
@@ -1199,6 +1203,10 @@ class SessionRunner:
                     )
 
             ev_type = event.get("type")
+            # 服务端 pool 包装层给每个事件都附实际选中的 model（setdefault），
+            # 这里捕获一次，落库到 assistant message（UI 气泡下方小字显示）
+            if not model:
+                model = str(event.get("model") or "")
             if ev_type == "text_delta":
                 delta = event.get("delta", "")
                 accumulated_text += delta
@@ -1886,6 +1894,8 @@ class SessionRunner:
         ]
 
         # 调 agent_guide（首轮一次，失败降级不抛）
+        # 注：本方法由 _build_system_prompt（同步）→ _run_loop（async）调用链进入，
+        # 阻塞防护在 async 边界包 to_thread（见 _build_system_prompt 调用点，8-1）
         try:
             guide_result = _call_agent_guide_http(first_user_text)
         except Exception as e:

@@ -4,6 +4,7 @@ description: >
   项目全面复审：让用户从 12 大类（架构/测试/文档/API/配置/可用性/安全/数据/性能/Git/环境/UX）
   中选择审查方向，按检查清单扫描问题并输出结构化报告。当用户说"项目复审"、"全面复审"、
   "项目体检"、"项目巡检"、"project audit"时触发。区别于 code_review（单文件）和 neat-freak（文档同步）。
+task_type: system.project_audit
 ---
 
 # 项目全面复审 (project_audit)

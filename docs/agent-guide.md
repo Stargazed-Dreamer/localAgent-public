@@ -92,9 +92,6 @@ def get_agent_guide(
 | **task 关键词匹配** | 传 `task` 参数（无 task_type） | L871-928 | 调 `match_task_candidates` → 弱匹配走 `mode=low_confidence`（L882-915）→ 强匹配走 TaskGuide（L916-928） |
 | **无参 GeneralGuide** | 不传 task 也不传 task_type | L949-966 | 返回全量分类清单 + 通用陷阱 + 文件位置 |
 
-**额外端点**：
-- `GET /guide/usage`（L1016-1055，`operation_id="agent_guide_usage"`）— 使用统计（检测 undertriggering）
-
 ## 5. consumption_contexts 消费闭环
 
 记忆系统的"可消费性"机制：写入时声明消费场景 → guide 读取时反向查询自动注入。避免"存了没人用"的垃圾记忆。

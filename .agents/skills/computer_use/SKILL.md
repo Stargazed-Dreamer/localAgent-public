@@ -5,6 +5,7 @@ description: >
   操作确认、紧急停止等安全机制。触发词：操作电脑、屏幕操作、点击、截图、
   帮我操作、翻页、自动操作、computer use、screen control。当用户需要
   AI操控电脑界面、自动化GUI操作、屏幕交互时触发，即使只说"帮我点一下"。
+task_type: dev.computer_use
 ---
 
 # Computer Use - 屏幕操控技能

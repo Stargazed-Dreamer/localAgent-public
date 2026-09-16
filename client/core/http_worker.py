@@ -181,17 +181,28 @@ class HttpWorker(QThread):
             if self._base_url is not None:
                 kwargs["base_url"] = self._base_url
 
+            # 8-5（2026-09-13 code review）修复：last_status_code 是 HttpClient 单例的
+            # 共享字段，ServiceManager 线程 / BadgeThread / 其他 HttpWorker 并发请求
+            # 会在"本 worker 调用完成 → 信号 emit"之间覆盖它。改为调用后立即把状态码
+            # 读入局部变量，emit 传该局部变量，把竞态窗口压到调用返回后的相邻几条
+            # 字节码（不再跨 emit 排队延迟取值）。
+            _status: int | None = None
             method = self._method
             if method == "get":
                 self.result = http.get(self._path, **kwargs)
+                _status = getattr(http, "last_status_code", None)
             elif method == "post":
                 self.result = http.post(self._path, **kwargs)
+                _status = getattr(http, "last_status_code", None)
             elif method == "put":
                 self.result = http.put(self._path, **kwargs)
+                _status = getattr(http, "last_status_code", None)
             elif method == "patch":
                 self.result = http.patch(self._path, **kwargs)
+                _status = getattr(http, "last_status_code", None)
             elif method == "delete":
                 self.result = http.delete(self._path, **kwargs)
+                _status = getattr(http, "last_status_code", None)
             else:
                 self.error = f"unsupported method: {method}"
                 self.failed.emit(self.error)
@@ -200,8 +211,8 @@ class HttpWorker(QThread):
             # HttpClient 返回 None 表示 HTTP 失败（status >= 400 或异常）
             # 但无法区分"404 返回 None"和"网络错误返回 None"
             # 这里统一用 done 信号传回 result（可能是 None）
-            # last_status：HttpClient 记录的最后一次 HTTP 状态码（供面板区分错误类型）
-            self.status_code.emit(getattr(http, "last_status_code", None))
+            # _status：本次调用刚读出的 HTTP 状态码（供面板区分错误类型）
+            self.status_code.emit(_status)
             self.done.emit(self.result)
         except Exception as e:
             self.error = f"{type(e).__name__}: {e}"

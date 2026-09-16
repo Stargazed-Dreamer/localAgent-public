@@ -410,35 +410,9 @@ def _build_anthropic_messages(messages: list[dict]) -> tuple[str, list[dict]]:
 # =====================================================================
 # v6-lite-streaming-gui T00: 真流式支持
 # =====================================================================
-
-# _iter_lines_async 的哨兵：线程内 iter_lines 耗尽时返回
-_STREAM_SENTINEL = object()
-
-
-def _safe_next_line(it):
-    """线程内安全读取下一行，耗尽时返回哨兵（避免 StopIteration 跨线程传播）"""
-    try:
-        return next(it)
-    except StopIteration:
-        return _STREAM_SENTINEL
-
-
-async def _iter_lines_async(resp) -> AsyncIterator:
-    """把 requests.Response.iter_lines 桥接为 async iterator。
-
-    用 run_in_executor 逐行在线程池读取（requests 是同步阻塞 IO），
-    每行通过 executor 返回，不阻塞事件循环。
-    """
-    loop = asyncio.get_event_loop()
-    it = iter(resp.iter_lines(decode_unicode=True))
-    while True:
-        line = await loop.run_in_executor(None, _safe_next_line, it)
-        if line is _STREAM_SENTINEL:
-            break
-        if line is None:
-            continue
-        yield line
-
+# 注：T00 时代的 requests 桥接三件套（_iter_lines_async/_safe_next_line/
+# _STREAM_SENTINEL）在 T07 改 httpx 原生 async 流后已无生产调用，5-13 删除；
+# 存档测试中的对应用例同步移除。
 
 class ToolCallAccumulator:
     """OpenAI SSE stream 的 tool_call 半包累积器（D04）。
@@ -1339,6 +1313,11 @@ class LLMPool:
                 return {"ok": False, "error": err}
 
             try:
+                # 5-2: 每轮入口先置 None——模型选择段（下方至 attempt_start_ts 赋值前）
+                # 若中途抛异常，except 处理器不会引用上一轮 stale 值记账/冷却到错误
+                # model，也不会因变量未绑定抛 UnboundLocalError 导致 _release 未执行
+                req_model = None
+                attempt_start_ts = None
                 # model 优先级：调用方传入（且未失败且未冷却且未 disabled）> key 的范围内最低 tier model（排除已失败 + 已冷却 + disabled）
                 # 失败 model 会被加入 failed_models，重试时自动升级到更高 tier model（治本：避免反复重试坏 model）
                 # v12：Model Lockout——单 model 429 时 cooldown 写入 model_cooldowns，此处自动跳过同 key 其他可用 model
@@ -1474,6 +1453,11 @@ class LLMPool:
                     continue
 
             except httpx.TimeoutException:
+                if req_model is None or attempt_start_ts is None:
+                    # 5-2: 模型选择段异常（HTTP 请求尚未发起），仅归还槽位不记账
+                    self._release(key)
+                    last_error = "timeout during model selection"
+                    continue
                 err_msg = "timeout"
                 self._release(key, model=req_model, error=err_msg,
                               duration_ms=int((time.time() - attempt_start_ts) * 1000),
@@ -1484,6 +1468,13 @@ class LLMPool:
                                   duration_ms=int((time.time() - attempt_start_ts) * 1000))
                 continue
             except Exception as e:
+                if req_model is None or attempt_start_ts is None:
+                    # 5-2: 模型选择段异常——此前此处会因 req_model/attempt_start_ts
+                    # 未绑定抛 UnboundLocalError 且 _release 未执行，key.active_count
+                    # 永不递减（并发槽位泄漏）。仅归还槽位，不记 model 级失败
+                    self._release(key)
+                    last_error = f"{type(e).__name__}: {str(e)[:120]}"
+                    continue
                 # model 级异常（如响应格式错 'NoneType' not subscriptable、JSON 解析失败），
                 # 加入 failed_models 让重试换 model（治本：避免坏 model 反复重试）
                 failed_models.add(req_model)
@@ -1573,6 +1564,9 @@ class LLMPool:
         attempt_start_ts = time.time()
         success = False
         captured_usage: dict | None = None  # 流式 usage 事件捕获，供 finally 回填池统计
+        # 5-4：捕获 provider_error 事件附带的 HTTP 状态码，供 finally 按码映射
+        # _release 参数（rate_limited/expired/error_type），与非流式 _call_openai 对齐。
+        provider_error_status: int | None = None
         protocol = (key.protocol or "openai").lower()
         # OpenAI 与 Anthropic 均走各自原生 SSE 生成器，共用「持有 key → 捕获 usage
         # 事件 → finally 统一 release+record」模型。此前 Anthropic 走 call() 伪流式并
@@ -1610,6 +1604,9 @@ class LLMPool:
                 event.setdefault("model", req_model)
                 if event.get("type") == "usage":
                     captured_usage = event
+                if (event.get("type") == "provider_error"
+                        and isinstance(event.get("status_code"), int)):
+                    provider_error_status = event["status_code"]
                 if event.get("type") == "done" and event.get("finish_reason") not in ("error", None):
                     success = True
                 yield event
@@ -1617,15 +1614,38 @@ class LLMPool:
             # 流式 token 记账：把 usage 事件的 total 回填到 key/model 统计（此前恒 0）。
             # OpenAI 与 Anthropic 原生流式都走这里（与非流式 call() 的 _record_usage 对齐）。
             tokens = int(captured_usage.get("total_tokens") or 0) if (success and captured_usage) else 0
-            self._release(key, success=success, model=req_model,
-                          duration_ms=int((time.time() - attempt_start_ts) * 1000),
-                          tokens=tokens)
+            duration_ms = int((time.time() - attempt_start_ts) * 1000)
+            if not success and provider_error_status == 429:
+                # 5-4：流式上游 429 → rate_limited（写 key/model cooldown、不计
+                # consecutive_fails）。此前误走 _apply_model_health_failure 可把 model
+                # 误 disable。流式无重试轮次，attempt 取 0；Retry-After 头未透出，用 0。
+                cd = self._compute_retry_delay(0, retry_after=0.0, key=key)
+                self._release(key, rate_limited=True, cooldown=cd, model=req_model,
+                              duration_ms=duration_ms)
+            elif not success and provider_error_status in (401, 402):
+                # 5-4：401/402 → expired（key 失效，不计失败、不进 model 降级），与非流式对齐
+                self._release(key, expired=True, model=req_model, duration_ms=duration_ms)
+            elif not success and provider_error_status is not None:
+                # 5-4：其他 HTTP 错误（5xx 等）→ 带 error_type 的常规失败，按 D2 退避映射
+                error_type = "http_5xx" if 500 <= provider_error_status < 600 else "http_other"
+                self._release(key, model=req_model,
+                              error=f"HTTP {provider_error_status}",
+                              duration_ms=duration_ms, error_type=error_type)
+            else:
+                self._release(key, success=success, model=req_model,
+                              duration_ms=duration_ms, tokens=tokens)
             if success and captured_usage and project:
                 self._record_usage(project, {
                     "prompt_tokens": int(captured_usage.get("prompt_tokens") or 0),
                     "completion_tokens": int(captured_usage.get("completion_tokens") or 0),
                     "total_tokens": int(captured_usage.get("total_tokens") or 0),
                 })
+            if success and session_id:
+                # 5-5: 流式成功路径补记 LKGP 会话粘性——此前仅 call() 记录，而
+                # chat panel / 入站网关主路径均为流式，粘性对最主要流量形态静默失效。
+                # usage 事件在 stream() 循环里已 setdefault("model", req_model)
+                model_used = (captured_usage.get("model") or req_model) if captured_usage else req_model
+                self._record_session_stickiness(session_id, key, model_used)
 
     async def _stream_openai_sse(self, *, key, req_model, messages, temperature,
                                   max_tokens, timeout, response_format, project,
@@ -1696,13 +1716,16 @@ class LLMPool:
                 "POST", url, headers=headers, json=request_body, timeout=timeout
             ) as resp:
                 # 错误状态码处理（429/401/402/5xx）
+                # 5-4：附带 status_code 供 stream() finally 按码映射 _release 参数
+                #（rate_limited/expired/error_type，与非流式 _call_openai 对齐）；
+                # 纯附加字段，不改变既有 error 字段语义，客户端忽略未知字段。
                 if resp.status_code in (401, 402, 429) or resp.status_code >= 500:
                     try:
                         await resp.aread()
                         err_body = resp.text[:300]
                     except Exception:
                         err_body = "(unreadable)"
-                    yield {"type": "provider_error",
+                    yield {"type": "provider_error", "status_code": resp.status_code,
                            "error": f"HTTP {resp.status_code}: {err_body}"}
                     yield {"type": "done", "finish_reason": "error"}
                     return
@@ -1713,7 +1736,7 @@ class LLMPool:
                         err_body = resp.text[:300]
                     except Exception:
                         err_body = "(unreadable)"
-                    yield {"type": "provider_error",
+                    yield {"type": "provider_error", "status_code": resp.status_code,
                            "error": f"HTTP {resp.status_code}: {err_body}"}
                     yield {"type": "done", "finish_reason": "error"}
                     return
@@ -1880,7 +1903,8 @@ class LLMPool:
                         err_body = resp.text[:300]
                     except Exception:
                         err_body = "(unreadable)"
-                    yield {"type": "provider_error",
+                    # 5-4：附带 status_code 供 stream() finally 按码映射 _release 参数（同 OpenAI 分支）
+                    yield {"type": "provider_error", "status_code": resp.status_code,
                            "error": f"HTTP {resp.status_code}: {err_body}"}
                     yield {"type": "done", "finish_reason": "error"}
                     return

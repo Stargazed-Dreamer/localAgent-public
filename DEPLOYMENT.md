@@ -1,12 +1,12 @@
 # LocalAgent 部署指南
 
-> Profile: `public-full` | Audience: `public` | 构建时间: 2026-09-11T19:35:51.999160+00:00
+> Profile: `public-full` | Audience: `public` | 构建时间: 2026-09-16T16:11:47.364595+00:00
 
 ## 项目简介
 
 LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工具和日常可自动化工作流。
 
-本包为 **public 受众** 源码分发版，基于 git commit `e4ddebfcd94817ca531399aa6f93270d594025ec` 构建。
+本包为 **public 受众** 源码分发版，基于 git commit `29b3adc7dfc6a50db982b47324fe23155f6b3cac` 构建。
 
 ## 系统要求
 
@@ -71,16 +71,16 @@ start_client.bat
 
 ## 文件统计
 
-- 文件总数：1560
-- 总大小：23187338 字节
-- 源 git commit：`e4ddebfcd94817ca531399aa6f93270d594025ec`
+- 文件总数：1578
+- 总大小：23778035 字节
+- 源 git commit：`29b3adc7dfc6a50db982b47324fe23155f6b3cac`
 
 ## 审计追溯
 
-- **plan_digest**: `142245832fb9b1a11f4a0e3655a8d52086520afe2636c014ec8156f861bdcf5e`
+- **plan_digest**: `09a4f385534aff5295c0c3fcd32bd8a4df03d34aa1c85bc1d5d542046ec7ff4b`
 - **profile_id**: `public-full`
 - **audience**: `public`
-- **built_at**: 2026-09-11T19:35:51.999160+00:00
+- **built_at**: 2026-09-16T16:11:47.364595+00:00
 
 plan_digest 是本构建计划的 SHA-256 摘要，绑定所有输入（profile / components / scan / exemptions / source_commit / file_entries）。任何输入变化都会让 plan_digest 变化，使旧审批失效。
 
@@ -88,6 +88,8 @@ plan_digest 是本构建计划的 SHA-256 摘要，绑定所有输入（profile 
 
 本包含以下敏感内容豁免（已审计，认为可安全分发）：
 
+- `.agents/skills/bat_writing/SKILL.md` — sensitive_line_skips
+- `.agents/skills/bat_writing/references/guide.md` — sensitive_line_skips
 - `.agents/skills/deep_research/references/pdf_report_style.md` — sensitive_line_skips
 - `.agents/skills/office_docs/references/pdf_basic.md` — sensitive_line_skips
 - `client/core/agent/builtin_tools/base.py` — sensitive_line_skips
@@ -115,8 +117,10 @@ plan_digest 是本构建计划的 SHA-256 摘要，绑定所有输入（profile 
 - `tools/media_classifier/mimo_lrc_analyze.py` — sensitive_line_skips
 - `tools/release/engine/prepare.py` — sensitive_line_skips
 - `workspace/disk_manager/SKILL.md` — sensitive_line_skips
+- `workspace/disk_manager/references/sns_format.md` — sensitive_line_skips
 - `workspace/disk_manager/scripts/backup_env.py` — sensitive_line_skips
 - `workspace/disk_manager/scripts/cleanup.py` — sensitive_line_skips
+- `workspace/disk_manager/tests/test_parse_sns.py` — sensitive_line_skips
 - `workspace/recorder/tools/editor/stt_runner.py` — sensitive_line_skips
 
 ## ZIP 校验

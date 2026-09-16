@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,9 @@ class SearchEngineManager:
         self._searcher: Any = None
         self._index_dir: Path | None = None  # 当前加载的索引目录，用于检测索引是否更新
         self._index_mtime: float | None = None  # 索引 meta.json 的修改时间
+        # 3-3: 加载串行化锁——并发首次搜索/逐出后重载会各自实例化 HybridSearcher
+        # （1-2GB×2 内存）且互相 unload 对方引用；与 ocr.py ModelManager._load_lock 同款
+        self._load_lock = threading.Lock()
         # keep_models 死旋钮已迁移到 ModelLifecycleManager（design §9 写回链）
         # —— 见 keep_models property
 
@@ -100,30 +104,39 @@ class SearchEngineManager:
         meta_path = index_dir / "meta.json"
         current_mtime = meta_path.stat().st_mtime if meta_path.exists() else None
 
-        # 检查是否需要重载：首次加载 / 索引目录变了 / 索引文件更新了
-        need_reload = (
-            self._searcher is None
-            or self._index_dir != index_dir
-            or (current_mtime is not None and current_mtime != self._index_mtime)
-        )
+        # 快速路径：已加载且索引未变（GIL 下属性读原子；写入均发生在锁内）
+        if (
+            self._searcher is not None
+            and self._index_dir == index_dir
+            and not (current_mtime is not None and current_mtime != self._index_mtime)
+        ):
+            return self._searcher
 
-        if need_reload:
-            self.unload()
-            # 将 MindForge 的 kb_search 加入 Python 路径
-            kb_search_dir = str(index_dir.parent)
-            if kb_search_dir not in sys.path:
-                sys.path.insert(0, kb_search_dir)
+        with self._load_lock:
+            # 锁内复查 need_reload（双检）：等锁期间并发方可能已完成加载
+            need_reload = (
+                self._searcher is None
+                or self._index_dir != index_dir
+                or (current_mtime is not None and current_mtime != self._index_mtime)
+            )
 
-            from search_engine import HybridSearcher  # type: ignore[import-not-found]
-            logger.info(f"正在加载 MindForge 搜索引擎 ({index_dir})...")
-            t0 = time.perf_counter()
-            self._searcher = HybridSearcher(index_dir, force_cpu=True)
-            elapsed = int((time.perf_counter() - t0) * 1000)
-            self._index_dir = index_dir
-            self._index_mtime = current_mtime
-            logger.info(f"MindForge 搜索引擎加载完成, 耗时 {elapsed}ms")
+            if need_reload:
+                self.unload()
+                # 将 MindForge 的 kb_search 加入 Python 路径
+                kb_search_dir = str(index_dir.parent)
+                if kb_search_dir not in sys.path:
+                    sys.path.insert(0, kb_search_dir)
 
-        return self._searcher
+                from search_engine import HybridSearcher  # type: ignore[import-not-found]
+                logger.info(f"正在加载 MindForge 搜索引擎 ({index_dir})...")
+                t0 = time.perf_counter()
+                self._searcher = HybridSearcher(index_dir, force_cpu=True)
+                elapsed = int((time.perf_counter() - t0) * 1000)
+                self._index_dir = index_dir
+                self._index_mtime = current_mtime
+                logger.info(f"MindForge 搜索引擎加载完成, 耗时 {elapsed}ms")
+
+            return self._searcher
 
     def unload(self):
         """卸载搜索引擎，释放内存"""
@@ -175,9 +188,16 @@ class ConverterDaemon:
         self._mf_dir: Path | None = None
         self._python_exe: str | None = None
         self._ready = False
+        # 3-5: 行协议半双工——并发请求会读到对方的响应行；asyncio.Lock 串行化
+        # start（防双启动竞态覆盖 _proc 泄漏进程句柄）与 convert/ping 全程收发
+        self._io_lock = asyncio.Lock()
 
     async def start(self, mf_dir: Path, python_exe: str) -> bool:
-        """启动守护进程"""
+        """启动守护进程（3-5: 锁内复查运行态，防并发双启动）"""
+        async with self._io_lock:
+            return await self._start_locked(mf_dir, python_exe)
+
+    async def _start_locked(self, mf_dir: Path, python_exe: str) -> bool:
         if self._proc is not None and self._proc.returncode is None:
             return True  # 已在运行
 
@@ -235,50 +255,51 @@ class ConverterDaemon:
         return True
 
     async def convert(self, source_path: str, output_dir: str = "") -> dict:
-        """发送转换请求到守护进程"""
-        proc = self._proc
-        if proc is None or proc.returncode is not None:
-            return {"status": "error", "detail": "守护进程未运行"}
-
+        """发送转换请求到守护进程（3-5: io_lock 防并发响应行错配）"""
         req = json.dumps({
             "action": "convert",
             "source_path": source_path,
             "output_dir": output_dir,
         }, ensure_ascii=False) + "\n"
 
-        try:
-            stdin = proc.stdin
-            stdout = proc.stdout
-            if stdin is None or stdout is None:
-                return {"status": "error", "detail": "守护进程 IO 不可用"}
-            stdin.write(req.encode())
-            await stdin.drain()
+        async with self._io_lock:
+            proc = self._proc
+            if proc is None or proc.returncode is not None:
+                return {"status": "error", "detail": "守护进程未运行"}
 
-            resp_line = await asyncio.wait_for(stdout.readline(), timeout=300)
-            return json.loads(resp_line.decode().strip())
-        except TimeoutError:
-            return {"status": "error", "detail": "转换超时（300s）"}
-        except Exception as e:
-            return {"status": "error", "detail": f"通信失败: {e}"}
+            try:
+                stdin = proc.stdin
+                stdout = proc.stdout
+                if stdin is None or stdout is None:
+                    return {"status": "error", "detail": "守护进程 IO 不可用"}
+                stdin.write(req.encode())
+                await stdin.drain()
+
+                resp_line = await asyncio.wait_for(stdout.readline(), timeout=300)
+                return json.loads(resp_line.decode().strip())
+            except TimeoutError:
+                return {"status": "error", "detail": "转换超时（300s）"}
+            except Exception as e:
+                return {"status": "error", "detail": f"通信失败: {e}"}
 
     async def ping(self) -> dict:
-        """检查守护进程状态"""
-        proc = self._proc
-        if proc is None or proc.returncode is not None:
-            return {"status": "not_running", "models_loaded": False}
-
+        """检查守护进程状态（3-5: io_lock 防并发响应行错配）"""
         req = json.dumps({"action": "ping"}) + "\n"
-        try:
-            stdin = proc.stdin
-            stdout = proc.stdout
-            if stdin is None or stdout is None:
+        async with self._io_lock:
+            proc = self._proc
+            if proc is None or proc.returncode is not None:
+                return {"status": "not_running", "models_loaded": False}
+            try:
+                stdin = proc.stdin
+                stdout = proc.stdout
+                if stdin is None or stdout is None:
+                    return {"status": "not_responding", "models_loaded": False}
+                stdin.write(req.encode())
+                await stdin.drain()
+                resp_line = await asyncio.wait_for(stdout.readline(), timeout=5)
+                return json.loads(resp_line.decode().strip())
+            except Exception:
                 return {"status": "not_responding", "models_loaded": False}
-            stdin.write(req.encode())
-            await stdin.drain()
-            resp_line = await asyncio.wait_for(stdout.readline(), timeout=5)
-            return json.loads(resp_line.decode().strip())
-        except Exception:
-            return {"status": "not_responding", "models_loaded": False}
 
     async def stop(self):
         """停止守护进程"""
@@ -397,6 +418,55 @@ class MindForgeStatusResponse(BaseSchema):
 # ========== 运行中的任务追踪 ==========
 
 _running_processes: dict[str, asyncio.subprocess.Process] = {}
+# 3-7: 终态保留——进程结束即从 _running_processes pop，pipeline_status 查询
+# completed/failed 永远得到 "unknown"。结束后把 returncode/结束时间记入
+# _finished_processes（TTL 懒清理），终态 1 小时内可查。
+_finished_processes: dict[str, dict] = {}
+_FINISHED_TTL_SECONDS = 3600.0
+
+
+def _start_process_watcher(proc: asyncio.subprocess.Process, task_id: str, label: str) -> None:
+    """启动子进程完成监控：并行排空 stdout/stderr 管道 + wait。
+
+    管道排空必须与 proc.wait() 并行（2026-09-13 code review 3-2）：子进程日志
+    超过管道缓冲（Windows ~64KB）会写阻塞到被读走为止，无人排空 → 子进程永不
+    退出 → proc.wait() 死等，监控任务与进程双双泄漏。此前实现"失败路径才在
+    wait 之后读 stderr"恰好构成该死锁（pipeline 长转换极易触发）。
+    """
+
+    async def _drain(stream) -> bytes:
+        if stream is None:
+            return b""
+        try:
+            return await stream.read()
+        except Exception:
+            return b""
+
+    async def _watch():
+        stdout_task = asyncio.create_task(_drain(proc.stdout))
+        stderr_task = asyncio.create_task(_drain(proc.stderr))
+        await proc.wait()
+        # 3-7: 先记终态再 pop（保证 completed/failed 查询窗口无空档），TTL 懒清理
+        _finished_processes[task_id] = {
+            "returncode": proc.returncode,
+            "finished_at": time.time(),
+        }
+        expired = [
+            k for k, v in _finished_processes.items()
+            if time.time() - v["finished_at"] > _FINISHED_TTL_SECONDS
+        ]
+        for k in expired:
+            _finished_processes.pop(k, None)
+        _running_processes.pop(task_id, None)
+        _, stderr = await asyncio.gather(stdout_task, stderr_task)
+        if proc.returncode == 0:
+            logger.info(f"MindForge {label} 完成 (PID={task_id})")
+        else:
+            logger.error(
+                f"MindForge {label} 失败 (PID={task_id}): {stderr.decode(errors='ignore')[:500]}"
+            )
+
+    asyncio.create_task(_watch())
 
 
 # ========== 路由 ==========
@@ -486,18 +556,8 @@ async def run_pipeline(req: PipelineRequest):
     task_id = str(proc.pid)
     _running_processes[task_id] = proc
 
-    # 异步监控进程完成
-    async def _watch():
-        await proc.wait()
-        _running_processes.pop(task_id, None)
-        if proc.returncode == 0:
-            logger.info("MindForge pipeline 完成 (PID=%s)", task_id)
-        else:
-            stderr_reader = proc.stderr
-            stderr = await stderr_reader.read() if stderr_reader is not None else b""
-            logger.error(f"MindForge pipeline 失败 (PID={task_id}): {stderr.decode(errors='ignore')[:500]}")
-
-    asyncio.create_task(_watch())
+    # 异步监控进程完成（含双管道排空，防管道写阻塞死锁——见 _start_process_watcher）
+    _start_process_watcher(proc, task_id, "pipeline")
 
     return PipelineResponse(
         task_id=task_id,
@@ -508,13 +568,23 @@ async def run_pipeline(req: PipelineRequest):
 
 @router.get("/pipeline/{task_id}", operation_id="mindforge_pipeline_status")
 async def pipeline_status(task_id: str):
-    """查询管线运行状态"""
+    """查询管线运行状态（3-7: 进程结束后终态保留 1 小时可查）"""
     proc = _running_processes.get(task_id)
-    if proc is None:
-        return {"task_id": task_id, "status": "unknown", "message": "进程不存在或已结束"}
-    if proc.returncode is None:
-        return {"task_id": task_id, "status": "running", "message": "管线运行中"}
-    return {"task_id": task_id, "status": "completed" if proc.returncode == 0 else "failed", "returncode": proc.returncode}
+    if proc is not None:
+        if proc.returncode is None:
+            return {"task_id": task_id, "status": "running", "message": "管线运行中"}
+        status = "completed" if proc.returncode == 0 else "failed"
+        return {"task_id": task_id, "status": status, "returncode": proc.returncode}
+    finished = _finished_processes.get(task_id)
+    if finished is not None:
+        status = "completed" if finished["returncode"] == 0 else "failed"
+        return {
+            "task_id": task_id,
+            "status": status,
+            "returncode": finished["returncode"],
+            "finished_at": finished["finished_at"],
+        }
+    return {"task_id": task_id, "status": "unknown", "message": "进程不存在或终态已过期"}
 
 
 @router.post("/search", response_model=SearchResponse, operation_id="mindforge_search")
@@ -606,17 +676,7 @@ async def build_index(req: BuildIndexRequest):
     task_id = str(proc.pid)
     _running_processes[task_id] = proc
 
-    async def _watch():
-        await proc.wait()
-        _running_processes.pop(task_id, None)
-        if proc.returncode == 0:
-            logger.info(f"MindForge build-index 完成 (PID={task_id})")
-        else:
-            stderr_reader = proc.stderr
-            stderr = await stderr_reader.read() if stderr_reader is not None else b""
-            logger.error(f"MindForge build-index 失败 (PID={task_id}): {stderr.decode(errors='ignore')[:500]}")
-
-    asyncio.create_task(_watch())
+    _start_process_watcher(proc, task_id, "build-index")
 
     return BuildIndexResponse(
         task_id=task_id,

@@ -15,11 +15,11 @@ tools/
 ├── llm/                  # LLM 工具（API 测试、批量注释、Token 统计、帖子总结）
 ├── media_classifier/     # 媒体分类（<data_drive>:\<bilibili_videos>视频、文字篇章、歌词分析）
 ├── mindforge/            # MindForge 文档转换守护进程
-├── recorder/             # 操作录制器（L0 采集层，键鼠+屏幕+音频+焦点）
 ├── release/              # 源码分发 profile 只读审计
 ├── wechat_export_organize.py  # 微信收藏导出整理
 ├── user_message_gui.py   # 用户消息输入 GUI
 ├── fake_llm_proxy.py     # Fake LLM Proxy（学习/调试用虚拟 API）
+├── x_video_dl.py         # x.com(Twitter) 视频下载（savetwitter 免梯子链路）
 └── migrate_data_layout.py # 一次性数据迁移脚本（temp/ 和 server/memory_v2/ → data/）
 ```
 
@@ -116,24 +116,11 @@ tools/
 ### `mindforge/` — MindForge 文档转换
 - `converter_daemon.py` — 文档转换守护进程（MineRU + PaddleOCR），通过 stdin/stdout JSON 协议通信
 
-### `recorder/` — 操作录制器（L0 采集层 + L1 处理层 + L2 时间轴层 + L3 编辑层 + L4 消费层入口）
-录制键鼠操作 + 屏幕截图 + 麦克风音频 + 窗口焦点，生成可回放的录制包。独立进程运行（不走后端 API），通过 `python -m tools.recorder.main` 启动。
-- `main.py` — 启动入口（CLI 参数解析 + GUI 协调 + 无 GUI 冒烟模式）
-- `timeline_cli.py` — L2 时间轴层 CLI 入口（`python -m tools.recorder.timeline_cli <package_path>`，构建 timeline.json + 预览 6 项摘要）
-- `editor/` — L3 编辑层子目录（`python -m tools.recorder.editor <package_path>` 启动可视化编辑器：三区域 GUI + 12 项工具栏 + 音频调参面板 + STT 重跑；所有编辑写入 annotations.json，timeline.json 只读）
-- `config_loader.py` — config.toml `[recording]` 段加载器
-- `config.py` — RecordingConfig dataclass + detailed/coarse 工厂函数
-- `config_dialog.py` — ConfigDialog（范围/模式/参数选择对话框）
-- `hotkey_manager.py` — HotkeyManager（Ctrl+Alt+R 全局热键）
-- `floating_bar.py` — FloatingBar（小模式悬浮条，单屏场景）
-- `monitor_window.py` — MonitorWindow（大模式监控面板，双屏场景）
-- `recorder_app.py` — RecorderApp（协调类 + 30 分钟自动停止）
-- 底层传感器在 `lib/recorder/sensors/`（keyboard/mouse/screen/audio/window）
-- L1 处理层在 `lib/recorder/processor/`（process_recording_package 入口 + P1/P4/P5 + P2/P3 接口）
-- L2 时间轴层在 `lib/recorder/timeline/`（build_timeline 入口 + T1 时间轴引擎 + T2 章节切分 + T3 标注器 + preview 预览）
-- L3 编辑层在 `lib/recorder/editor/`（merge_timeline_annotations 入口 + 13 个 Action 枚举 + AnnotationStore undo/redo + apply_annotation + audio_preview 切片预览）
-- L4 消费层在 `lib/recorder/consumer/`（agent 公用库：list_recordings / get_merged_view / select_vl_candidates / build_vl_question / log_consumption / regenerate_manifest；不含 CLI 入口，agent 直接 import；**无后端 HTTP 端点**，D055 变更）
-- 用户文档详见 `docs/recorder-guide.md`（含第十九章 L4 消费层）
+### 录制器（已迁至 `workspace/recorder/`）
+操作录制器（键鼠 + 屏幕截图 + 音频 + 窗口焦点 → 可回放录制包）**不在 `tools/` 下**：
+- 启动入口：`python -m workspace.recorder.tools.main`（配置对话框/悬浮条/监控窗口/编辑器等都在 `workspace/recorder/tools/`）
+- 分层实现：L0 传感器 `lib/recorder/sensors/`、L1 处理 `lib/recorder/processor/`、L2 时间轴 `lib/recorder/timeline/`、L3 编辑 `lib/recorder/editor/`、L4 agent 消费库 `workspace/recorder/consumer/`（无后端 HTTP 端点，直接 import）
+- 用户文档：`docs/recorder-guide.md`（含 L4 消费层章节）
 
 ### `release/` — 源码分发审计（v2 compiler 引擎）
 - `cli.py` — 单入口多 subcommand CLI（`prepare` / `compute-digest` / `build` / `list-components` / `scan`）。所有发布工作流经此入口；旧的 `audit_profile.py` + `export_release.py` 已删除（2026-07-31，T18）
@@ -148,6 +135,16 @@ Tkinter GUI 窗口，用于向后端发送用户消息。
 
 ### `fake_llm_proxy.py` — Fake LLM Proxy
 学习用虚拟 API 端点，接收 OpenAI 格式请求返回默认文本，内置实时网页监控。
+
+### `x_video_dl.py` — x.com(Twitter) 视频下载
+走 savetwitter.net 免梯子解析链路（解析 API → dl.snapcdn.app 签名直链 → 流式下载），
+顺序前台执行、逐条输出进度、条间限速，自动选最高分辨率并校验 MP4 文件头。
+
+- CLI：`uv run python tools/x_video_dl.py <URL> [URL ...] [--max-res 720] [--out DIR] [--seq-start N] [--prefix TAG]`
+- 输出默认 `~/<data_drive>:/Downloads/x_videos_<当天日期>/`
+- ⚠️ 输出文件名严禁含冒号（Windows 会静默写进 NTFS ADS：主文件 0 字节、播放器打不开），
+  脚本已做白名单清洗；解析按钮 label 内嵌 `<i>` 标签的正则坑详见脚本 docstring
+- 2026-09-16 由 chat_digest 的 x 视频下载任务转正，`tools_manifest.json` 注册于 `media_dl` 分类
 
 ## 已迁移到 workspace/
 

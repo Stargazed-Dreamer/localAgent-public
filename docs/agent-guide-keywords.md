@@ -189,6 +189,24 @@ for kw, tts in sorted(shared.items(), key=lambda x: -len(x[1])):
 | 9 | `'看一下'` → daily_summary(5) | 弱匹配 5 分，不 strong_match | bigram 偶然重叠，影响小 |
 | 10 | `'保存一下'` → gkd_signin_automation(5) | 弱匹配 5 分 | 同义词组误命中，影响小 |
 
+## 3.5 复扫记录（2026-09-15，history.json 重放）
+
+用 `data/agent_guide/history.json` 最近 50 条真实调用重放（脚本 `temp/guide_history_recheck.py`）：
+
+**keywords 层 0 缺口**：
+- 共享 keyword 检查 = 0 个（8-05 清单 #5/#6/#7 的共享词问题确认已修复）
+- 历史失配案例自愈验证：`"把…整合为项目正式 skill"` → adhoc.bat_writing(44, strong) ✓（bat_writing 注册后覆盖）；`"帮我总结一下XX群最近的群聊"` → adhoc.chat_digest(33, strong) ✓（chat_digest 注册后覆盖）
+- `"做大数据库作业"` weak 属设计内：homework workspace 的 manifest.toml 注明 agent_guide 注册暂缓
+
+**剩余观察项（embedding 层，keywords 修不了）**：
+
+| # | 现象 | 根因 | 为什么暂不修 |
+|---|---|---|---|
+| O1 | `"homework工作今天更新一轮砺儒云的情况"` → cross_workspace_advisor(18, strong=True) 误路由 | 语义补强双条件（score≥15 + cosine≥0.4）拉 strong。实测 cosine 0.547，top-5 全挤在 0.53-0.55（中文短文本 embedding 基线偏高） | 设计者正例 `"我今天都干了啥"`→daily_summary cosine 仅 0.517 **低于**误匹配值——cosine 绝对阈值无法区分两者，调阈值会连正例一起杀掉。实际伤害已被下游防御化解：cross_workspace_advisor 的 first_action 第一层即"本项目维护→不走本 skill"。待 homework 注册 task_type 后自然消失 |
+| O2 | `"修复 tools/check_skills.py 校验器…"` → top1=headless_session(40, strong=False) | 多个 kw_fuzzy 50-67% 松匹配堆分（8 个 ×3） | strong=False 走 GeneralGuide，其 dev_entry_points 决策树（small_fix→anti_hallucination）兜底正确；anti_hallucination 语义 cosine 0.665 排第 3，方向信号存在 |
+
+**结论**：keywords 编写层面无需变更。若未来 embedding 更换或 homework 注册，复跑 `temp/guide_history_recheck.py` 验证 O1 是否消失。
+
 ## 4. 编写 keywords 的标准流程
 
 新增或修改 GUIDE_REGISTRY 条目时，按以下流程：

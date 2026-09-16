@@ -1,3 +1,13 @@
+---
+name: auto_shutdown
+description: >
+  挂机监控自动关机：agent 自写检测 loop（轮询进程/日志/API/文件/时间等条件），
+  条件满足后调 POST /auto_shutdown/trigger 触发 120s 倒计时关机（可 /auto_shutdown/cancel 中止），
+  关机不走 computer use。当用户说"挂机到 XX 完成自动关机"、"游戏挂机关机"、"等下载完关机"、
+  "定时关机"、"X 点关机"、"条件关机"、"睡前关机"、"后台关机"时触发。
+task_type: adhoc.auto_shutdown
+---
+
 # auto_shutdown — 自动关机（挂机监控）
 
 > task_type: `adhoc.auto_shutdown`

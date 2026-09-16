@@ -1,5 +1,6 @@
 """健康检查端点：通过 StatusProvider 模式聚合各模块状态"""
 
+import asyncio
 import json
 import logging
 import threading
@@ -17,7 +18,9 @@ from server.config import (
 
 logger = logging.getLogger("localagent.health")
 
-VERSION = "0.46.0"
+# 回退默认值：唯一权威来源是 server/main.py 的 VERSION（main 显式传参覆盖此默认，
+# 且 health→main 导入会循环依赖，故此处仅保持同步 + 注明来源）
+VERSION = "0.48.0"
 
 
 # ========== 模块错误注册表（last_error 追踪）==========
@@ -709,6 +712,8 @@ def register_health_routes(app: FastAPI, version: str = VERSION):
         # 组件健康状态通过 manifest [health_check] 段动态发现，
         # accounting 字段从动态结果中取值以保持 HealthResponse 向后兼容
         _component_health = _get_component_health_status()
+        # browser 状态内含同步 urllib×2（各 timeout=2），包 to_thread 避免阻塞事件循环
+        browser_status = await asyncio.to_thread(_get_browser_status)
         result = HealthResponse(
             status="ok",
             version=version,
@@ -716,7 +721,7 @@ def register_health_routes(app: FastAPI, version: str = VERSION):
             ocr=_get_ocr_status(),
             agent=_get_agent_status(),
             apikey=_get_apikey_status(),
-            browser=_get_browser_status(),
+            browser=browser_status,
             exec=_get_exec_status(),
             screen=_get_screen_status(),
             vision=_get_vision_status(),

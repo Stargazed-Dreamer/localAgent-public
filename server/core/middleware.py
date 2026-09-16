@@ -38,11 +38,12 @@ def _load_mcp_stats() -> None:
         _stats = {}
 
 
-def _save_mcp_stats() -> None:
+def _save_mcp_stats(snapshot: dict[str, dict]) -> None:
+    """写全量统计 JSON。只序列化调用方传入的快照，不直接读 _stats（避免竞态）。"""
     try:
         _STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
         _STATS_FILE.write_text(
-            json.dumps(_stats, ensure_ascii=False, indent=2),
+            json.dumps(snapshot, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     except OSError:
@@ -64,8 +65,10 @@ def record_call(tool_name: str, duration_ms: float, success: bool = True) -> Non
         if not success:
             entry["error_count"] += 1
             entry["last_error"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        # 持锁内做快照：保存线程只序列化快照，不与后续 record_call 变更竞态
+        snapshot = {name: dict(e) for name, e in _stats.items()}
     # 异步保存（不阻塞请求）
-    threading.Thread(target=_save_mcp_stats, daemon=True).start()
+    threading.Thread(target=_save_mcp_stats, args=(snapshot,), daemon=True).start()
 
 
 def get_mcp_stats() -> dict:
@@ -95,7 +98,7 @@ def reset_mcp_stats() -> None:
     global _stats
     with _stats_lock:
         _stats = {}
-    _save_mcp_stats()
+    _save_mcp_stats({})
 
 
 def register_middleware(app):

@@ -67,6 +67,11 @@
       "id": "secrets",
       "name": "密钥备份",
       "icon": "key"
+    },
+    {
+      "id": "media_dl",
+      "name": "媒体下载",
+      "icon": "download"
     }
   ],
   "tools": [
@@ -992,6 +997,26 @@
       "options": [],
       "notes": "手写字段 entry/user_perspective/verify_howto 重跑保留；改面板后重跑并回填缺失。",
       "user_facing": true
+    },
+    {
+      "id": "x_video_dl",
+      "name": "X视频下载",
+      "category": "media_dl",
+      "description": "x.com(Twitter) 视频批量下载——savetwitter.net 免梯子解析链路（解析API→签名直链→流式下载），顺序前台执行逐条输出，自动选最高分辨率并校验 MP4 文件头",
+      "script": "tools/x_video_dl.py",
+      "command": ".venv\\Scripts\\python.exe tools/x_video_dl.py",
+      "usage": "agent",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {"name": "urls", "label": "状态链接", "description": "x.com/twitter 状态链接，可一次传多个"},
+        {"name": "--max-res", "optional": true, "description": "分辨率上限如 720（默认取最高档）"},
+        {"name": "--out", "optional": true, "description": "输出目录（默认 ~/<data_drive>:/Downloads/x_videos_<当天日期>）"},
+        {"name": "--seq-start", "optional": true, "description": "文件名序号起始（默认 1）"},
+        {"name": "--prefix", "optional": true, "description": "文件名附加标记（如 追加/来源说明）"}
+      ],
+      "notes": "输出文件名严禁含冒号（Windows 静默写进 NTFS ADS：主文件 0 字节、播放器打不开；脚本已白名单清洗）。解析按钮 label 内嵌 <i> 标签的正则坑详见脚本 docstring。2026-09-16 由珥_eclipse聊天 x 视频下载任务转正。",
+      "user_facing": false
     }
   ]
 }

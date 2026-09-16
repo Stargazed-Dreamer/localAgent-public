@@ -15,6 +15,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta
+from typing import Any
 
 from server.memory.config import MemoryConfig
 from server.memory.store import MemoryStore
@@ -25,9 +26,19 @@ logger = logging.getLogger(__name__)
 class MemoryMaintainer:
     """记忆维护器：老化评分 + LLM 验证"""
 
-    def __init__(self, store: MemoryStore, config: MemoryConfig):
+    def __init__(self, store: MemoryStore, config: MemoryConfig,
+                 search_tracer: Any | None = None,
+                 evidence_ledger: Any | None = None):
+        """初始化维护器。
+
+        5-14: search_tracer / evidence_ledger 由 MemoryManager 正常传参注入
+        （此前靠 manager 侧 Any 动态挂属性 + getattr 字符串约定取回）。
+        用 Any 承载：二者与 maintainer 分属不同模块，无静态类型契约。
+        """
         self.store = store
         self.config = config
+        self._search_tracer: Any | None = search_tracer
+        self._evidence_ledger: Any | None = evidence_ledger
 
     def should_run(self) -> bool:
         """检查是否应该运行维护（距上次运行 > interval_hours）"""
@@ -54,23 +65,18 @@ class MemoryMaintainer:
 
         # v3: 清理过期 search_traces（如果 SearchTracer 已注入）
         trace_cleanup = {"deleted": 0, "cutoff": None, "retention_days": 0}
-        # maintainer 持有 store 引用，store.config.search_tracer_retention_days 不存在
-        # 我们通过 manager 注入 search_tracer（见 manager.py）
-        # maintainer 自己不直接持有 tracer，但可以通过 self.config 计算
+        # 5-14: tracer/ledger 经 __init__ 正常注入，直接读属性
         try:
-            # 尝试调用注入的 _search_tracer（由 MemoryManager.set_search_tracer 设置）
-            tracer = getattr(self, "_search_tracer", None)
-            if tracer is not None:
-                trace_cleanup = tracer.cleanup_old()
+            if self._search_tracer is not None:
+                trace_cleanup = self._search_tracer.cleanup_old()
         except Exception as e:
             logger.warning(f"清理 search_traces 失败: {e}")
 
         # v3: 清理过期 evidence_ledger（如果 EvidenceLedger 已注入）
         evidence_cleanup = {"deleted": 0, "cutoff": None, "retention_days": 0}
         try:
-            evidence_ledger = getattr(self, "_evidence_ledger", None)
-            if evidence_ledger is not None:
-                evidence_cleanup = evidence_ledger.cleanup_old()
+            if self._evidence_ledger is not None:
+                evidence_cleanup = self._evidence_ledger.cleanup_old()
         except Exception as e:
             logger.warning(f"清理 evidence_ledger 失败: {e}")
 
@@ -237,14 +243,17 @@ class MemoryMaintainer:
                 action = "keep"
 
             now_str = datetime.now().isoformat()
-            self.store.conn.execute(
-                """UPDATE memory_meta SET
-                       last_validated_at = ?,
-                       validation_status = ?,
-                       validation_note = ?
-                   WHERE key = ?""",
-                (now_str, action, str(result.get("reason", ""))[:500], key),
-            )
+            # 5-9: 单条 UPDATE 也包 _write_lock（"无法长时间持锁"仅针对整循环串行化；
+            # 单条写语句不包锁会与并发写交叉，违背 store 写锁约定）
+            with self.store._write_lock:
+                self.store.conn.execute(
+                    """UPDATE memory_meta SET
+                           last_validated_at = ?,
+                           validation_status = ?,
+                           validation_note = ?
+                       WHERE key = ?""",
+                    (now_str, action, str(result.get("reason", ""))[:500], key),
+                )
             stats["validated"] += 1
             stats[action] += 1
 

@@ -203,7 +203,7 @@ class BoundedScanner:
                         node["children"].append(child)
                         node["size"] += child["size"]
                         node["files"] += child["files"]
-                        node["dirs"] += child["dirs"]
+                        node["dirs"] += child["dirs"] + 1
                     elif entry.is_file(follow_symlinks=False):
                         self.files += 1
                         fsize = st.st_size
@@ -619,7 +619,7 @@ def cmd_resume(args):
     children = tree.get("children", [])
     tree["size"] = sum(c.get("size", 0) for c in children) + sum(f["size"] for f in tree.get("files_top", []))
     tree["files"] = sum(c.get("files", 0) for c in children) + len(tree.get("files_top", []))
-    tree["dirs"] = sum(c.get("dirs", 0) for c in children)
+    tree["dirs"] = sum(c.get("dirs", 0) for c in children) + len(children)
     tree["complete"] = scanner.stop_reason is None
 
     new_cache = _cache_path_for(root_path)

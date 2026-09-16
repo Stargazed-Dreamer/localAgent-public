@@ -62,6 +62,7 @@ class ModelManager:
         self._load_elapsed_ms: int | None = None
         self._last_inference_ms: int | None = None
         self._inference_count: int = 0
+        self._stats_lock = threading.Lock()         # 3-11: 观测计数原子性（to_thread 并发）
         self._last_error: str | None = None
         # 模型存活管理器接入（T2，design §8 继承 ocr-vram-guard §5.4/§5.5）
         self._load_lock = threading.Lock()          # 串行化冷启动加载 + 与卸载互斥
@@ -327,12 +328,16 @@ class ModelManager:
             if self._unloading:
                 return {"unloaded": False, "forced": False, "detail": "already_unloading"}
             self._unloading = True
-        forced = False
-        try:
+            # 3-4: 锁内复查引擎存在性——加载全程持 _load_lock，若此刻有加载在途，
+            # unload 会阻塞到锁释放后读到已赋值的引擎并正常卸载；锁外提前读 None
+            # 误报 already_unloaded 会导致 keep_models=false 场景显存不释放
             if self._ocr_engine is None:
+                self._unloading = False
                 self._reset_load_stats()
                 self._loaded_at = None
                 return {"unloaded": True, "forced": False, "detail": "already_unloaded"}
+        forced = False
+        try:
             # 排空在途推理（局部引用语义保证在途 predict 可跑完）
             deadline = time.time() + drain_timeout
             while self.in_flight_count() > 0 and time.time() < deadline:
@@ -452,9 +457,10 @@ class ModelManager:
         return self._ocr_engine is None and self._last_error is not None
 
     def record_inference(self, elapsed_ms: int) -> None:
-        """记录一次推理耗时"""
-        self._last_inference_ms = elapsed_ms
-        self._inference_count += 1
+        """记录一次推理耗时（3-11: to_thread 并发下 += 可能丢更新，包锁保证原子）"""
+        with self._stats_lock:
+            self._last_inference_ms = elapsed_ms
+            self._inference_count += 1
 
     def get_vl_client(self):
         from server.config import get_vision_config
@@ -481,6 +487,11 @@ models = ModelManager()
 
 def _split_long_image(img: Image.Image, max_height: int = 3000) -> list[Image.Image]:
     w, h = img.size
+    # max_height 是端点用户可控参数（/ocr/*、/screen/ocr 均透传）。若 <= 重叠像素，
+    # 切割步进（max_height - _SPLIT_OVERLAP）不为正，while y < h 永不推进 →
+    # 死循环 + pieces 无限增长（2026-09-13 code review 3-1，实测 max_height=100/200/0/-1 均触发）。
+    # clamp 到安全下限 2*_SPLIT_OVERLAP，保证每块仍有非重叠区域。
+    max_height = max(int(max_height), _SPLIT_OVERLAP * 2)
     if h <= max_height:
         return [img]
     pieces = []

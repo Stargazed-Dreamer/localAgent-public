@@ -16,6 +16,7 @@ known limitation: 无（原 pool.stream() 事件不含上游 key/模型，流式
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -607,7 +608,8 @@ class KeyUpdateRequest(BaseModel):
 async def inbound_keys_list():
     from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
-    today_counts = call_log.today_count_by_key()
+    # 5-16: 同步 SQLite 读移入线程（写路径已队列化，此处只改读路径）
+    today_counts = await asyncio.to_thread(call_log.today_count_by_key)
     keys = []
     for k in get_key_store().list_keys():
         k = dict(k)
@@ -654,8 +656,11 @@ async def inbound_calls_list(key_id: str | None = None, model: str | None = None
                              status: str | None = None, stream: bool | None = None,
                              date_from: str | None = None, date_to: str | None = None,
                              limit: int = 200):
-    rows = call_log.query(key_id=key_id, model=model, status=status, stream=stream,
-                          date_from=date_from, date_to=date_to, limit=min(limit, 1000))
+    # 5-16: 同步 SQLite 读（上限 200k 行时事件循环停顿秒级）移入线程
+    rows = await asyncio.to_thread(
+        call_log.query, key_id=key_id, model=model, status=status, stream=stream,
+        date_from=date_from, date_to=date_to, limit=min(limit, 1000),
+    )
     return {"calls": rows, "count": len(rows)}
 
 
@@ -674,7 +679,8 @@ async def inbound_stats(days: int = 1, date_from: str | None = None,
             return _err(400, "date_to must be >= date_from")
         if (d1 - d0).days >= 30:
             return _err(400, "自定义范围不能超过 30 天（保留期上限）")
-        return call_log.aggregate(date_from=df, date_to=dt)
+        # 5-16: 聚合查询（单次 SELECT 最多 20 万行 + Python 侧排序取分位）移入线程
+        return await asyncio.to_thread(call_log.aggregate, date_from=df, date_to=dt)
     if days not in (1, 7, 30):
         return _err(400, "days must be one of 1/7/30")
-    return call_log.aggregate(days=days)
+    return await asyncio.to_thread(call_log.aggregate, days=days)

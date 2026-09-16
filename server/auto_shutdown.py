@@ -44,7 +44,19 @@ CANCEL_HINT: str = "shutdown /a"
 # 项目根目录（server/ 的上一级）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = _PROJECT_ROOT / "temp" / "auto_shutdown"
-API_BASE = "http://127.0.0.1:8766"
+
+
+def _resolve_api_base() -> str:
+    """从 config.toml [server] 动态拼 API base（模块加载时读一次端口）。"""
+    try:
+        from server.config import get_server_config
+        cfg = get_server_config()
+        return f"http://{cfg['host']}:{cfg['port']}"
+    except Exception:
+        return "http://127.0.0.1:8766"
+
+
+API_BASE = _resolve_api_base()
 
 
 # ========== 模块级状态 ==========
@@ -139,7 +151,7 @@ async def _push_inbox(
 
 
 def _trigger_shutdown_command() -> tuple[bool, str | None]:
-    """调 shutdown /s /t 60 异步触发关机，返回 (success, error)"""
+    """调 shutdown /s /t 120 异步触发关机，返回 (success, error)"""
     try:
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         subprocess.Popen(TRIGGER_COMMAND, creationflags=creationflags)
@@ -162,7 +174,7 @@ def _cancel_shutdown_command() -> tuple[bool, str | None]:
 
 @router.post("/trigger", operation_id="auto_shutdown_trigger")
 async def trigger_shutdown(req: TriggerRequest) -> dict:
-    """触发关机（60s 倒计时，可调 /auto_shutdown/cancel 中止）
+    """触发关机（120s 倒计时，可调 /auto_shutdown/cancel 中止）
 
     内部依次：权限检查 → 递增 trigger_count → 截屏（可选）→ 推 inbox → 调 shutdown 命令（除非 dry_run）
     截屏 / inbox 失败均不阻塞关机。

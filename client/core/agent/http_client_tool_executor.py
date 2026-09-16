@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -182,7 +183,11 @@ class HttpClientToolExecutor:
         headers = {"X-Agent-Caller": self.caller}
 
         try:
-            resp = self._send_request(
+            # to_thread 包裹同步 requests（2026-09-13 code review 8-1）：execute 在
+            # worker 事件循环里运行，直接调同步 HTTP 会阻塞整个循环（审批等待最长
+            # 200s），期间停止按钮（interrupt）与 steer 消息全部排队无法处理。
+            resp = await asyncio.to_thread(
+                self._send_request,
                 method=entry.method,
                 url=url,
                 query=query_params,

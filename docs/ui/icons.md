@@ -1,7 +1,7 @@
 # 图标系统（icons.md）
 
-> 54 个内置 SVG 图标，Lucide 风格自绘（24×24 网格 / stroke 2px / 圆角端点 / currentColor），
-> 按主题色动态着色。实现：`lib/ui/icons.py`，资源：`lib/ui/resources/icons/`。
+> 内置 SVG 图标，Lucide 风格自绘（24×24 网格 / stroke 2px / 圆角端点 / currentColor），
+> 按主题色动态着色。实现：`lib/ui/icons.py`，资源：`lib/ui/resources/icons/`（数量随迭代增长，以目录实际文件为准）。
 
 ## 为什么不用 emoji
 

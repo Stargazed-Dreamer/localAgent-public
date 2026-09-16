@@ -39,6 +39,7 @@
 | [skill_creator.md](file:///<project_root>/workspace/dev_toolkit/skill_creator.md) | Skill 创建精华（补充 anthropic 版的 evals/progressive disclosure/description 优化器） | anthropics/skills | ~350 |
 | [evals_template.json](file:///<project_root>/workspace/dev_toolkit/evals_template.json) | evals 模板（5 种 assertion 类型 + 对照组） | anthropics/skills | ~80 |
 | [project_essentials.md](file:///<project_root>/workspace/dev_toolkit/project_essentials.md) | LocalAgent 项目改进精华（三层 MCP / Tool Annotations / anti-AI-slop 实战 / 磁盘清理铁律） | LocalAgent | ~450 |
+| [team_playbook.md](file:///<project_root>/workspace/dev_toolkit/team_playbook.md) | 小团队项目启动军规（game jam 复盘提炼：leader 定标准 / 术语表 / 常量集中 / commit 纪律 / 封包缓冲） | 实战复盘 | ~60 |
 | [.agents/skills/](file:///<project_root>/workspace/dev_toolkit/.agents/skills/) | 34 个 skill 蓝图（SDD 链 6 + 安全网 1 + 验证调试 2 + 元 skill 3 + 工程化 dev/* 7 + UI/UX 1 + 前端设计工艺 2 + 思维工具集 daily/ 11） | anthropics/skills + LocalAgent + mattpocock/skills + pbakaus/impeccable + nutlope/hallmark + KKKKhazix/khazix-skills + 数字生命卡兹克文章 | - |
 
 ## Skill 蓝图概览（.agents/skills/，34 个）

@@ -29,7 +29,7 @@ v6-lite 对话引擎是 client 端的 LLM agent 运行时，负责：
 | LLM 网关 | [llm_pool_gateway.py](file:///<project_root>/client/core/agent/llm_pool_gateway.py) | `LLMPoolGateway` | 经 server `/llm/pool/chat-tools` 调用 LLM。实现 `LLMGateway` 协议（`async def call`），不自建 provider client——key 轮换/重试/熔断由 server pool 处理。内置看门狗配置（`stream_idle_timeout_secs`/`stall_detection_window_secs`） |
 | 启动恢复器 | [reconciler.py](file:///<project_root>/client/core/agent/reconciler.py) | `reconcile()` 函数 | 扫描 `streaming/awaiting_tools` 状态 session → 标记 `interrupted`；扫描 `pending/running` tool_calls → 无对应 tool_result 时补 `is_error=true` 的 tool_result（yieldMissingToolResultBlocks，防 provider 400）；扫描未合并 streaming 事件 → 合并为完整 Message。幂等可重复运行 |
 | 会话门面 | [facade.py](file:///<project_root>/client/core/agent/facade.py) | `SessionFacade` | 纯 Python Facade 封装 SessionRunner。GUI worker 通过它调用引擎，核心逻辑不依赖 Qt。一个 facade 实例对应一次 `run()`。提供 `start/steer/interrupt/events` 接口，`_start_lock` 串行化 start 防并发，保存 `_runner_task` 供 interrupt 时 `task.cancel()` |
-| 死循环检测器 | [doom_loop.py](file:///<project_root>/client/core/agent/doom_loop.py) | `DoomLoopDetector` | thinking_delta 尾重复检测。滑动窗口 O(n²) 算法，命中后 mid-stream abort + retry budget disarm + backoff + 重新请求（注入"避免重复"提示）。非线程安全（单 session 单线程使用） |
+| 死循环检测器 | [doom_loop.py](file:///<project_root>/client/core/agent/doom_loop.py) | `DoomLoopDetector` | thinking_delta 尾重复检测。滑动窗口 O(n²) 算法。命中后 mid-stream abort，会话直接中断**不重试**（详见 §6.1）。非线程安全（单 session 单线程使用） |
 
 **辅助组件**：
 
@@ -172,15 +172,13 @@ runner 运行中输入框上方显示 3 tab，单一发送键按当前 tab 触�
 | `tail_size` | 2000 | 检测窗口大小（最近 N 字符） |
 | `min_repeat_len` | 50 | 最小重复单元长度 |
 | `repeat_threshold` | 3 | 连续重复次数阈值 |
-| `max_retries` | 3 | 命中后最多重试次数 |
-| `backoff_base_ms` | 200 | 基础退避毫秒 |
-| `backoff_jitter_ms` | 300 | 退避抖动毫秒 |
+| `max_retries` / `backoff_*` | — | **已不使用**（B1 重构后不重试，字段仅为兼容保留） |
 
 **检测范围**：仅 `thinking_delta` 流的尾重复（不扩展到 `text_delta` / 工具指纹）。
 
 **触发算法**：维护 `tail_window` 字符串，tail 长度 ≥ `min_repeat_len * repeat_threshold` 时启动 O(n²) 滑动窗口检测，从大 L 开始尝试找到第一个匹配的重复单元。
 
-**命中后处理**：mid-stream abort → retry budget disarm → backoff → 重新请求（注入"避免重复"系统提示）→ 最多重试 3 次，连续命中写 error event 终止。`stop_reason` 标记为 `"doom_loop"`，runner 主循环检查此 stop_reason 走 retry 路径。
+**命中后处理（B1 重构后，不重试）**：mid-stream abort → 已收到的 partial text 落库为 `source="partial"` 消息 → streaming 事件标 `invalidated` → 写一条**用户可见但 LLM 不可见**的系统警告（`source="system_warning"`，建议换种问法或新开对话）→ 写 `transition(doom_loop_detected)` 事件 → 会话状态置 `interrupted`，`RunOutcome.stop_reason="doom_loop_detected"`。用户看到警告后自行决定下一步（用户消息即隐式 nudge）。
 
 ### 6.2 Reconciler 启动恢复
 
@@ -235,7 +233,7 @@ flowchart TB
     end
 
     subgraph "SQLite WAL"
-        DB[(agent_events.db<br/>8 表 schema v9)]
+        DB[(data/client/agent.db<br/>schema v9)]
     end
 
     subgraph "Server"

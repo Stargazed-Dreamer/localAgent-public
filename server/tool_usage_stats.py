@@ -26,6 +26,7 @@
 import json
 import logging
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,15 @@ logger = logging.getLogger("localagent.tool_usage_stats")
 
 _STATS_FILE = Path(__file__).parent.parent / "data" / "tool_usage_stats.json"
 _LOCK = threading.Lock()
+
+# 6-11: 节流落盘——原实现每次 exec_python 调用同步读+写整个 stats JSON（热路径双 IO）。
+# 现内存缓存 + dirty 计数，每 20 次调用或距上次落盘超 60s 才写盘（参照 vl_quota
+# 批量写盘模式）。代价：进程退出丢最近最多 60s/19 次统计，对使用率统计可接受。
+_stats_cache: dict | None = None
+_dirty_since_save = 0
+_last_save_monotonic = 0.0
+_SAVE_EVERY_N_CALLS = 20
+_SAVE_INTERVAL_S = 60.0
 
 
 def _load_stats() -> dict:
@@ -45,6 +55,14 @@ def _load_stats() -> dict:
     except Exception as e:
         logger.warning(f"加载 tool_usage_stats 失败: {e}")
         return {}
+
+
+def _get_stats_cached() -> dict:
+    """带内存缓存的加载（6-11：避免每次调用都读盘）。调用方须持 _LOCK。"""
+    global _stats_cache
+    if _stats_cache is None:
+        _stats_cache = _load_stats()
+    return _stats_cache
 
 
 def _save_stats(stats: dict) -> None:
@@ -77,6 +95,7 @@ def record_exec_python_call(
     """记录一次 exec_python 调用（spec D10）。
 
     线程安全（用 threading.Lock）。失败不抛异常（best-effort）。
+    节流落盘（6-11）：更新只进内存缓存，每 20 次调用或距上次落盘超 60s 才写盘。
 
     Args:
         code: 用户代码（只统计长度，不存内容）
@@ -84,9 +103,10 @@ def record_exec_python_call(
         cwd: 工作目录（空字符串表示未指定）
         elapsed_ms: 耗时（毫秒，0=未统计/未完成）
     """
+    global _dirty_since_save, _last_save_monotonic
     try:
         with _LOCK:
-            stats = _load_stats()
+            stats = _get_stats_cached()
             entry = stats.setdefault("exec_python", {
                 "call_count": 0,
                 "code_length_buckets": {"<100": 0, "100-1k": 0, "1k-10k": 0, ">10k": 0},
@@ -119,12 +139,25 @@ def record_exec_python_call(
                 entry["elapsed_count"] += 1
 
             entry["last_updated"] = datetime.now().isoformat(timespec="seconds")
-            _save_stats(stats)
+            # 6-11: 节流落盘（dirty 计数 + 时间间隔，参照 vl_quota._persist_batch 模式）
+            _dirty_since_save += 1
+            now = time.monotonic()
+            if (
+                _dirty_since_save >= _SAVE_EVERY_N_CALLS
+                or (now - _last_save_monotonic) >= _SAVE_INTERVAL_S
+            ):
+                _save_stats(stats)
+                _dirty_since_save = 0
+                _last_save_monotonic = now
     except Exception as e:
         logger.warning(f"record_exec_python_call 失败: {e}")
 
 
 def get_stats() -> dict:
-    """获取当前统计数据（供审计用）。"""
+    """获取当前统计数据（供审计用）。
+
+    6-11: 返回内存缓存快照（含尚未落盘的节流增量），JSON round-trip 深拷贝
+    防调用方修改污染缓存。
+    """
     with _LOCK:
-        return _load_stats()
+        return json.loads(json.dumps(_get_stats_cached()))

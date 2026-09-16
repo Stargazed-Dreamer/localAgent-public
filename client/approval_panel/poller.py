@@ -1,15 +1,19 @@
 """轮询 pending 列表。
 
-QTimer 2s 间隔 GET /approvals/pending。
-结果通过信号发射给 panel（Ticket 04 只打印日志，Ticket 05 连接卡片渲染）。
+QTimer 2s 间隔触发，GET /approvals/pending 在 worker 线程执行（8-8：原实现
+同步 requests 在 GUI 主线程跑，后端 hang 时每 2s 卡 3s），结果通过信号
+（跨线程 queued）发射给 panel。
 Ticket 06：新增 new_arrivals 信号，发射新增的 approval_id 列表（用于托盘提醒）。
 """
 from __future__ import annotations
 
+import threading
+
 import requests
 from PySide6.QtCore import QObject, QTimer, Signal
 
-SERVER_URL = "http://127.0.0.1:8766"
+from client.core.constants import SERVER_URL  # 8-9: 端口单一真源
+
 POLL_INTERVAL_MS = 2_000  # 2s
 POLL_TIMEOUT_S = 3.0
 
@@ -34,6 +38,7 @@ class Poller(QObject):
         self._timer.timeout.connect(self._poll)
         self._last_ids: set[str] = set()
         self._first_poll = True  # 首次轮询不触发提醒（启动时已有 pending 不算"新"）
+        self._busy = False  # 上一轮请求未返回时跳过本轮（3s 超时 > 2s 间隔可能重叠）
 
     def start(self) -> None:
         """启动轮询定时器，立即查一次。"""
@@ -44,26 +49,36 @@ class Poller(QObject):
         self._timer.stop()
 
     def _poll(self) -> None:
-        try:
-            resp = requests.get(
-                f"{SERVER_URL}/approvals/pending",
-                timeout=POLL_TIMEOUT_S,
-            )
-            if resp.status_code != 200:
-                self.poll_fail.emit(f"HTTP {resp.status_code}")
-                return
-            data = resp.json()
-            pending = data.get("pending", [])
-            self.pending_updated.emit(pending)
-            # 检测新增
-            current_ids = {
-                item["approval_id"] for item in pending if "approval_id" in item
-            }
-            if not self._first_poll:
-                new_ids = list(current_ids - self._last_ids)
-                if new_ids:
-                    self.new_arrivals.emit(new_ids)
-            self._last_ids = current_ids
-            self._first_poll = False
-        except requests.RequestException as e:
-            self.poll_fail.emit(str(e))
+        # 8-8: HTTP 移出 GUI 主线程（requests 在 worker 线程，信号 emit 跨线程 queued 回主线程）
+        if self._busy:
+            return
+        self._busy = True
+
+        def _do_poll() -> None:
+            try:
+                resp = requests.get(
+                    f"{SERVER_URL}/approvals/pending",
+                    timeout=POLL_TIMEOUT_S,
+                )
+                if resp.status_code != 200:
+                    self.poll_fail.emit(f"HTTP {resp.status_code}")
+                    return
+                data = resp.json()
+                pending = data.get("pending", [])
+                self.pending_updated.emit(pending)
+                # 检测新增
+                current_ids = {
+                    item["approval_id"] for item in pending if "approval_id" in item
+                }
+                if not self._first_poll:
+                    new_ids = list(current_ids - self._last_ids)
+                    if new_ids:
+                        self.new_arrivals.emit(new_ids)
+                self._last_ids = current_ids
+                self._first_poll = False
+            except requests.RequestException as e:
+                self.poll_fail.emit(str(e))
+            finally:
+                self._busy = False
+
+        threading.Thread(target=_do_poll, daemon=True).start()

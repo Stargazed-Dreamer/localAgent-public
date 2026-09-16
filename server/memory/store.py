@@ -269,6 +269,19 @@ class MemoryStore:
             columns = [desc[0] for desc in cur.description]  # 从游标描述中提取列名，构建列名列表
             return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]  # 将查询结果转换为字典列表返回，每个字典对应一条记录
 
+    def delete_summaries_before(self, end_time: float) -> int:
+        """删除 end_time 早于给定时间戳的摘要记录，返回删除行数。
+
+        5-9: router 此前直接 conn.execute(DELETE FROM summaries) 绕过 _write_lock
+        约定，抽成 store 方法与其他写方法一致地包锁。
+        """
+        with self._write_lock:
+            cur = self.conn.execute(
+                "DELETE FROM summaries WHERE end_time < ?", (end_time,)
+            )
+            self.conn.commit()
+            return cur.rowcount
+
             # ─── 事实 ───────────────────────────────────────────────
 
     def upsert_fact(

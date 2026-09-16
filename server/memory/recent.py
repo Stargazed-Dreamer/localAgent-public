@@ -10,6 +10,7 @@ import os
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,12 @@ class RecentMemory:
             返回值：None
             """
             self.window_size = window_size  # 设置缓冲区窗口大小
-            self.save_dir = save_dir  # 设置保存目录
+            # 5-7: 相对路径基于项目根解析（不依赖 cwd），同 manager.py db_path 的处理
+            save_dir_path = Path(save_dir)
+            if not save_dir_path.is_absolute():
+                # recent.py 在 server/memory/ 下，3 级 parent 到项目根
+                save_dir_path = Path(__file__).resolve().parent.parent.parent / save_dir_path
+            self.save_dir = str(save_dir_path)  # 设置保存目录
             self.save_interval = save_interval  # 设置保存间隔
             self._buffer: deque = deque(maxlen=window_size)  # 创建一个最大长度为window_size的双端队列，用于缓冲数据
             self._pending_saves = 0  # 初始化待保存计数为0

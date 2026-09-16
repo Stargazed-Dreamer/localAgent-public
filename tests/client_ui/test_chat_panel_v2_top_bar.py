@@ -466,10 +466,12 @@ class TestRefreshLastUpdated:
             panel._current_session_id = "sess-test-1"
             panel._refresh_last_updated()
             text = panel._last_updated_label.text()
-            # 1700000000 对应 2023-11-14 22:13:20 UTC，本地时间因时区而异
-            # 验证格式 HH:MM
-            assert len(text) == 5
-            assert text[2] == ":"
+            # 1700000000 对应 2023-11-14 22:13:20 UTC（本地 2023-11-15），
+            # 2026-09-13 起跨年会话显示完整日期时间（YYYY-MM-DD HH:MM），
+            # 修复"只显示 HH:MM 对隔天/历史会话有歧义"
+            assert len(text) == 16
+            assert text[4] == "-" and text[7] == "-" and text[13] == ":"
+            assert text.startswith("2023-11-")
         finally:
             _cleanup_panel(panel, qapp)
 

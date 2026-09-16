@@ -235,6 +235,11 @@ class BrowserSetHttpCredentialsResponse(BaseSchema):
 async def browser_set_http_credentials(req: BrowserSetHttpCredentialsRequest):
     """动态设置 HTTP Basic Auth 凭证（context 级），解决 401 WWW-Authenticate 阻塞。
 
+    ⚠️ 已失效（4-6）：Playwright 1.44+ 移除了 BrowserContext.set_http_credentials，
+    本端点调用在运行时必然抛 AttributeError 返回 EXECUTION_ERROR，且 401 场景实际
+    无解。已从 MCP 网关摘除（mcp_whitelist.GATEWAY_EXCLUDE），端点保留待凭证注入
+    方案落地后恢复，请勿调用。
+
     凭证存 session 内存（Playwright BrowserContext），不落盘。
     clear=True 时清除（传 None 给 Playwright）。
 

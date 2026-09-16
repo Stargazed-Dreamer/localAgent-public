@@ -1,9 +1,9 @@
 """Skill 一致性校验脚本。
 
 检查三处真源是否同步（仅适用于核心 skill）：
-  1. 文件系统：.agents/skills/ 下的 SKILL.md 和扁平 .md（排除 _vendor/_deprecated）
+  1. 文件系统：.agents/skills/ 下的 SKILL.md 和扁平 .md（排除 _vendor/_deprecated/upstream）
   2. _index.md：人工维护的 skill 索引（核心 skill 段）
-  3. GUIDE_REGISTRY：server/agent_guide.py 中手写的路由元数据
+  3. GUIDE_REGISTRY：server/agent_guide_data.py 中手写的路由元数据（agent_guide.py 仅 re-export）
 
 检查项（核心 skill）：
   - frontmatter 完整性：每个 skill 文件必须有 name + description + task_type
@@ -33,10 +33,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / ".agents" / "skills"
 INDEX_FILE = SKILLS_DIR / "_index.md"
-REGISTRY_FILE = ROOT / "server" / "agent_guide.py"
+REGISTRY_FILE = ROOT / "server" / "agent_guide_data.py"
 
-# 排除的目录（vendor 副本、弃用占位）
-EXCLUDE_DIRS = {"_vendor", "_deprecated"}
+# 排除的目录（vendor 副本、弃用占位、skill 内上游 fork 档案）
+EXCLUDE_DIRS = {"_vendor", "_deprecated", "upstream"}
 
 
 # ========== frontmatter 解析 ==========
@@ -95,14 +95,14 @@ def parse_frontmatter(content: str) -> dict | None:
 # ========== 扫描文件系统 ==========
 
 def scan_skill_files() -> list[dict]:
-    """扫描 .agents/skills/ 下所有 skill 文件（排除 _vendor/_deprecated）。
+    """扫描 .agents/skills/ 下所有 skill 文件（排除 _vendor/_deprecated/upstream）。
 
     返回 list of dict，每个 dict 含 path, rel_path, frontmatter, has_frontmatter。
     同时收集 SKILL.md（子目录式）和 .md（扁平式，排除 _index.md）。
     """
     skills: list[dict] = []
     for md_file in SKILLS_DIR.rglob("*.md"):
-        # 排除 _vendor 和 _deprecated
+        # 排除 _vendor / _deprecated / upstream
         if any(part in EXCLUDE_DIRS for part in md_file.parts):
             continue
         # 排除 _index.md
@@ -176,7 +176,7 @@ def parse_index() -> dict:
 # ========== 解析 GUIDE_REGISTRY ==========
 
 def parse_registry() -> dict:
-    """解析 server/agent_guide.py 的 GUIDE_REGISTRY，提取 task_type → skill_file 映射。
+    """解析 server/agent_guide_data.py 的 GUIDE_REGISTRY，提取 task_type → skill_file 映射。
 
     返回 {task_type: {"skill_file": str, "name": str}}。
     用正则匹配，避免 import agent_guide（可能失败）。

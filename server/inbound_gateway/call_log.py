@@ -24,7 +24,20 @@ from server.inbound_gateway.key_store import get_key_store
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data") / "inbound_calls.db"
+
+def _resolve_against_project_root(p: Path | str) -> Path:
+    """相对路径基于项目根目录解析（不依赖 cwd）；绝对路径原样返回（5-7）。
+
+    与 server/llm_pool/key_store.py 同名模式一致；本模块在 server/inbound_gateway/
+    下，3 级 parent 到项目根。cwd 不在项目根时调用日志会写到错误位置。
+    """
+    p = Path(p)
+    if p.is_absolute():
+        return p
+    return Path(__file__).resolve().parent.parent.parent / p
+
+
+DB_PATH = _resolve_against_project_root(Path("data") / "inbound_calls.db")
 RETENTION_DAYS = 30          # spec 默认值（design-decisions #5）
 QUEUE_MAX = 10_000           # 队列上限，满即丢（fail-open）
 _BATCH_SIZE = 100            # 攒批条数

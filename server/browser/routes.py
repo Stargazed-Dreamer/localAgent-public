@@ -275,7 +275,9 @@ async def browser_list_tabs():
 class BrowserCloseRequest(BaseSchema):
     """关闭标签页请求。
 
-    支持两种匹配方式（可同时使用，取并集）：
+    支持三种定位方式：
+    - session_id: 持久 session id（推荐，走 SessionManager 热路径 <250ms，
+      与 action/navigate/screenshot 双路径设计对齐）
     - urls: URL 子串模糊匹配（向后兼容）
     - tab_ids: 精确 target id 列表（来自 browser_list_tabs 的 target_id）
 
@@ -284,6 +286,7 @@ class BrowserCloseRequest(BaseSchema):
       避免误关同域多个标签（评估文档 4.2/5 节"同 URL 多标签无法稳定区分"修复）
     - all_matches=True：批量关闭所有匹配标签（原行为）
     """
+    session_id: str | None = None  # 持久 session 快路径
     urls: list[str] = []  # 模糊匹配（向后兼容）
     tab_ids: list[str] = []  # 精确 target id 列表
     all_matches: bool = False  # False=每模式只关第一个；True=关所有匹配
@@ -306,7 +309,9 @@ class BrowserResponse(BaseSchema):
 async def browser_close(req: BrowserCloseRequest):
     """关闭匹配标签页（通过/exec/python执行playwright）
 
-    支持两种匹配方式（可同时使用，取并集）：
+    支持三种定位方式：
+    - session_id: 持久 session id（推荐，复用 SessionManager 长连接直接 page.close()，
+      热态 <250ms；不传则走 exec_python 子进程模型，冷启动 3-4s）
     - urls: URL 子串模糊匹配（向后兼容）
     - tab_ids: 精确 target id 列表（推荐，避免歧义）
 
@@ -316,7 +321,26 @@ async def browser_close(req: BrowserCloseRequest):
 
     返回逐标签关闭结果（data.closing_details），包含 target_id/url/status/error。
     """
-    # 兼容旧调用：urls 为空且 tab_ids 也为空时返回明确错误
+    # ---- session 快路径（code review 4-4）：复用持久 SessionManager 连接 ----
+    # 与同包 action/navigate/screenshot 的双路径设计对齐：带 session_id 时直接
+    # close_session（内部 cancel dialog 超时兜底 task + 回收未消费 download +
+    # page.close() + 连坐关闭 popup），不再 exec_python 起新 Python 进程冷启动。
+    # page 关闭后 session 由 manager 的 page.on("close") 监听器自动清理。
+    if req.session_id:
+        from .session.manager import get_session_manager
+        mgr = await get_session_manager()
+        closed = await mgr.close_session(req.session_id, close_page=True)
+        if closed:
+            return BrowserResponse(success=True, message="已关闭 1 个标签页（session 快路径）")
+        # session 不存在 = 其 page 已被关闭/清理（page close 自动清 session、
+        # idle 淘汰会连 tab 一起关）。close 语义幂等，返回成功避免调用方
+        # 对已关闭标签重试报错。
+        return BrowserResponse(
+            success=True,
+            message=f"session_id {req.session_id} 不存在或已失效（标签页视为已关闭）",
+        )
+
+    # 兼容旧调用：session_id 为空时 urls / tab_ids 至少提供一个
     if not req.urls and not req.tab_ids:
         raise HTTPException(status_code=400, detail="urls 和 tab_ids 至少提供一个")
 
@@ -1146,40 +1170,45 @@ asyncio.run(main())
         if not success:
             err = _classify_error(message, "act", elapsed)
             return BrowserScreenshotResponse(success=False, elapsed_ms=elapsed, error=err)
-    # 压缩 + 可选 base64
+    # 压缩 + 可选 base64（4-3: 大图 LANCZOS resize + optimize 编码可达 100-300ms，
+    # 移入线程执行，避免阻塞事件循环——与 VL 调用已用 to_thread 的做法一致）
     try:
-        import io as _io
-        from pathlib import Path
+        def _encode_screenshot() -> tuple[str, dict | None]:
+            import io as _io
+            from pathlib import Path
 
-        from PIL import Image
-        image_path = Path(message)
-        if not image_path.is_file():
-            raise FileNotFoundError(f"截图文件不存在: {message}")
-        img = Image.open(image_path)
-        orig_w, orig_h = img.size
-        scale = min(1.0, req.max_size / max(orig_w, orig_h))
-        if scale < 1.0:
-            img = img.resize((max(1, int(orig_w*scale)), max(1, int(orig_h*scale))), Image.Resampling.LANCZOS)
-        has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
-        buf = _io.BytesIO()
-        if has_alpha:
-            img.convert("RGBA").save(buf, format="PNG", optimize=True)
-            mime = "image/png"
-        else:
-            img.convert("RGB").save(buf, format="JPEG", quality=req.quality, optimize=True)
-            mime = "image/jpeg"
-        data = None
-        if req.return_base64:
-            import base64 as _b64
-            data = {
-                "image": _b64.b64encode(buf.getvalue()).decode("ascii"),
-                "mime_type": mime,
-                "width": img.size[0],
-                "height": img.size[1],
-                "mcp_image_block": True,
-            }
+            from PIL import Image
+            image_path = Path(message)
+            if not image_path.is_file():
+                raise FileNotFoundError(f"截图文件不存在: {message}")
+            img = Image.open(image_path)
+            orig_w, orig_h = img.size
+            scale = min(1.0, req.max_size / max(orig_w, orig_h))
+            if scale < 1.0:
+                img = img.resize((max(1, int(orig_w*scale)), max(1, int(orig_h*scale))), Image.Resampling.LANCZOS)
+            has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+            buf = _io.BytesIO()
+            if has_alpha:
+                img.convert("RGBA").save(buf, format="PNG", optimize=True)
+                mime = "image/png"
+            else:
+                img.convert("RGB").save(buf, format="JPEG", quality=req.quality, optimize=True)
+                mime = "image/jpeg"
+            data = None
+            if req.return_base64:
+                import base64 as _b64
+                data = {
+                    "image": _b64.b64encode(buf.getvalue()).decode("ascii"),
+                    "mime_type": mime,
+                    "width": img.size[0],
+                    "height": img.size[1],
+                    "mcp_image_block": True,
+                }
+            return str(image_path), data
+
+        image_path, data = await asyncio.to_thread(_encode_screenshot)
         return BrowserScreenshotResponse(
-            success=True, path=str(image_path), data=data, elapsed_ms=elapsed,
+            success=True, path=image_path, data=data, elapsed_ms=elapsed,
         )
     except Exception as e:
         return BrowserScreenshotResponse(
@@ -1193,11 +1222,15 @@ asyncio.run(main())
             ),
         )
     finally:
-        try:
-            from pathlib import Path
-            Path(message).unlink(missing_ok=True)
-        except Exception:
-            pass
+        # 仅在 base64 已内嵌进响应时清理临时截图。return_base64=False 时 path 是
+        # 对外契约（调用方拿着路径后续读取），文件必须保留——此前 finally 无条件
+        # unlink 导致返回的 path 悬空（2026-09-13 code review 4-2）。
+        if req.return_base64:
+            try:
+                from pathlib import Path
+                Path(message).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 # ========== Ticket 04：触发新端点模块的 @router.post 注册 ==========

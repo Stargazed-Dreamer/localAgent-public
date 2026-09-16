@@ -9,7 +9,7 @@
 LocalAgent 是一个跑在 Windows 上的本地 Agent 系统，由四个核心组件构成：
 
 1. **FastAPI 后端**（端口 8766）—— Agent 的"大脑"和"状态仓库"。提供 200+ REST 路由 + MCP 网关，承载所有业务逻辑、记忆系统、LLM 池、Skill 路由。
-2. **PySide6 GUI 客户端**—— 桌面可视化层。8 个面板通过 HTTP + SSE 直连后端，附带 v6-lite 对话引擎。
+2. **PySide6 GUI 客户端**—— 桌面可视化层。多分组面板（对话/概览/待办/工具/监控/设置等，由 `PanelRegistry` 扫 `client/panels/` 自动发现，另加载 workspace manifest 声明的组件面板）通过 HTTP + SSE 直连后端，附带 v6-lite 对话引擎。
 3. **Chromium 调试浏览器实例**（CDP 9222）—— 浏览器自动化执行器。独立用户数据目录，与工作浏览器隔离。
 4. **`.agents/skills/` + `workspace/`** —— 60+ Skill 定义和任务工作区，是 Agent 的"经验库"和"工作台"。
 
@@ -26,7 +26,7 @@ LocalAgent 是一个跑在 Windows 上的本地 Agent 系统，由四个核心�
                                               │  │  agent_guide     │ ← 任务路由入口
 ┌──────────────┐   HTTP / SSE                │  │  memory (×3 层)  │    │
 │  PySide6 GUI │ ────────────────────────── │  │  llm_pool        │    │
-│  (8 个面板)  │                            │  │  ocr / vl / exec │    │
+│  (多分组面板)│                            │  │  ocr / vl / exec │    │
 └──────────────┘                            │  │  browser (CDP)   │    │
                                               │  │  screen / uia    │    │
 ┌──────────────┐                            │  │  todos / wip     │    │
@@ -125,7 +125,7 @@ LocalAgent 是一个跑在 Windows 上的本地 Agent 系统，由四个核心�
 
 - **直连 Streamable HTTP**：Trae / CatPaw / CodeBuddy 以及任何原生支持 MCP Streamable HTTP 的客户端，配 5 行 JSON 即可接入。
 - **STDIO 桥接**：Claude Code / Codex / 任何只支持 STDIO MCP 的客户端，通过 `tools/mcp_bridge.js`（基于 `mcp-remote`）把 STDIO 桥到 Streamable HTTP，后端零改动。
-- **桌面客户端**：项目自带的 PySide6 GUI 通过 HTTP + SSE 直连后端，附带 8 个面板。
+- **桌面客户端**：项目自带的 PySide6 GUI 通过 HTTP + SSE 直连后端（面板按 main / monitor / advanced 分组，由 `PanelRegistry` 自动发现）。
 
 **`agent_guide` 是统一的路由契约**：不管哪个 IDE 进来，调 `agent_guide(task='...')` 拿到的都是同一份候选 Skill 清单 + 同一份 `first_action` + 同一份自动注入的记忆。
 
@@ -219,16 +219,16 @@ LocalAgent 是一个跑在 Windows 上的本地 Agent 系统，由四个核心�
 
 后端有 200+ 个 REST 路由，但全塞进 LLM 工具目录会炸上下文。所以分三层：
 
-#### 第一层：直连白名单（`DIRECT_TOOLS`，40 个）
+#### 第一层：直连白名单（`DIRECT_TOOLS`）
 
 - 高频 + GET 类 + 无副作用的工具直接暴露给 LLM
 - 免审批，fast path
 - 比如 `memory_status` / `exec_status` / `wip_list` / `todos_due`
-- 定义在 [server/mcp_whitelist.py](../server/mcp_whitelist.py)
+- 定义在 [server/mcp_whitelist.py](../server/mcp_whitelist.py)，按 core / state / exec / perception / browser / llm 分桶；数量随迭代变动，以该文件为准
 
-#### 第二层：`localagent_advanced_tool` 网关（116 个工具）
+#### 第二层：`localagent_advanced_tool` 网关
 
-- 通过一个统一入口 tool 调用，参数里指定 `tool="xxx"` + `params={...}`
+- 通过一个统一入口 tool 调用，参数里指定 `tool="xxx"` + `params={...}`，背后路由到其余全部可暴露端点
 - 后端做统一 audit / approval，LLM 看到的工具目录只有一个
 - 代价是每次调用多一层 JSON 嵌套
 - 路由通过 `x-agent-callable` 标记决定是否进入 Agent 工具目录
@@ -248,9 +248,9 @@ POST /screen/ocr  # 带完整审批流程
 
 **路由策略**：
 
-- 通过 `x-agent-callable` 标记决定是否进入 Agent 工具目录
-- **默认 fail-closed**（未显式声明的路由不进）
-- 这个默认值是从一次"agent 误调了一个不该调的端点"事故后改的
+- 通过 `x-agent-callable` 标记决定是否进入 Agent 工具目录（判定实现在 `server/route_tags.py::_is_agent_callable`，真源是 `DIRECT_TOOLS` + `GATEWAY_EXCLUDE`）
+- **默认 fail-open**（新端点自动暴露给 agent）——这是 ADR-0018 明确保持的决策：加 MCP 端点的目的就是给 agent 用，fail-closed 会让每个新端点都要额外声明
+- 安全防护不靠这个标志，靠第二道防线：`safety_map`（read_only / safe / approval_required）→ `approval_level` → HTTP 中间件拦截，逐级递进。见 [ADR-0018](adr/0018-route-tags-fail-open-secondary-defense.md) 与 [SECURITY-RISKS.md](../SECURITY-RISKS.md) 对应条目
 
 **审批三层递进**（针对 approval_required 工具）：
 
@@ -271,7 +271,7 @@ POST /screen/ocr  # 带完整审批流程
 
 ## ADR 索引
 
-项目维护 17 个架构决策记录（ADR），按主题域分类。ADR 是项目架构决策的真源，覆盖 LLM 池 / 对话引擎 / 记忆系统 / 屏幕操控 / 审批 / 视觉 / 发布工具等。
+项目维护一组架构决策记录（ADR），按主题域分类。ADR 是项目架构决策的真源，覆盖 LLM 池 / 对话引擎 / 记忆系统 / 屏幕操控 / 审批 / 视觉 / 发布工具等主题域。
 
 完整索引见 [docs/adr/README.md](adr/README.md)。这里列举几个值得先读的：
 
@@ -305,10 +305,6 @@ POST /screen/ocr  # 带完整审批流程
 
 **屏幕操控**：
 - [docs/computer-use-reference.md](computer-use-reference.md) — UIA 语义层 / 桌面事务 / DPI / API 速查
-
-**全栈业务场景**：
-- [docs/walkthroughs.md](walkthroughs.md) — 4 个全栈业务场景 walkthrough（MCP 调用 / LLM 调用 / 屏幕授权 / 记忆搜索）+ VS Code 调试配置
-- [docs/code-knowledge-graph.md](code-knowledge-graph.md) — 代码知识图谱（模块 / 数据流 / 控制流 / 线程交互可视化）
 
 **工程流程**：
 - [docs/dev-workflow.md](dev-workflow.md) — 功能变更检查清单 / CHANGELOG 维护 / 发版流程 / MCP 工具原则

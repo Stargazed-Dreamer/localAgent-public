@@ -520,9 +520,11 @@ class SettingsPanel(PanelBase):
                 else:
                     self.done.emit(resp.get("config"), self._lvl, None)
 
-        # 防止用户快速切换时多个线程竞争
+        # 8-14: _LevelSubmitThread 重写 run()（无事件循环），quit() 是 no-op 已删；
+        # wait() 是对 run() 型 QThread 唯一有效的完成等待（限时防主线程长阻塞），
+        # 同时避免旧线程引用被替换后在运行中被 GC（"QThread: Destroyed while
+        # thread is still running"）
         if self._approval_submit_thread is not None and self._approval_submit_thread.isRunning():
-            self._approval_submit_thread.quit()
             self._approval_submit_thread.wait(1000)
         self._approval_submit_thread = _LevelSubmitThread(self._http, level)
         self._approval_submit_thread.done.connect(self._on_approval_level_submitted)

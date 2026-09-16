@@ -58,18 +58,24 @@ class TestStartPageComponents:
             page.deleteLater()
             qapp.processEvents()
 
-    def test_start_page_template_tab_has_add_button(self, qapp):
-        """模板 tab 栏右上角应有 "+" 新建模板按钮（D1）。"""
+    def test_start_page_has_new_template_button(self, qapp):
+        """开始页标题行应有 "前往新建模板" 按钮，点击发出 manage_templates_requested。
+
+        2026-09-13：按钮从 tab 栏 corner widget 挪到标题行（corner widget 与真实
+        模板 tab 语义撞车且几何被 QTabWidget corner 区域裁剪）。
+        """
         from PySide6.QtWidgets import QPushButton
 
         from client.panels.chat import _StartPage
 
         page = _StartPage()
         try:
-            corner_btn = page._template_tabs.cornerWidget()
-            assert corner_btn is not None, "模板 tab 栏右上角应有 corner widget（+ 按钮）"
-            assert isinstance(corner_btn, QPushButton), "corner widget 应是 QPushButton"
-            assert corner_btn.text() == "+", f"+ 按钮文本应为 '+'，实际 {corner_btn.text()!r}"
+            btns = [b for b in page.findChildren(QPushButton) if b.text() == "前往新建模板"]
+            assert len(btns) == 1, "应有且仅有一个 '前往新建模板' 按钮"
+            got = []
+            page.manage_templates_requested.connect(lambda: got.append(1))
+            btns[0].click()
+            assert got == [1], "点击按钮应发出 manage_templates_requested 信号"
         finally:
             page.deleteLater()
             qapp.processEvents()

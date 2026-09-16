@@ -1,9 +1,9 @@
 # Release Notes — public-full
 
 **Audience**: public
-**Source commit**: `e4ddebfcd94817ca531399aa6f93270d594025ec`
-**Plan digest**: `142245832fb9b1a11f4a0e3655a8d52086520afe2636c014ec8156f861bdcf5e`
-**Built at**: 2026-09-11T19:35:51.999160+00:00
+**Source commit**: `29b3adc7dfc6a50db982b47324fe23155f6b3cac`
+**Plan digest**: `09a4f385534aff5295c0c3fcd32bd8a4df03d34aa1c85bc1d5d542046ec7ff4b`
+**Built at**: 2026-09-16T16:11:47.364595+00:00
 
 ## 组件清单
 
@@ -40,8 +40,8 @@
 
 ## 文件统计
 
-- 文件总数：1560
-- 总大小：23187338 字节
+- 文件总数：1578
+- 总大小：23778035 字节
 
 ## ZIP 校验
 
@@ -58,6 +58,8 @@ certutil -hashfile localagent-public-full.zip SHA256
 
 本包含以下敏感内容豁免（已审计，认为可安全分发）：
 
+- `.agents/skills/bat_writing/SKILL.md` — sensitive_line_skips
+- `.agents/skills/bat_writing/references/guide.md` — sensitive_line_skips
 - `.agents/skills/deep_research/references/pdf_report_style.md` — sensitive_line_skips
 - `.agents/skills/office_docs/references/pdf_basic.md` — sensitive_line_skips
 - `client/core/agent/builtin_tools/base.py` — sensitive_line_skips
@@ -85,19 +87,21 @@ certutil -hashfile localagent-public-full.zip SHA256
 - `tools/media_classifier/mimo_lrc_analyze.py` — sensitive_line_skips
 - `tools/release/engine/prepare.py` — sensitive_line_skips
 - `workspace/disk_manager/SKILL.md` — sensitive_line_skips
+- `workspace/disk_manager/references/sns_format.md` — sensitive_line_skips
 - `workspace/disk_manager/scripts/backup_env.py` — sensitive_line_skips
 - `workspace/disk_manager/scripts/cleanup.py` — sensitive_line_skips
+- `workspace/disk_manager/tests/test_parse_sns.py` — sensitive_line_skips
 - `workspace/recorder/tools/editor/stt_runner.py` — sensitive_line_skips
 
 ## 审计追溯
 
 本构建计划由 `prepare_release()` 产出不可变 `PreparedRelease`，经用户审批后由 `build_release()` 构建产物。plan_digest 绑定所有输入字段，任何输入变化都会让 plan_digest 变化，使旧审批失效。
 
-- **plan_digest**: `142245832fb9b1a11f4a0e3655a8d52086520afe2636c014ec8156f861bdcf5e`
+- **plan_digest**: `09a4f385534aff5295c0c3fcd32bd8a4df03d34aa1c85bc1d5d542046ec7ff4b`
 - **profile_id**: `public-full`
 - **audience**: `public`
-- **source_commit**: `e4ddebfcd94817ca531399aa6f93270d594025ec`
-- **built_at**: 2026-09-11T19:35:51.999160+00:00
+- **source_commit**: `29b3adc7dfc6a50db982b47324fe23155f6b3cac`
+- **built_at**: 2026-09-16T16:11:47.364595+00:00
 
 ## 许可证
 

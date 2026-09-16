@@ -49,6 +49,7 @@ aliases: [hypergryph.com, ak.hypergryph.com, user.hypergryph.com, ef-webview.hyp
 | 已登录页面仍含登录组件 DOM | 只要 DOM 存在“登录”就判定未登录，或只要不含“前往登录”就判定已登录 | 只检查可见登录提示，并用可见寻访分类/真实 API 响应确认登录成功 | 2026-07-31 |
 | 终末地日志 token 解析失败 | 只读取 `token` / `server_id` | 优先读取 `u8_token` / `server`，兼容旧名称 | 2026-07-31 |
 | 固定睡眠可能漏页 | 点击后睡 0.5 秒就读取页面 | 每次点击等待对应 history 响应；`hasMore=true` 却无下一页时视为失败 | 2026-07-31 |
+| 窗口最小化/被遮挡时 Chromium 渲染挂起 | 误判为登录态丢失或接口故障，反复重新登录/重试请求 | DOM 仍在但 `getBoundingClientRect` 返回 0、`div.LbzcSW` 计数为 0 时，先怀疑渲染挂起：用 CDP `Browser.setWindowBounds` 恢复窗口尺寸，等 2s 后元素即恢复（2026-09-15 实测，验证脚本曾存 temp/ak_window_fix.py） | 2026-09-16 |
 
 ## 遗留问题
 
@@ -59,3 +60,4 @@ aliases: [hypergryph.com, ak.hypergryph.com, user.hypergryph.com, ef-webview.hyp
 | 日期 | 变更 |
 |------|------|
 | 2026-07-31 | 实跑明日方舟与终末地采集，记录登录态、分页和日志 URL 规则 |
+| 2026-09-16 | 补录窗口渲染挂起→CDP setWindowBounds 恢复的排查教训（源自寻访页诊断） |

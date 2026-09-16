@@ -34,7 +34,6 @@
 |------|------|------|
 | `/agent/status` | GET | Agent 配置状态（模型层级） |
 | `/guide` | GET | Agent Guide（task 参数获取任务指导） |
-| `/guide/usage` | GET | Agent Guide 使用统计 |
 | `/agent/score` | POST | LLM 内容评分（6 维度） |
 | `/agent/chat` | POST | LLM 通用对话 |
 
@@ -52,7 +51,7 @@
 | `/terminals/{tid}/input` | POST | 向终端发送输入 |
 | `/terminals/{tid}/kill` | POST | 终止终端 |
 | `/output` | GET | 列出缓冲的 exec 输出 |
-| `/output/{exec_id}` | POST | 查看 exec 输出（full/range/search） |
+| `/output/{exec_id}` | POST | 查看 `exec_cmd` 的一次性输出缓冲（full/range/search）；`exec_python` 完整输出走 `/terminal/{tid}/output` |
 
 ## 屏幕控制
 
@@ -76,7 +75,7 @@
 | `/screen/control/request` | POST | 请求用户介导的当前任务授权（确认窗复选框默认未勾选） |
 | `/screen/control/release` | POST | 主动收回当前任务授权（幂等） |
 
-> 第一次副作用 Computer Use 操作前优先调 `screen_request_control(task_description=..., source="agent")`。授权只对当前任务普通控制生效，空闲 300 秒自动撤销；危险操作和安全阻断不绕过。`verify_prompt` 仅在高风险/状态难判断时使用。详见 `computer_use.md`。
+> 第一次副作用 Computer Use 操作前优先调 `screen_request_control(task_description=..., source="agent")`。授权只对当前任务普通控制生效，空闲 300 秒自动撤销；危险操作和安全阻断不绕过。`verify_prompt` 仅在高风险/状态难判断时使用。详见 `.agents/skills/computer_use/SKILL.md`。
 
 ## 视觉AI
 
@@ -184,7 +183,6 @@
 | `/llm/pool/call-simple` | POST | 通过池调用 LLM（简化版，返回文本） |
 | `/llm/pool/stats` | GET | per-project token 消耗统计 |
 | `/llm/pool/health-check` | POST | 执行 key 健康检查 |
-| `/llm/pool/health-status` | GET | 查询上次检查状态 |
 | `/llm/pool/cleanup` | POST | 清理 works=false 的 key |
 
 > `/llm/pool/models` 和 `/llm/pool/recent-calls` 已加入 `GATEWAY_EXCLUDE`（监控面板专用），agent 用 `/health.llm_pool` 获取聚合状态。详见 `docs/llm-pool.md`。
@@ -208,7 +206,7 @@ OpenAI 兼容本地中转：外部 harness（Cline / Cherry Studio 等）把 `ba
 
 | 路径 | 方法 | 说明 |
 |------|------|------|
-| `/advanced/run` | POST | 调用低频/运维工具（116 个，通过 `localagent_advanced_tool`） |
+| `/advanced/run` | POST | 调用低频/运维工具（通过 `localagent_advanced_tool` 网关路由，可路由工具全量清单以 `GET /advanced/tools` 为准） |
 | `/advanced/tools` | GET | 列出可用高级工具（含 7 段语义说明） |
 | `/advanced/docs/tool` | GET | 单个工具的完整语义说明 |
 | `/advanced/docs/project` | GET | 项目级文档索引 |
@@ -254,4 +252,4 @@ OpenAI 兼容本地中转：外部 harness（Cline / Cherry Studio 等）把 `ba
 
 | 路径 | 说明 |
 |------|------|
-| `/mcp` | MCP 工具接口（39 直连 + 116 网关 + 11 模板） |
+| `/mcp` | MCP 工具接口（三层：直连白名单 + 网关路由 + 预定义模板；各层数量以 `server/mcp_whitelist.py` 和 `server/templates.py` 为准） |

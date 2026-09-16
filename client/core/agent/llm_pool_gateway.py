@@ -71,7 +71,9 @@ class LLMPoolGateway:
         model_tier: str | None = None,
         # v6-lite-streaming-gui T02: 看门狗配置（spec D15）
         stream_idle_timeout_secs: int = 90,
-        stall_detection_window_secs: int = 30,
+        # 默认禁用（0）：推理模型服务端静默思考 >30s 是常态，token 速率 stall 误杀正常流；
+        # 真死流由 stream_idle_timeout_secs（完全无数据）兜底。需要时可显式开启。
+        stall_detection_window_secs: int = 0,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -114,10 +116,13 @@ class LLMPoolGateway:
         if self.model_tier:
             body["model_tier"] = self.model_tier
 
-        # 3. 发请求
+        # 3. 发请求（to_thread 包裹同步 requests：call 在 worker 事件循环里被 await，
+        #    直接同步 post 最长阻塞 timeout 秒，冻结局部的中断/steer 处理——8-1）
         url = self.base_url + CHAT_TOOLS_PATH
         try:
-            resp = self._session.post(url, json=body, timeout=self.timeout)
+            resp = await asyncio.to_thread(
+                self._session.post, url, json=body, timeout=self.timeout
+            )
         except requests.exceptions.Timeout:
             return LLMResponse(
                 content=f"[LLMPoolGateway error] request timed out after {self.timeout}s",
@@ -243,7 +248,8 @@ class LLMPoolGateway:
 
         看门狗（D15）：
         - stream_idle_timeout_secs：N 秒无任何数据 → yield provider_error
-        - stall_detection_window_secs：N 秒窗口内 token 增量不足 → yield provider_error
+        - stall_detection_window_secs：N 秒窗口内 token 增量不足 → yield provider_error（默认 0=禁用：
+          推理模型服务端静默思考期不吐 token 属正常行为，token 速率检测会误杀；真死流由空闲超时兜底）
         - 0 = 禁用对应看门狗
 
         客户端可通过 break/asyncio.CancelledError 中断迭代，
@@ -252,61 +258,107 @@ class LLMPoolGateway:
         失败时（HTTP 错误、网络异常）只 yield 一个 provider_error + done 事件，
         不抛异常（与 call() 的 error-as-output-variant 保持一致）。
         413 context overflow 时 yield context_overflow 事件（runner 收到后抛 ContextOverflow）。
+
+        预增量重试：首个 delta 前的失败（非 200、连接异常、provider_error）自动重试
+        （最多 3 次尝试，间隔递增），换 key/提供商后成功对 runner 完全透明；
+        已产出增量后的 provider_error 照旧透传（runner break，保留已累积文本）。
         """
         # 构造请求体（与 call() 共用逻辑，但 stream 用 POST /llm/pool/stream）
         body = self._build_request_body(request)
         url = self.base_url + STREAM_PATH
 
-        try:
-            # stream=True 让 requests 不缓冲整个响应
-            resp = self._session.post(url, json=body, timeout=self.timeout, stream=True)
-        except requests.exceptions.Timeout:
-            yield {"type": SSE_EVENT_PROVIDER_ERROR, "error": f"request timed out after {self.timeout}s"}
-            yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
-            return
-        except Exception as e:
-            yield {"type": SSE_EVENT_PROVIDER_ERROR, "error": f"{type(e).__name__}: {e}"}
-            yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
-            return
-
-        if resp.status_code != 200:
+        # 预增量重试（2026-09-12）：首个 delta 到达前的失败（上游 4xx/5xx、连接超时、
+        # provider_error）大概率是单 key/单提供商瞬时故障——静默重试（服务端 pool 会换
+        # key/提供商），不向 runner 透传中间失败。已产出增量后不再重试（避免重复输出）。
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            last_err: str | None = None
+            resp = None
+            # -- 发起请求 --
             try:
-                err_body = resp.text[:500]
-            except Exception:
-                err_body = "(unreadable)"
-            err_lower = err_body.lower()
-            # T02: 413 context overflow → yield context_overflow 事件（runner 抛 ContextOverflow）
-            is_context_overflow = (
-                resp.status_code == 413
-                or "context_length" in err_lower
-                or "context window" in err_lower
-                or "maximum context" in err_lower
-                or "too long" in err_lower
-            )
-            if is_context_overflow:
-                yield {
-                    "type": SSE_EVENT_CONTEXT_OVERFLOW,
-                    "error": f"HTTP {resp.status_code}: {err_body[:300]}",
-                    "status_code": resp.status_code,
-                }
-                yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
-            else:
-                yield {
-                    "type": SSE_EVENT_PROVIDER_ERROR,
-                    "error": f"HTTP {resp.status_code}: {err_body}",
-                }
-                yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
-            resp.close()
-            return
+                resp = self._session.post(url, json=body, timeout=self.timeout, stream=True)
+            except requests.exceptions.Timeout:
+                last_err = f"request timed out after {self.timeout}s"
+            except Exception as e:  # 网络类异常（连接拒绝/DNS 等）
+                last_err = f"{type(e).__name__}: {e}"
 
-        # 逐行解析 SSE 事件，应用看门狗（D15）
-        try:
+            if resp is None:
+                if attempt < max_attempts:
+                    logger.warning(
+                        "LLM stream attempt %d/%d failed (%s), retrying",
+                        attempt, max_attempts, last_err,
+                    )
+                    await asyncio.sleep(min(0.8 * attempt, 2.0))
+                    continue
+                yield {"type": SSE_EVENT_PROVIDER_ERROR, "error": last_err or "request failed"}
+                yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
+                return
+
+            # -- 非 200 响应 --
+            if resp.status_code != 200:
+                try:
+                    err_body = resp.text[:500]
+                except Exception:
+                    err_body = "(unreadable)"
+                err_lower = err_body.lower()
+                # T02: 413 context overflow → yield context_overflow 事件（重试无意义）
+                is_context_overflow = (
+                    resp.status_code == 413
+                    or "context_length" in err_lower
+                    or "context window" in err_lower
+                    or "maximum context" in err_lower
+                    or "too long" in err_lower
+                )
+                if is_context_overflow:
+                    resp.close()
+                    yield {
+                        "type": SSE_EVENT_CONTEXT_OVERFLOW,
+                        "error": f"HTTP {resp.status_code}: {err_body[:300]}",
+                        "status_code": resp.status_code,
+                    }
+                    yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
+                    return
+                last_err = f"HTTP {resp.status_code}: {err_body}"
+                resp.close()
+                if attempt < max_attempts:
+                    logger.warning(
+                        "LLM stream attempt %d/%d failed (%s), retrying",
+                        attempt, max_attempts, last_err[:200],
+                    )
+                    await asyncio.sleep(min(0.8 * attempt, 2.0))
+                    continue
+                yield {"type": SSE_EVENT_PROVIDER_ERROR, "error": last_err}
+                yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
+                return
+
+            # -- 200：逐行解析 SSE，跟踪是否已有增量产出 --
+            yielded_delta = False
+            pre_delta_error: dict | None = None
             async for event in self._iter_sse_with_watchdog(resp):
-                yield event
-                if event.get("type") == SSE_EVENT_DONE:
+                ev_type = event.get("type")
+                if ev_type in (SSE_EVENT_TEXT_DELTA, SSE_EVENT_THINKING_DELTA,
+                               SSE_EVENT_TOOL_CALL_DELTA):
+                    yielded_delta = True
+                if ev_type == SSE_EVENT_PROVIDER_ERROR and not yielded_delta:
+                    # 尚无增量 → 吞掉错误换一次尝试（不透传给 runner）
+                    pre_delta_error = event
                     break
-        finally:
+                yield event
+                if ev_type == SSE_EVENT_DONE:
+                    break
             resp.close()
+            if pre_delta_error is not None and not yielded_delta:
+                if attempt < max_attempts:
+                    logger.warning(
+                        "LLM stream attempt %d/%d pre-delta provider_error (%s), retrying",
+                        attempt, max_attempts,
+                        str(pre_delta_error.get("error", ""))[:200],
+                    )
+                    await asyncio.sleep(min(0.8 * attempt, 2.0))
+                    continue
+                yield pre_delta_error
+                yield {"type": SSE_EVENT_DONE, "finish_reason": "error"}
+            return
 
     async def _iter_sse_with_watchdog(self, resp) -> AsyncIterator[dict]:
         """带看门狗的 SSE 事件迭代器（spec D15）。

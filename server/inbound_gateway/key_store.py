@@ -37,7 +37,22 @@ logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "sk-la-"
 SECRET_HEX_LEN = 20
-DEFAULT_KEY_FILE = Path("data") / "inbound_keys.json"
+
+
+def _resolve_against_project_root(p: Path | str) -> Path:
+    """相对路径基于项目根目录解析（不依赖 cwd）；绝对路径原样返回（5-7）。
+
+    与 server/llm_pool/key_store.py 同名模式一致；本模块在 server/inbound_gateway/
+    下，3 级 parent 到项目根。cwd 不在项目根时相对路径解析会导致入站 key 库
+    "消失"（fail-open 空库 → 全部 401）。
+    """
+    p = Path(p)
+    if p.is_absolute():
+        return p
+    return Path(__file__).resolve().parent.parent.parent / p
+
+
+DEFAULT_KEY_FILE = _resolve_against_project_root(Path("data") / "inbound_keys.json")
 
 _REQUIRED_FIELDS = ("key_id", "secret", "name", "project", "enabled", "aliases")
 

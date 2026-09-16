@@ -6,7 +6,7 @@
 import logging
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from server.memory.compress import CompressionPipeline
 from server.memory.config import MemoryConfig, get_memory_config
@@ -80,12 +80,10 @@ class MemoryManager:
         self.maintainer = MemoryMaintainer(  # 初始化记忆维护器
             store=self.store,  # 传入存储对象
             config=self.config,  # 传入配置对象
+            # v3/5-14: SearchTracer 和 EvidenceLedger 正常传参注入（此前 Any 动态挂属性）
+            search_tracer=self.search_tracer,
+            evidence_ledger=self.evidence_ledger,
         )
-        # v3: 注入 SearchTracer 和 EvidenceLedger 到 maintainer，用于定期清理过期数据
-        # maintainer 未声明这两个属性，走 Any 承载避免 pyright 校验
-        maintainer_dynamic: Any = self.maintainer
-        maintainer_dynamic._search_tracer = self.search_tracer
-        maintainer_dynamic._evidence_ledger = self.evidence_ledger
         self.recorder = InteractionRecorder(  # 初始化交互记录器
             store=self.store,  # 传入存储对象
             recent=self.recent,  # 传入最近记忆模块
@@ -370,7 +368,12 @@ class MemoryManager:
         """反向查询：找出所有声明了 consumption_contexts 匹配 task_type 的记忆。
 
         v3 优化：优先用 SQL 索引过滤 consumption_contexts 列（LIKE 模式匹配），
-        对于旧数据（consumption_contexts 列为 NULL）回退到全表扫描 + JSON 解析。
+        SQL 异常时回退到全表扫描 + JSON 解析。
+
+        候选集必须同时包含三类记忆（缺一即漏召回，2026-09-13 code review 5-1）：
+        - contexts 命中 task_type 的记忆（SQL LIKE 过滤）
+        - 纯 trigger_keywords 记忆（contexts 列为 NULL 或 '[]'）
+        - v3 旧数据（两列均 NULL，从 value JSON 解析）
 
         遍历候选 facts，解析 value JSON，检查：
         1. consumption_contexts 是否含 task_type（支持 "*" 通配和 "scope.*" 通配）
@@ -400,13 +403,20 @@ class MemoryManager:
             f'%"{task_scope}.*"%',         # scope 通配
         ]
         where_clause = " OR ".join(["consumption_contexts LIKE ?"] * len(sql_patterns))
+        # 候选集除 context 命中行外，还必须含"纯 keyword"（contexts 为 NULL/'[]'）
+        # 与"v3 旧数据"（两列均 NULL）行，交给下方 Python 逐条匹配。
+        # 历史缺陷：候选集只含 LIKE 命中行且回退条件写成 `if not rows`（仅 SQL 空结果触发），
+        # 导致只要存在任一 context 命中行，keyword-only/旧数据记忆永远不被召回。
+        candidate_clause = (
+            f"({where_clause}) OR consumption_contexts IS NULL OR consumption_contexts = '[]'"
+        )
 
         try:
             cur = self.store.conn.execute(
                 f"""SELECT key, value, updated_at, fact_type, occurred_at, mentioned_at,
                           consumption_contexts, trigger_keywords
                    FROM facts
-                   WHERE {where_clause}""",
+                   WHERE {candidate_clause}""",
                 sql_patterns,
             )
             rows = cur.fetchall()

@@ -1,6 +1,6 @@
 # Computer Use 详细参考
 
-> 本文件从 .agents/skills/computer_use.md 拆分而来，包含 UIA 语义层、桌面事务、窗口生命周期、截图方案决策树、DPI 缩放、API 速查、注意事项等详细参考内容。核心操作流程见 [computer_use.md](../.agents/skills/computer_use.md)。
+> 本文件从 `.agents/skills/computer_use/SKILL.md` 拆分而来，包含 UIA 语义层、桌面事务、窗口生命周期、截图方案决策树、DPI 缩放、API 速查、注意事项等详细参考内容。核心操作流程见 [computer_use/SKILL.md](../.agents/skills/computer_use/SKILL.md)。
 
 ## 当前任务授权
 
@@ -52,7 +52,7 @@
 
 ### 受控托管模式（API 兼容名：watchdog mode）
 
-**场景**：用户离开前让 agent 持续监控/操作（如睡前盯着任务跑完）。用户不在场，无法响应弹窗审批。详细场景说明见 [.agents/skills/computer_use.md §5 受控托管模式](../.agents/skills/computer_use.md)。现有 API 的 `mode="watchdog"` 参数继续保留，以兼容已部署调用方。
+**场景**：用户离开前让 agent 持续监控/操作（如睡前盯着任务跑完）。用户不在场，无法响应弹窗审批。详细场景说明见 [.agents/skills/computer_use/SKILL.md §5 受控托管模式](../.agents/skills/computer_use/SKILL.md)。现有 API 的 `mode="watchdog"` 参数继续保留，以兼容已部署调用方。
 
 **开启方式**：
 

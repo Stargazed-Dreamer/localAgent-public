@@ -175,6 +175,11 @@ uv run python -m tools.release.cli release --profile public-full
 
 # 第二阶段：快照 scan_digest 锚定校验 → 自动填 [approval] → build →（可选）publish → 写快照
 uv run python -m tools.release.cli release --plan <plan_digest> --approve [--publish] [--tag v0.46.0] [--dry-run]
+
+# 首轮发布（无上轮快照）：NEW 报告人工核对后加 --first-triage 显式接受当前命中集
+uv run python -m tools.release.cli release --plan <plan_digest> --approve --publish --first-triage
+# ssh 22 被网络环境拦截时用 --repo-url 切 https（传输层覆盖，不触碰 profile 的 digest 链）
+uv run python -m tools.release.cli release --plan <plan_digest> --approve --publish --repo-url https://github.com/<user>/<repo>.git
 ```
 
 增量分诊机制：命中按 `(path, rule) → count` 与上一轮**批准快照**（`release/triage/<profile_id>.json`，gitignore）diff——count 未增自动放行（carried），新 key 或 count 增列为 NEW 必须人工看，消失的标 resolved。快照只存 path/rule/count + scan_digest，**绝不存行内容与行号**。第二阶段用 `snapshot.scan_digest == plan.scan_digest` 锚定"批准的确实是这个 plan 的源码"，不匹配即拒绝。digest-bound 审批语义不变（`_verify_profile_digest` 已废弃，自动填 approval 不触发 profile 漂移）。

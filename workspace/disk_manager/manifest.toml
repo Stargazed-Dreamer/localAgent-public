@@ -1,7 +1,7 @@
 [component]
 name = "disk_manager"
-version = "0.2.0"
-description = "磁盘空间分析与清理建议、系统环境全面备份（浏览器/游戏存档/桌面/系统设置）"
+version = "0.3.0"
+description = "磁盘空间分析与清理建议（含 SpaceSniffer 快照导入）、系统环境全面备份（浏览器/游戏存档/桌面/系统设置）"
 project_tag = "disk_manager"
 enabled = true
 
@@ -29,7 +29,7 @@ task_type = "adhoc.disk_cleanup"
 index_section = "components"
 
 [watch]
-paths = ["scripts/scan_disk.py", "scripts/cleanup.py", "scripts/backup_env.py", "scan/", "system_rebuild/manifest.json"]
+paths = ["scripts/scan_disk.py", "scripts/cleanup.py", "scripts/backup_env.py", "scripts/parse_sns.py", "references/sns_format.md", "scan/", "system_rebuild/manifest.json"]
 
 [tests]
 # 自动化测试声明：测试套件（run_all.py）扫描本段自动收集组件测试

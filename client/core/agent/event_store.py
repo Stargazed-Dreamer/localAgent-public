@@ -848,6 +848,63 @@ class EventStore:
             return cur.rowcount > 0
         return await self._run_write_sync(_sync)
 
+    async def branch_session(
+        self, source_session_id: str, upto_seq: int, title: str | None = None
+    ) -> str:
+        """分支会话（2026-09-13 用户需求）：复制源会话历史（seq ≤ upto_seq）为新会话。
+
+        - 复制 user/assistant 且 visible=1 的消息，seq 在新会话内从 1 重新编号
+        - tool 消息不复制，assistant 的 tool_calls_json 剥离——避免新会话出现
+          "有 tool_calls 却无对应 tool_result"的 provider 400 隐患
+        - 新会话继承源会话 group_name，置顶状态不复用；标题默认加 " (分支)" 后缀
+        - 在源会话写一条 session_branched 审计事件
+
+        返回新 session id。C7（spec D11）：DB 操作包装到 asyncio.to_thread。
+        """
+        if upto_seq <= 0:
+            raise ValueError(f"upto_seq must be positive, got {upto_seq}")
+
+        def _sync() -> str:
+            src = self.conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (source_session_id,)
+            ).fetchone()
+            if src is None:
+                raise ValueError(f"source session not found: {source_session_id}")
+            new_id = f"sess-{_uuid.uuid4().hex[:12]}"
+            now = time.time()
+            final_title = title if title else f"{src['title'] or '对话'} (分支)"
+            self.conn.execute(
+                "INSERT INTO sessions(id, title, mode, status, created_at, updated_at, group_name, pinned) "
+                "VALUES(?, ?, 'dialogue', 'idle', ?, ?, ?, 0)",
+                (new_id, final_title, now, now, src["group_name"]),
+            )
+            rows = self.conn.execute(
+                "SELECT role, content_json, thinking_json, model FROM messages "
+                "WHERE session_id = ? AND seq <= ? AND visible = 1 AND role IN ('user', 'assistant') "
+                "ORDER BY seq ASC",
+                (source_session_id, upto_seq),
+            ).fetchall()
+            for new_seq, r in enumerate(rows, start=1):
+                self.conn.execute(
+                    "INSERT INTO messages(id, session_id, seq, role, content_json, tool_call_id, "
+                    "source, visible, created_at, tool_calls_json, thinking_json, model) "
+                    "VALUES(?, ?, ?, ?, ?, NULL, ?, 1, ?, NULL, ?, ?)",
+                    (
+                        str(_uuid.uuid4()), new_id, new_seq, r["role"], r["content_json"],
+                        r["role"], now, r["thinking_json"], r["model"],
+                    ),
+                )
+            self.conn.commit()
+            return new_id
+
+        new_id = await self._run_write_sync(_sync)
+        await self.append_event(source_session_id, "session_branched", {
+            "new_session_id": new_id,
+            "upto_seq": upto_seq,
+        })
+        return new_id
+
+
     async def find_pending_queue_messages(self) -> list[Message]:
         """chat-panel-v2 T09: 查找所有 source='queue' 的未发送排队消息。
 
@@ -1060,6 +1117,42 @@ class EventStore:
             )
             self.conn.commit()
         await self._run_write_sync(_sync)
+
+    async def purge_invalidated_events(self, before_ts: float | None = None) -> int:
+        """物理删除已 invalidated 的事件行（2026-09-13 code review 8-11 维护方法）。
+
+        streaming 每条 delta 一行 events 插入，会话结束后只标记 invalidated_seq
+        永不物理删除，agent.db 随使用量单调膨胀。本方法 DELETE 这些行并返回删除数。
+
+        Args:
+            before_ts: 只删 created_at < before_ts 的已 invalidated 行（Unix 秒）；
+                       None = 不设时间下限，删除全部已 invalidated 行。
+
+        只删 invalidated_seq IS NOT NULL 的行；未 invalidated 的事件（活跃 streaming
+        增量 + 全部审计事件）不受影响。
+
+        建议调用时机（本类没有自然的自动挂点，按需显式调用）：
+        - GUI 启动或会话删除后的低频维护任务：
+          ``n = await store.purge_invalidated_events(time.time() - 7 * 86400)``
+        - 不建议在 runner 运行路径中调用（与写路径抢 _write_lock）。
+
+        C7（spec D11）：DB 操作包装到 asyncio.to_thread + _write_lock。
+        """
+        def _sync() -> int:
+            if before_ts is None:
+                cur = self.conn.execute(
+                    "DELETE FROM events WHERE invalidated_seq IS NOT NULL"
+                )
+            else:
+                cur = self.conn.execute(
+                    "DELETE FROM events "
+                    "WHERE invalidated_seq IS NOT NULL AND created_at < ?",
+                    (before_ts,),
+                )
+            self.conn.commit()
+            return cur.rowcount
+        deleted = await self._run_write_sync(_sync)
+        return int(deleted or 0)
 
     async def load_streaming_events(self, session_id: str) -> list[Event]:
         """加载未合并的 streaming 事件（v6-lite-streaming-gui T01 D06）。

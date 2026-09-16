@@ -288,18 +288,15 @@ start_client.bat
 .venv\Scripts\python.exe -m client.main
 ```
 
-GUI 客户端提供 8 个面板：
+GUI 客户端面板由 `PanelRegistry` 扫描 `client/panels/` 自动发现（无需改注册表），按 main / monitor / advanced 三组排列：
 
-| 面板 | 用途 |
+| 分组 | 面板（概览） |
 |------|------|
-| **Dashboard** | 后端模块状态总览（OCR / Vision / Browser / Exec / Screen 等状态） |
-| **Tools** | 工具脚本启动器（自动读 `tools_manifest.json`） |
-| **Keys** | LLM 密钥管理（在线编辑 keys.json） |
-| **Accounting** | 记账审核（独立服务 http://127.0.0.1:8780） |
-| **Monitoring** | 模块状态 + 在线配置编辑（敏感字段自动脱敏，失焦自动保存） |
-| **DailySummary** | 每日活动追踪日报 |
-| **Settings** | 在线编辑 `config.toml`（含字段说明） |
-| **Chat** | v6-lite 对话引擎（真 SSE 流式 + 打字机三档 + 工具调用块 + steer 引导） |
+| **main** | 对话（v6-lite 引擎：真 SSE 流式 + 打字机三档 + 工具调用块 + steer 引导）、概览（后端模块状态总览）、待办 hub、工具（自动读 `tools_manifest.json`）、收件箱、到期任务、WIP 任务 |
+| **monitor** | 状态监控、终端、Loop、模型池、记忆、日总结（每日活动追踪日报） |
+| **advanced** | 设置（在线编辑 `config.toml`）、密钥（在线编辑 keys.json）、系统工具、入站管理 |
+
+另有 workspace manifest 声明的**组件面板**（如记账审核）按需加载；**独立进程审批面板** `client/approval_panel/` 用 `start_approval_panel.bat` 单独启动，不在主窗口侧边栏。完整面板清单以 `client/panels/` 目录和 `client/core/panel_registry.py` 的发现结果为准。
 
 ## 接入 IDE
 

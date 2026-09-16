@@ -98,18 +98,32 @@ class DocViewerPathRequest(BaseSchema):
 # ========== 提取函数 ==========
 
 def _parse_page_range(pages_str: str | None, total: int) -> list[int]:
-    """解析页码范围字符串，返回1-based页码列表"""
+    """解析页码范围字符串，返回1-based页码列表
+
+    3-10: 非法输入（"abc"/"1-" 等 int() 失败）抛 400 HTTPException，
+    而非 ValueError 落入 _read_document 通用 except 变 500。
+    """
     if not pages_str:
         return list(range(1, total + 1))
+
+    def _to_int(s: str) -> int:
+        try:
+            return int(s)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f'pages 参数格式非法: "{pages_str}"（示例: "1-5,8,10-12"）',
+            ) from None
+
     result = set()
     for part in pages_str.split(","):
         part = part.strip()
         if "-" in part:
             start, end = part.split("-", 1)
-            start, end = int(start), int(end)
+            start, end = _to_int(start), _to_int(end)
             result.update(range(max(1, start), min(total, end) + 1))
         else:
-            n = int(part)
+            n = _to_int(part)
             if 1 <= n <= total:
                 result.add(n)
     return sorted(result)
@@ -337,6 +351,9 @@ def _read_document(file_path: str, pages: str | None = None) -> DocViewerRespons
         result = EXTRACTORS[ext](file_path, pages)
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"缺少依赖库: {e}") from None
+    except HTTPException:
+        # 3-10: pages 格式 400 等已构造的 HTTPException 原样透传，不被通用 except 转 500
+        raise
     except Exception as e:
         logger.error(f"文档读取失败 [{file_path}]: {e}")
         raise HTTPException(status_code=500, detail=f"文档读取失败: {e}") from None

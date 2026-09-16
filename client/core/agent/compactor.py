@@ -186,17 +186,16 @@ class Compactor:
     # ------------------------------------------------------------------
 
     def should_compact(self, messages: list[Message]) -> bool:
-        """判断是否需要压缩：估算 tokens 超 85% 阈值时返回 True。"""
-        try:
-            from server.llm_pool.compression import estimate_tokens
-        except ImportError:
-            # server 不可用时用本地粗估（4 char/token）
-            def estimate_tokens(text: str) -> int:
-                return len(text) // 4 if text else 0
+        """判断是否需要压缩：估算 tokens 超 85% 阈值时返回 True。
 
+        8-12: client 引擎不再 try-import server.llm_pool.compression（ADR-0027
+        依赖方向：client 引擎纯 Python 核心库不依赖 server 包），固定用本地
+        字符数粗估（~4 char/token）。原实现的估算行为随 server 代码漂移，
+        且纯 client 场景隐式要求 server 包可导入。
+        """
         total = 0
         for msg in messages:
-            total += estimate_tokens(self._msg_to_text(msg))
+            total += len(self._msg_to_text(msg)) // 4
         threshold = int(self.max_context_tokens * COMPACT_THRESHOLD_RATIO)
         logger.debug(
             "should_compact: total_tokens=%d, threshold=%d (%d%% of %d), compact=%s",

@@ -56,6 +56,7 @@ task_type: adhoc.modelscope_model_update
 ### 阶段 3：ModelScope 网站扫描（CDP）
 - 启动调试浏览器：`python tools/browser/start_debug_browser.py`（CDP 端口 9222）
 - **必读**：先查 `.agents/skills/browser_lessons/` 看 `modelscope.cn` 是否有 sites 文件，有则读已知坑
+- **优先考虑 JSON API 快速路径（2026-09-13 实测）**：魔搭有免鉴权结构化接口，`PUT https://modelscope.cn/api/v1/dolphin/models`（body `{"Name":"<org>/","PageSize":100,"PageNumber":1,"SortBy":"Default"}`，Default 即最新优先）可列出模型卡片（名称/任务/License/<data_drive>:/Downloads/CreatedTime），`GET /api/v1/models/{org}/{name}` 取详情。**注意无组织过滤参数**，`Name` 前缀搜索会混入第三方上传，必须按返回的 `Path==org` 客户端过滤；组织名大小写敏感（`openmoss` 命中、`OpenMOSS` 为 0）。完整要点与红线见 `workspace/model_data/docs/跟踪源清单.md` §A-1，生产脚本参考 `workspace/model_data/scripts/d44_fetch_modelscope.py`。API 拿不到的（右侧 API 面板判定、翻页交互）再走下面的 CDP 路径
 - 访问入口 URL（已预选 API 调用过滤）
 - 按用户选定方向点击左侧任务过滤项（详见 `references/modelscope_site_guide.md`）：
   - LLM → "文本生成"
@@ -156,7 +157,7 @@ task_type: adhoc.modelscope_model_update
 
 ## 风险与限制
 
-1. **ModelScope 改版风险**：DOM 选择器（如 `acss-17aobl4`）为 2026-07 探索结果，失效时重新探索
+1. **ModelScope 改版风险**：DOM 选择器（如 `acss-17aobl4`）为 2026-07 探索结果，失效时重新探索；清单类信息可先用 dolphin JSON API（见阶段 3 快速路径，2026-09-13 实测有效）规避 DOM 依赖
 2. **榜单覆盖限制**：三大榜单主要覆盖 LLM，图片/视频/语音模型常不在榜单上。无榜单数据时参考下载量 + 作者权威性
 3. **arena.ai 梯子依赖**：用户可能不想启动梯子，arena 是可选数据源
 4. **TTS/ASR 仅记录**：项目当前无 TTS/ASR use_case，扫描结果只写入推荐报告。未来若项目加入 TTS/ASR 能力，可参考报告中的候选模型，再走阶段 7-8 流程写入 keys.json

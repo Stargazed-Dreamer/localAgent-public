@@ -119,6 +119,10 @@ class RemoteVLClient:
         # 上次成功调用结束时间（用于区分"并发 429" vs "今日额度 429"）
         # 规则：非并发（距上次调用 >= 60s）导致的 429 = 今日额度到顶
         self._last_call_finished_ts: float = 0.0
+        # 3-8：错误消息子串启发式分类连续命中计数（_mark_success 时清零）。
+        # 本轮只加日志不改分类行为——连续命中偏高提示可能存在子串误判
+        #（如错误消息正文恰含 "500"/"rate" 字样），供人工排查。
+        self._heuristic_classify_streak: int = 0
         self._loaded: bool = False  # 首次 reload_config 标志
 
     # ---------- config loading ----------
@@ -339,6 +343,7 @@ class RemoteVLClient:
         state.last_success = time.time()
         state.last_error = ""
         state.consecutive_server_errors = 0  # 成功时清零连续服务端错误计数
+        self._heuristic_classify_streak = 0  # 3-8：成功时清零启发式分类连续命中计数
 
     # ---------- provider selection ----------
 
@@ -403,11 +408,12 @@ class RemoteVLClient:
             if not vl_models:
                 continue
             # 构造类似 ResolvedKey 的简化视图（用于 status 显示）
-            from server.llm_pool.key_store import _to_resolved_key
+            # 3-12: 走 key_store 公有包装，不再依赖私有 _to_resolved_key
+            from server.llm_pool.key_store import resolved_key_from_record
             # 选第一个 vl model（按 tier 升序）
             vl_models.sort(key=lambda m: int(m.get("tier", 3)))
             chosen_model = vl_models[0]["name"]
-            rk = _to_resolved_key(rec, chosen_model)
+            rk = resolved_key_from_record(rec, chosen_model)
             candidates.append(rk)
         return candidates
 
@@ -529,6 +535,28 @@ class RemoteVLClient:
                     # Distinguish rate-limit / server errors from network errors.
                     is_rate_limit = "429" in msg or "Too Many Requests" in msg.lower() or "rate" in msg.lower()
                     is_server_error = any(code in msg for code in ("500", "502", "503", "504"))
+                    # 3-8：子串启发式可观测性（用户决策：本轮仅加日志不改分类行为）。
+                    # 记录原始错误消息、实际命中的子串、分类结果与连续命中计数，
+                    # 让 "500" in msg / "rate" in msg.lower() 之类的误判可被事后排查。
+                    # matched 表达式与上方判定逐字对应（含原判定的大小写 quirk），忠实反映实际生效的匹配。
+                    if is_rate_limit or is_server_error:
+                        self._heuristic_classify_streak += 1
+                        matched: list[str] = []
+                        if "429" in msg:
+                            matched.append("429")
+                        if "Too Many Requests" in msg.lower():
+                            matched.append("Too Many Requests")
+                        if "rate" in msg.lower():
+                            matched.append("rate")
+                        for _code in ("500", "502", "503", "504"):
+                            if _code in msg:
+                                matched.append(_code)
+                        logger.warning(
+                            "VL 错误分类走子串启发式 | matched=%s → rate_limit=%s server_error=%s "
+                            "连续第 %d 次启发式命中（成功调用即清零）| 原始消息: %r",
+                            matched, is_rate_limit, is_server_error,
+                            self._heuristic_classify_streak, msg,
+                        )
                     if is_rate_limit:
                         # 区分"并发 429" vs "今日额度耗尽 429"（per-provider 追踪）
                         # 规则：该 provider 距上次调用结束 < 60s 仍触发 429 = 并发限流

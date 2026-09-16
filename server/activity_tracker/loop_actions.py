@@ -479,11 +479,16 @@ class HourlySummarizeAction(Action):
 
         # 内容审核保护：预检（二分法 LLM 询问）+ 模糊化敏感标题/VL 描述
         # 防 GLM 内容过滤（code 1301）拒绝生成 hourly 总结
+        # to_thread（2026-09-13 code review 6-1）：预检内部是同步 call_llm 二分
+        # （每层一问，最多 ~31 次串行调用），execute 跑在事件循环协程里，不包线程
+        # 会把整个后端冻结分钟级；下方主总结 call_llm 已有 to_thread 先例
         from server.activity_tracker.content_filter import (
             preprocess_activity_data,
         )
-        filter_result = preprocess_activity_data(
-            windows_records, screen_records,
+        filter_result = await asyncio.to_thread(
+            preprocess_activity_data,
+            windows_records,
+            screen_records,
             enable_prefilter=context["config"].get("hourly_content_filter_enabled", True),
         )
 
@@ -2286,7 +2291,9 @@ class HeadlessSessionAction(Action):
             "consumption_contexts": ["adhoc.headless_session", "system.task_closure"],
             "trigger_keywords": ["headless", "judge", trigger_text[:30]] if trigger_text else ["headless", "judge"],
         }
-        mgr.set(key, data, structured=structured)
+        # 6-6: mgr.set 内含 semantic.index_message → ONNX 嵌入推理（数十至数百 ms）
+        # + 磁盘 IO，移出事件循环
+        await asyncio.to_thread(mgr.set, key, data, structured=structured)
         logger.info("HeadlessSession: memory_set key=%s verdict=%s", key, judge_verdict)
 
     async def _write_wip(
@@ -2309,7 +2316,8 @@ class HeadlessSessionAction(Action):
             return
 
         title = trigger_text[:50] if trigger_text else f"headless session {main_session_id}"
-        wip = store.create_wip({
+        # 6-6: SQLite 写移出事件循环（同 _write_memory 的 to_thread 处理）
+        wip = await asyncio.to_thread(store.create_wip, {
             "title": title,
             "goal": trigger_text[:500] if trigger_text else "",
             "tags": ["headless", "judge", judge_verdict],
@@ -2329,7 +2337,7 @@ class HeadlessSessionAction(Action):
         # create_wip 总是 status='active'，需要 update_wip 改成 completed/failed
         if wip and wip.get("id"):
             new_status = "completed" if overall_success else "failed"
-            store.update_wip(wip["id"], {
+            await asyncio.to_thread(store.update_wip, wip["id"], {
                 "status": new_status,
                 "progress": 100 if overall_success else 0,
                 "current_state": {
@@ -2361,7 +2369,9 @@ class KeyHealthCheckAction(Action):
             logger.debug("KeyHealthCheck: 未到检查间隔，跳过")
             return {"success": True, "skipped": True, "skip_reason": "未到检查间隔"}
         logger.info("KeyHealthCheck: 距上次检查已超间隔，执行 check_health()")
-        result = check_keys_health()
+        # 6-2: check_keys_health 全程持 _keys_file_lock 跑 ThreadPoolExecutor 网络 IO
+        # （10 workers × 30s timeout，key 多时可达数分钟），必须移出事件循环
+        result = await asyncio.to_thread(check_keys_health)
         logger.info(
             "KeyHealthCheck 完成: total=%s ok=%s fail=%s removed=%s",
             result.get("total"), result.get("ok"),

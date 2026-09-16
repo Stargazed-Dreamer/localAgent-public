@@ -1,7 +1,7 @@
 """MCP 直连工具白名单 + 分桶架构（v3 精简版）
 
 架构设计（基于调用计数 + 用户决策）：
-- 第一层（DIRECT_TOOLS）：50 个高频/核心工具，按 6 桶分组
+- 第一层（DIRECT_TOOLS）：高频/核心工具（数量见 DIRECT_TOOLS 长度，勿在注释写死），按 6 桶分组
 - 第二层（advanced_tool 网关）：其余 REST operation 自动收进网关
 - GATEWAY_EXCLUDE：完全不进 MCP（含 REST-only form 端点、零调用端点、基础设施端点）
 
@@ -17,7 +17,7 @@ v3 调整（基于调用计数 2618 次）：
 """
 
 # ============================================================================
-# 工具分桶定义（6 桶，48 个直连工具）
+# 工具分桶定义（6 桶；直连工具数量见 DIRECT_TOOLS 长度，勿在注释写死）
 # 桶内工具按"推荐使用频率"排序，高频在前；桶间按 CATEGORY_ORDER 顺序输出
 # ============================================================================
 
@@ -131,6 +131,10 @@ GATEWAY_EXCLUDE: set[str] = {
     "vl_file_form",
     "ocr_file_form", "ocr_base64_form",
     "exec_terminal_stream",
+    # 4-6: browser_set_http_credentials 在 Playwright 1.44+ 下必然失败（API 已移除，
+    # 调用即 EXECUTION_ERROR），摘出 MCP 网关避免 agent 反复调用；REST 端点保留，
+    # 待凭证注入方案落地后移回
+    "browser_set_http_credentials",
 
     # === browser legacy 接口删除说明（Ticket 07） ===
     # 原 6 个 legacy 接口（browser_open / browser_click_element / browser_fill_input /
@@ -148,7 +152,7 @@ GATEWAY_EXCLUDE: set[str] = {
     "mcp_stats", "mcp_stats_reset",
     "get_config_config_get", "update_config_api_config_post",
     "llm_pool_call", "llm_pool_call_simple", "llm_pool_cleanup",
-    "llm_pool_health_check", "llm_pool_health_status",
+    "llm_pool_health_check",
     "llm_pool_init", "llm_pool_stats", "llm_pool_status",
     "llm_pool_chat_tools",  # v6-lite T05: 引擎 LLMGateway 专用，不进 agent tool catalog（防递归）
     "llm_pool_stream",      # v6-lite T08: SSE 伪流式端点，引擎专用（防递归）
@@ -168,7 +172,6 @@ GATEWAY_EXCLUDE: set[str] = {
     # D. 零调用状态端点（可通过 /health 获取聚合状态）
     "system_status", "keep_awake_status",
     "docviewer_status", "memory_maintain_status",
-    "agent_guide_usage",
 
     # E. v3 记忆系统观测性/审计端点（agent 偶尔查询，走 advanced_tool 网关；
     #    监控面板/调试主用，避免膨胀直连 MCP 列表）

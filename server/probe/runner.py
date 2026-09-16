@@ -488,9 +488,6 @@ async def run_probe(params: ProbeParams) -> ProbeSummary:
     except Exception:
         logger.exception("probe failed: session=%s", sid)
         status = "failed"
-    finally:
-        # 采集 + 落盘（即使失败也要采集已生成的数据）
-        pass
 
     # 采集
     messages = await store.load_messages(sid)
@@ -500,15 +497,19 @@ async def run_probe(params: ProbeParams) -> ProbeSummary:
     llm_responses = mock_llm.responses
     session = await store.get_session(sid)
 
-    # 落盘
+    # 落盘（4-11: 同步 JSON 写移入线程，避免阻塞事件循环；原空 finally: pass 死代码已删）
     run_dir = RUNS_DIR / sid
-    run_dir.mkdir(parents=True, exist_ok=True)
-    _dump_json(run_dir / "messages.json", [_message_to_dict(m) for m in messages])
-    _dump_json(run_dir / "events.json", [asdict(e) for e in events])
-    _dump_json(run_dir / "tool_calls.json", [asdict(tc) for tc in tool_calls])
-    _dump_json(run_dir / "llm_requests.json", [_llm_request_to_dict(r) for r in llm_requests])
-    _dump_json(run_dir / "llm_responses.json", [_llm_response_to_dict(r) for r in llm_responses])
-    _dump_json(run_dir / "session.json", asdict(session) if session else {})
+
+    def _dump_all() -> None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        _dump_json(run_dir / "messages.json", [_message_to_dict(m) for m in messages])
+        _dump_json(run_dir / "events.json", [asdict(e) for e in events])
+        _dump_json(run_dir / "tool_calls.json", [asdict(tc) for tc in tool_calls])
+        _dump_json(run_dir / "llm_requests.json", [_llm_request_to_dict(r) for r in llm_requests])
+        _dump_json(run_dir / "llm_responses.json", [_llm_response_to_dict(r) for r in llm_responses])
+        _dump_json(run_dir / "session.json", asdict(session) if session else {})
+
+    await asyncio.to_thread(_dump_all)
 
     # auto_cleanup
     if params.auto_cleanup:

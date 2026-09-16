@@ -217,8 +217,10 @@ typewriter_normal_interval_ms = 16
 # v6-lite-streaming-gui T02/T04: 流式看门狗 + DoomLoop 配置
 # stream_idle_timeout_secs: SSE 流空闲超时（秒），无任何数据超过此值 → yield provider_error 事件
 # stall_detection_window_secs: stall 检测窗口（秒），窗口内 token 增量不足 → yield provider_error
+#   默认 0 = 禁用：推理模型服务端静默思考 >30s 属常态，token 速率检测会误杀正常流（2026-09-12）；
+#   真死流由 stream_idle_timeout_secs 兜底
 stream_idle_timeout_secs = 90
-stall_detection_window_secs = 30
+stall_detection_window_secs = 0
 
 [runner.doom_loop]
 # v6-lite-streaming-gui T04: DoomLoop 检测 thinking_delta 尾重复（spec D10/D11）

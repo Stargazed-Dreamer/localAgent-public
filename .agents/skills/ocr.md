@@ -4,6 +4,7 @@ description: >
   OCR 文字识别服务，支持经典 PaddleOCR 文字识别和远程 VL（ModelScope Qwen3-VL-235B）文档解析。
   触发词：识别图片、OCR、读取图片、文字识别、图片转文字。当用户需要
   从图片中提取文字、识别截图内容、解析文档结构时触发。
+task_type: adhoc.ocr
 ---
 
 # OCR 识别技能 (ocr)

@@ -16,6 +16,11 @@ from server.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
 
+# 5-10: fire-and-forget 任务的强引用集——事件循环仅持弱引用，CPython 可能中途
+# GC 掉维护任务（表现为"维护没跑"且无日志）。asyncio 官方推荐模式：
+# 模块级 set 持引用 + done callback discard。
+_pending_maintenance_tasks: set[asyncio.Task] = set()
+
 
 class InteractionRecorder:
     """Agent 交互自动记录器 + 触发器"""
@@ -140,7 +145,10 @@ class InteractionRecorder:
             # 2. 异步执行其余维护任务
             try:
                 asyncio.get_running_loop()
-                asyncio.ensure_future(self._async_maintenance())
+                task = asyncio.ensure_future(self._async_maintenance())
+                # 5-10: 持强引用防 GC 中途回收；结束后 discard 释放
+                _pending_maintenance_tasks.add(task)
+                task.add_done_callback(_pending_maintenance_tasks.discard)
             except RuntimeError:
                 # 没有运行中的事件循环，只做同步部分
                 pass

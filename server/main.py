@@ -164,8 +164,16 @@ def _setup_logging():
     console.addFilter(trae_filter)
     root.addHandler(console)
 
+    # Windows 坑（2026-09-12 实测）：multiprocessing spawn 子进程（如 overlay GUI）启动时会
+    # 重新 import 本模块（以 __mp_main__ 身份），顶层 _setup_logging() 随之在子进程执行，
+    # 子进程便打开了自己的 server.log 句柄并长期持有；主进程 RotatingFileHandler 轮转
+    # rename 时因句柄被占永远失败（WinError 32），日志从轮转点起全部写入失败。
+    # 因此文件 handler 仅在主进程挂载，子进程日志只走控制台。
+    import multiprocessing
+    is_main_process = multiprocessing.current_process().name == "MainProcess"
+
     # 文件（默认开启，崩溃后可追溯）
-    if cfg["file_enabled"]:
+    if cfg["file_enabled"] and is_main_process:
         try:
             from logging.handlers import RotatingFileHandler
 
@@ -196,7 +204,7 @@ def _setup_logging():
 
 _setup_logging()
 
-VERSION = "0.46.0"
+VERSION = "0.48.0"
 
 app = FastAPI(title="LocalAgent API", version=VERSION)
 

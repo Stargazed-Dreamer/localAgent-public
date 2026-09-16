@@ -25,6 +25,22 @@ def _qapp():
     yield app
 
 
+def _wait_worker_done(worker, timeout_ms=3000):
+    """8-8 worker HTTP 线程化后等待单次请求完成 + queued 信号派发。"""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        QCoreApplication.processEvents()
+        if not worker._busy:
+            QCoreApplication.processEvents()
+            return True
+        time.sleep(0.01)
+    return False
+
+
 @pytest.fixture(autouse=True)
 def _mock_requests(monkeypatch):
     """mock requests 避免 worker 真发 HTTP。"""
@@ -97,6 +113,7 @@ class TestHeartbeatWorker:
         received = []
         worker.heartbeat_ok.connect(lambda: received.append(True))
         worker._send()
+        assert _wait_worker_done(worker)
         assert received == [True]
         worker.deleteLater()
 
@@ -115,6 +132,7 @@ class TestHeartbeatWorker:
         received = []
         worker.heartbeat_fail.connect(lambda e: received.append(e))
         worker._send()
+        assert _wait_worker_done(worker)
         assert len(received) == 1
         assert "refused" in received[0]
         worker.deleteLater()
@@ -137,6 +155,7 @@ class TestPoller:
         received = []
         poller.pending_updated.connect(lambda p: received.append(p))
         poller._poll()
+        assert _wait_worker_done(poller)
         assert len(received) == 1
         assert isinstance(received[0], list)
         poller.deleteLater()

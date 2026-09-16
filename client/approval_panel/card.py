@@ -15,8 +15,10 @@
 """
 from __future__ import annotations
 
+import threading
+
 import requests
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -29,9 +31,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from client.core.constants import SERVER_URL  # 8-9: 端口单一真源
 from lib.ui import tokens as T
 
-SERVER_URL = "http://127.0.0.1:8766"
 HTTP_TIMEOUT_S = 5.0
 
 
@@ -41,10 +43,12 @@ class ApprovalCard(QFrame):
     信号：
         card_closed(str)  — 卡片应被移除，携带 approval_id
         activity_occurred(str) — 用户有操作（打字/按键），需上报 server 重置 deadline
+        decision_done(str, int) — 决策请求完成（decision, HTTP 状态码；网络失败为 -1）
     """
 
     card_closed = Signal(str)
     activity_occurred = Signal(str)
+    decision_done = Signal(str, int)
 
     def __init__(self, item: dict, parent: QWidget | None = None):
         super().__init__(parent)
@@ -56,6 +60,7 @@ class ApprovalCard(QFrame):
 
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self._build_ui(item)
+        self.decision_done.connect(self._on_decision_done)
         self._start_timer()
 
     # ========== UI 构建 ==========
@@ -228,23 +233,37 @@ class ApprovalCard(QFrame):
     # ========== 决策提交 ==========
 
     def _submit_decision(self, decision: str) -> None:
-        """提交 approve/deny 决策。"""
+        """提交 approve/deny 决策。
+
+        8-8: HTTP 在 worker 线程执行（原实现同步 requests 在 GUI 主线程，
+        后端 hang 时点批准/拒绝冻结 UI 至 5s），完成后经 decision_done 信号回主线程。
+        """
         feedback = self._feedback.toPlainText().strip()
-        try:
-            resp = requests.post(
-                f"{SERVER_URL}/approvals/{self._approval_id}/decision",
-                json={"decision": decision, "feedback": feedback},
-                timeout=HTTP_TIMEOUT_S,
-            )
-            if resp.status_code == 200:
-                self._timer.stop()
-                self.card_closed.emit(self._approval_id)
-            elif resp.status_code == 409:
-                # 状态已变更（可能已超时），转为超时态
-                self._is_timeout = True
-                self._update_button_visibility()
-        except requests.RequestException:
-            pass  # 网络失败暂不关闭卡片，用户可重试
+
+        def _post() -> None:
+            try:
+                resp = requests.post(
+                    f"{SERVER_URL}/approvals/{self._approval_id}/decision",
+                    json={"decision": decision, "feedback": feedback},
+                    timeout=HTTP_TIMEOUT_S,
+                )
+                self.decision_done.emit(decision, resp.status_code)
+            except requests.RequestException:
+                # 网络失败暂不关闭卡片，用户可重试（与原行为一致）
+                self.decision_done.emit(decision, -1)
+
+        threading.Thread(target=_post, daemon=True).start()
+
+    @Slot(str, int)
+    def _on_decision_done(self, decision: str, status_code: int) -> None:
+        if status_code == 200:
+            self._timer.stop()
+            self.card_closed.emit(self._approval_id)
+        elif status_code == 409:
+            # 状态已变更（可能已超时），转为超时态
+            self._is_timeout = True
+            self._update_button_visibility()
+        # -1（网络失败）：不处理，卡片保持可重试
 
     def _ack_timeout(self) -> None:
         """点"收到"移除已超时卡片。"""

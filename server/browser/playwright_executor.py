@@ -77,20 +77,46 @@ async def _execute_playwright(code: str, timeout: int) -> tuple[bool, str, int]:
 
     约定子进程 stdout 以 'OK:' 或 'ERROR:' 前缀标识结果。
     Returns: (success, message, elapsed_ms)
+
+    timeout 语义（2026-09-13 code review 4-1 修复）：exec_python 的内联等待固定
+    inline_wait_secs（默认 10s，与调用方 timeout 无关）。超时后返回
+    status="running" + terminal_id，此处用 wait_terminal_completion 继续等待至
+    timeout——此前该分支把"仍在运行、stdout 为空"误判为成功（假成功：navigate
+    谎报完成、点击已执行却报失败诱发重试），且调用方传入的 timeout 从未生效。
     """
-    from ..exec import ExecRequest, exec_python
+    from ..exec import ExecRequest, exec_python, wait_terminal_completion
+
     t0 = time.perf_counter()
-    # ExecRequest 无 timeout 字段（spec D5：exec_python 不支持 timeout 参数）。
-    # 之前传 timeout= 会被 Pydantic 默认 extra='ignore' 静默丢弃；改 BaseSchema 后会报
-    # ValidationError。此处删去错误字段名。timeout 暂未通过 exec_inspect(tid, timeout=N) 实施，
-    # 依赖 exec_python 默认 inline_wait_secs 内联等待（见 server/exec.py exec_python）。
+
+    def elapsed() -> int:
+        return int((time.perf_counter() - t0) * 1000)
+
     result = await exec_python(ExecRequest(code=code))
-    elapsed = int((time.perf_counter() - t0) * 1000)
-    if result.success:
+    if not result.success:
+        return False, result.stderr or "执行失败", elapsed()
+
+    if result.status == "done":
         out = (result.stdout or "").strip()
-        if out.startswith("OK:"):
-            return True, out[3:], elapsed
-        elif out.startswith("ERROR:"):
-            return False, out[6:], elapsed
-        return True, out or "完成", elapsed
-    return False, result.stderr or "执行失败", elapsed
+        err = (result.stderr or "").strip()
+        # OK:/ERROR: 前缀协议防误判（code review 4-7）：evaluate return_json=False
+        # 的返回值可能恰好以 "ERROR:" 开头，仅凭前缀会颠倒是非——非零退出码时
+        # 以退出码为准（stderr 有内容则附上）。
+        if result.exit_code not in (0, None) and not out.startswith("OK:"):
+            return False, err or f"Playwright 脚本异常退出（exit_code={result.exit_code}）", elapsed()
+    else:
+        remaining = max(1.0, float(timeout) - (time.perf_counter() - t0))
+        wait = await wait_terminal_completion(result.terminal_id, remaining)
+        if wait.get("missing"):
+            return False, "terminal 会话已丢失（可能已被清理），无法取回结果", elapsed()
+        if not wait["done"]:
+            return False, f"Playwright 脚本执行超时（>{int(timeout)}s），已放弃等待", elapsed()
+        out = (wait["stdout"] or "").strip()
+        err = (wait["stderr"] or "").strip()
+        if wait["exit_code"] not in (0, None):
+            return False, err or f"Playwright 脚本异常退出（exit_code={wait['exit_code']}）", elapsed()
+
+    if out.startswith("OK:"):
+        return True, out[3:], elapsed()
+    elif out.startswith("ERROR:"):
+        return False, out[6:], elapsed()
+    return True, out or "完成", elapsed()

@@ -192,7 +192,9 @@ async def understand_image(req: UnderstandRequest):
         raise HTTPException(status_code=503, detail="远程 VL 不可用（所有 provider 冷却中或未配置）")
 
     # 支持直接传 base64、指定窗口标题自动截图、或全屏截图
-    image, _ = _acquire_image(req.image, req.window_title, req.process_name)
+    # 3-6: _capture_window 内含 time.sleep×2 + 提窗 + PrintWindow + PNG 编码
+    # （最坏 0.5s+），与 VL 调用一样移入线程，避免阻塞事件循环
+    image, _ = await asyncio.to_thread(_acquire_image, req.image, req.window_title, req.process_name)
 
     focused = _crop_for_bbox(image, req.bbox)
     t0 = time.perf_counter()
@@ -228,8 +230,10 @@ async def vision_locate(req: LocateRequest):
 
     t0 = time.perf_counter()
 
-    # 统一图像获取（base64 → 窗口截图 → 全屏截图）
-    image, window_offset = _acquire_image(req.image, req.window_title, req.process_name)
+    # 统一图像获取（base64 → 窗口截图 → 全屏截图）；3-6: 截图重活移入线程
+    image, window_offset = await asyncio.to_thread(
+        _acquire_image, req.image, req.window_title, req.process_name
+    )
 
     # 调用 VL locate
     result = await asyncio.to_thread(remote_vl.locate, image, req.target, use_case="vl_vision")

@@ -294,6 +294,11 @@ def _create_start_confirm_dialog():
         def timeout_reported(self, value: bool) -> None:
             self._timeout_reported = value
 
+        @property
+        def is_expired(self) -> bool:
+            """是否已进入本地倒计时归零的只读超时态（公有接口，供 process_messages 判断）。"""
+            return self._expired
+
         def _finish(self, status: str):
             if self._expired:
                 return  # 超时态下决策按钮已隐藏，兜底防孤儿点击
@@ -731,7 +736,7 @@ def _gui_subprocess(recv_queue: multiprocessing.Queue,
 
         # 本地倒计时超时：立即上报 cancelled，让 server 提前结束等待；
         # 窗口保持显示为只读态，等用户点"收到"关闭（只关窗，不再上报）
-        if (start_confirm._expired
+        if (start_confirm.is_expired
                 and not start_confirm.timeout_reported
                 and start_confirm.result_data):
             send_queue.put({"type": "confirm_start_result", **start_confirm.result_data})
@@ -1000,28 +1005,35 @@ class OverlayClient:
             "reason": result.get("reason", ""),
         }
 
+    def _send_confirm_start_and_wait(self, msg: dict, timeout: float) -> dict | None:
+        """清空旧结果 → 发送 confirm_start 命令 → 等待结果。
+
+        confirm_start 与 ensure_takeover_approved 共用流程。
+        返回 None 表示超时或 GUI 子进程退出。
+        """
+        if not self._started:
+            self.start()
+        with self._results_lock:
+            self._pending_results.pop("confirm_start_result", None)
+            self._pending_results.pop("import_error", None)
+        self._recv_queue.put(msg)
+        return self._pop_result("confirm_start_result", timeout)
+
     def confirm_start(self, task_description: str,
                       hotkey_hint: str = "Ctrl+`",
                       allow_task_authorization: bool = True,
                       requested_mode: str = "normal") -> dict:
         """弹出开始确认窗口（watchdog 模式含 QSpinBox + 允许关机复选框）。"""
-        if not self._started:
-            self.start()
-
-        with self._results_lock:
-            self._pending_results.pop("confirm_start_result", None)
-            self._pending_results.pop("import_error", None)
-
-        self._recv_queue.put({
-            "cmd": "confirm_start",
-            "task_description": task_description,
-            "hotkey_hint": hotkey_hint,
-            "allow_task_authorization": allow_task_authorization,
-            "requested_mode": requested_mode,
-        })
-
-        timeout = get_screen_config().get("confirm_timeout_seconds", 180)
-        result = self._pop_result("confirm_start_result", timeout)
+        result = self._send_confirm_start_and_wait(
+            {
+                "cmd": "confirm_start",
+                "task_description": task_description,
+                "hotkey_hint": hotkey_hint,
+                "allow_task_authorization": allow_task_authorization,
+                "requested_mode": requested_mode,
+            },
+            get_screen_config().get("confirm_timeout_seconds", 180),
+        )
         if result is None:
             return {
                 "status": "cancelled",
@@ -1081,20 +1093,23 @@ class OverlayClient:
             - "cancelled"：用户点"拒绝" 或 超时 timeout_action=cancel
             - "error"：GUI 子进程异常（fail-closed）
         """
-        # 1. 已有任务授权 → 直接放行
+        # 1. 已有任务授权 → 模式一致或为降级/平级请求时直接放行；
+        #    升级请求（normal→watchdog）不短路，照常弹窗让用户勾选确认
+        #    （request 的语义是"覆盖现有授权"，此处短路会让升级永远拿不到弹窗）
         session = get_session_manager()
         if session.is_active():
             # 保留当前会话模式（避免 agent 重调 request 时把 watchdog 误降级为 normal）
             current_mode = session.status().get("mode", "normal")
-            return {
-                "status": "skipped",
-                "reason": "",
-                "task_authorization": True,
-                "requested_mode": requested_mode,
-                "authorized_mode": current_mode,
-                "max_duration_hours": None,
-                "shutdown_permitted": False,
-            }
+            if not (requested_mode == "watchdog" and current_mode != "watchdog"):
+                return {
+                    "status": "skipped",
+                    "reason": "",
+                    "task_authorization": True,
+                    "requested_mode": requested_mode,
+                    "authorized_mode": current_mode,
+                    "max_duration_hours": None,
+                    "shutdown_permitted": False,
+                }
         if self._overlay_visible and not force_prompt:
             return {
                 "status": "skipped",
@@ -1106,28 +1121,20 @@ class OverlayClient:
                 "shutdown_permitted": False,
             }
 
-        if not self._started:
-            self.start()
-
-        # 2. 清空旧结果
-        with self._results_lock:
-            self._pending_results.pop("confirm_start_result", None)
-            self._pending_results.pop("import_error", None)
-
-        # 3. 发送弹窗命令（timeout_seconds 同步给子进程端倒计时条）
+        # 2-4. 清空旧结果 → 发送弹窗命令（timeout_seconds 同步给子进程端倒计时条）→ 等待响应：
+        # 本地倒计时归零时子进程会提前上报 cancelled，此处等待略长于 timeout 作为兜底（应对 GUI 子进程假死）
         confirm_timeout = int(timeout)
-        self._recv_queue.put({
-            "cmd": "confirm_start",
-            "task_description": task_description,
-            "hotkey_hint": hotkey_hint,
-            "allow_task_authorization": allow_task_authorization,
-            "requested_mode": requested_mode,
-            "timeout_seconds": confirm_timeout,
-        })
-
-        # 4. 等待响应：本地倒计时归零时子进程会提前上报 cancelled，
-        #    此处等待略长于 timeout 作为兜底（应对 GUI 子进程假死）
-        result = self._pop_result("confirm_start_result", confirm_timeout + 5)
+        result = self._send_confirm_start_and_wait(
+            {
+                "cmd": "confirm_start",
+                "task_description": task_description,
+                "hotkey_hint": hotkey_hint,
+                "allow_task_authorization": allow_task_authorization,
+                "requested_mode": requested_mode,
+                "timeout_seconds": confirm_timeout,
+            },
+            confirm_timeout + 5,
+        )
         if result is None:
             # 5. 超时——按 timeout_action 决定
             if timeout_action == "proceed":

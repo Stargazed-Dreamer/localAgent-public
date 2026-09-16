@@ -18,6 +18,9 @@
 幂等性：可重复运行（已 interrupted 的 session 跳过；已有 tool_result 的 tool_call 跳过；
 已 invalidated 的 streaming 事件跳过）。
 
+C2 活跃性守卫（spec D7/D11）：全程过滤——近期有事件的活跃 session（runner 可能
+还在跑）在三个步骤中都被跳过（不标 interrupted / 不补 tool_result / 不合并 streaming）。
+
 用法：
     store = EventStore(db_path)
     store.init()
@@ -80,6 +83,9 @@ class ReconcileResult:
     skipped_tool_calls_already_has_result: int = 0
     # C2：跳过的近期活跃 session 数（runner 可能还在跑）
     skipped_sessions_active_recent: int = 0
+    # C2 全程过滤（2026-09-13 code review 8-3）：步骤 2/3 因 session 近期活跃而跳过
+    skipped_tool_calls_active_session: int = 0
+    skipped_streaming_sessions_active: int = 0
 
     @property
     def total_actions(self) -> int:
@@ -107,6 +113,13 @@ async def reconcile(store: EventStore, *, force: bool = False) -> ReconcileResul
     """
     result = ReconcileResult()
     now = time.time()
+
+    # C2 全程过滤（2026-09-13 code review 8-3）：近期活跃 session 集合。
+    # 步骤 1 收集，步骤 2（dangling tool_calls 补偿）与步骤 3（streaming 合并）
+    # 同样跳过这些 session——runner 若只是卡在长阻塞工具上（近期无新事件写入），
+    # 补第二份 tool_result 会在真实结果返回后损坏 provider 配对，合并则可能与
+    # 仍在写入的 streaming 事件流竞争。
+    skipped_active_sessions: set[str] = set()
 
     # ------------------------------------------------------------------
     # 1. 扫描残留活跃会话 → 标记 interrupted
@@ -136,6 +149,7 @@ async def reconcile(store: EventStore, *, force: bool = False) -> ReconcileResul
                 idle_secs = now - last_event_ts
                 if idle_secs < RECONCILE_ACTIVE_THRESHOLD_SECS:
                     result.skipped_sessions_active_recent += 1
+                    skipped_active_sessions.add(session_id)
                     logger.info(
                         "Reconcile skipped active session %s: last event %.1fs ago < threshold %.0fs",
                         session_id, idle_secs, RECONCILE_ACTIVE_THRESHOLD_SECS,
@@ -167,6 +181,15 @@ async def reconcile(store: EventStore, *, force: bool = False) -> ReconcileResul
     dangling_calls = await store.list_tool_calls_by_status(_DANGLING_TOOL_CALL_STATUSES)
 
     for tc in dangling_calls:
+        # C2 全程过滤：所属 session 近期活跃（runner 可能还在跑）→ 完全跳过，
+        # 不补 tool_result、不改 tool_call 状态（真实结果可能稍后由 runner 写入）
+        if tc.session_id in skipped_active_sessions:
+            result.skipped_tool_calls_active_session += 1
+            logger.debug(
+                "Reconcile skipped dangling tool_call %s (session %s active recent)",
+                tc.id, tc.session_id,
+            )
+            continue
         # 检查是否已有 tool_result 消息（幂等：已有则跳过补消息）
         has_result = await store.has_tool_result(tc.id)
         if has_result:
@@ -204,14 +227,23 @@ async def reconcile(store: EventStore, *, force: bool = False) -> ReconcileResul
     # ------------------------------------------------------------------
     # 3. 扫描未合并的 streaming 事件 → 合并为完整 Message（v6-lite-streaming-gui T01 D06）
     # ------------------------------------------------------------------
-    await _reconcile_streaming_events(store, result, now)
+    await _reconcile_streaming_events(
+        store, result, now, skipped_active_sessions=skipped_active_sessions,
+    )
 
-    if result.total_actions > 0 or result.skipped_sessions_active_recent > 0:
+    if (
+        result.total_actions > 0
+        or result.skipped_sessions_active_recent > 0
+        or result.skipped_tool_calls_active_session > 0
+        or result.skipped_streaming_sessions_active > 0
+    ):
         logger.info(
             "Reconciliation complete: %d sessions interrupted, %d tool_calls interrupted, "
             "%d tool_results filled, %d streaming messages merged, "
             "%d sessions skipped (already interrupted), %d tool_calls skipped, "
-            "%d sessions skipped (active recent)",
+            "%d sessions skipped (active recent), "
+            "%d tool_calls skipped (active session), "
+            "%d streaming merges skipped (active session)",
             len(result.sessions_interrupted),
             len(result.tool_calls_interrupted),
             len(result.tool_results_filled),
@@ -219,6 +251,8 @@ async def reconcile(store: EventStore, *, force: bool = False) -> ReconcileResul
             result.skipped_sessions_already_interrupted,
             result.skipped_tool_calls_already_has_result,
             result.skipped_sessions_active_recent,
+            result.skipped_tool_calls_active_session,
+            result.skipped_streaming_sessions_active,
         )
     else:
         logger.info("Reconciliation complete: no actions needed")
@@ -228,17 +262,21 @@ async def reconcile(store: EventStore, *, force: bool = False) -> ReconcileResul
 
 async def _reconcile_streaming_events(
     store: EventStore, result: ReconcileResult, now: float,
+    skipped_active_sessions: set[str] | None = None,
 ) -> None:
     """合并未合并的 streaming 事件为完整 Message（v6-lite-streaming-gui T01 D06）。
 
     流程：
     1. 遍历所有 session 的未合并 streaming 事件
-    2. 按 trace_id 分组（trace_id 为 None 时按 session_id 分组）
-    3. 每组合并 text_delta → 完整 text, thinking_delta → 完整 thinking, tool_call → tool_calls 列表
-    4. 写完整 assistant Message（含 thinking + tool_calls）
-    5. tool_calls 写入 tool_calls 表（status=interrupted，因为未执行）
-    6. 标记 streaming 事件 invalidated
+    2. C2 全程过滤：跳过近期活跃的 session（runner 可能还在写流）
+    3. 按 trace_id 分组（trace_id 为 None 时按 session_id 分组）
+    4. 每组合并 text_delta → 完整 text, thinking_delta → 完整 thinking, tool_call → tool_calls 列表
+    5. 写完整 assistant Message（含 thinking + tool_calls）
+    6. tool_calls 写入 tool_calls 表（status=interrupted，因为未执行）
+    7. 标记 streaming 事件 invalidated
     """
+    if skipped_active_sessions is None:
+        skipped_active_sessions = set()
     # 收集所有有未合并 streaming 事件的 session_id
     # 精确匹配 3 种 streaming 增量类型，避免误捞审计事件 `streaming_events_merged`
     # T06：DB 操作走 _run_sync（asyncio.to_thread + Lock），避免阻塞 event loop + 跨线程不安全
@@ -252,6 +290,14 @@ async def _reconcile_streaming_events(
     session_ids = [r["session_id"] for r in rows]
 
     for session_id in session_ids:
+        # C2 全程过滤：所属 session 近期活跃（runner 可能还在跑）→ 不合并
+        # （合并会 invalidate 仍在增长的事件流，与 runner 产生竞争）
+        if session_id in skipped_active_sessions:
+            result.skipped_streaming_sessions_active += 1
+            logger.debug(
+                "Reconcile skipped streaming merge for active session %s", session_id,
+            )
+            continue
         events = await store.load_streaming_events(session_id)
         if not events:
             continue

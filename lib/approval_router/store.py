@@ -62,9 +62,27 @@ _store_lock = threading.Lock()
 _items: dict[str, ApprovalItem] = {}
 
 
+def _purge_finished_expired_locked() -> None:
+    """惰性清理已终结且超过 deadline 的条目（decided/acked），防长期运行内存缓涨。
+
+    保留条目至 expires_at（last_activity + base_timeout）：此窗口内决策端点仍能查到
+    条目并返回 409（重复提交/对 decided 项 ack 的既有语义），超期后才移除。
+    timeout 状态不清理（等待用户 ack 的正常路径）。
+    """
+    now = _heartbeat.now()
+    expired = [
+        aid
+        for aid, item in _items.items()
+        if item.status in ("decided", "acked") and item.expires_at <= now
+    ]
+    for aid in expired:
+        _items.pop(aid, None)
+
+
 def add(item: ApprovalItem) -> None:
     """入队一个审批请求。"""
     with _store_lock:
+        _purge_finished_expired_locked()
         _items[item.approval_id] = item
 
 
@@ -82,6 +100,7 @@ def remove(approval_id: str) -> bool:
 def list_pending() -> list[ApprovalItem]:
     """列出所有 pending 状态的审批（按创建时间 FIFO）。"""
     with _store_lock:
+        _purge_finished_expired_locked()
         pending = [item for item in _items.values() if item.status == "pending"]
     pending.sort(key=lambda x: x.created_at)
     return pending

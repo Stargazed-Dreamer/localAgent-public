@@ -109,43 +109,55 @@ class TestUserBubbleHoverButtons:
             bubble.deleteLater()
             qapp.processEvents()
 
-    def test_steer_message_no_hover_buttons(self, qapp):
-        """steer 消息：不显示 hover 按钮（_can_hover=False）。"""
+    def test_steer_message_has_hover_buttons(self, qapp):
+        """steer 消息：2026-09-13 起也有复制/删除按钮（常态显示，_can_hover=True）。"""
         from client.core.agent.types import Message
         from client.panels.chat import _UserBubble
 
         msg = Message(role="user", content="guide", source="steer", id="m1")
         bubble = _UserBubble(msg)
         try:
-            assert bubble._can_hover is False
-            assert bubble._hover_button_row is None
+            assert bubble._can_hover is True
+            assert bubble._hover_button_row is not None
+            assert bubble._hover_button_row.isHidden() is False
         finally:
             bubble.deleteLater()
             qapp.processEvents()
 
-    def test_queue_message_no_hover_buttons(self, qapp):
-        """queue 消息：不显示 hover 按钮（_can_hover=False）。"""
+    def test_queue_message_has_hover_buttons(self, qapp):
+        """queue 消息：2026-09-13 起也有复制/删除按钮（常态显示）。"""
         from client.core.agent.types import Message
         from client.panels.chat import _UserBubble
 
         msg = Message(role="user", content="queued", source="queue", id="m1")
         bubble = _UserBubble(msg)
         try:
-            assert bubble._can_hover is False
-            assert bubble._hover_button_row is None
+            assert bubble._can_hover is True
+            assert bubble._hover_button_row is not None
+            assert bubble._hover_button_row.isHidden() is False
         finally:
             bubble.deleteLater()
             qapp.processEvents()
 
-    def test_hover_buttons_hidden_initially(self, qapp):
-        """hover 按钮初始隐藏。"""
+    def test_hover_buttons_always_visible(self, qapp):
+        """2026-09-13：按钮行常态显示（不再 hover 显隐，防布局跳动）。
+
+        未 show 的 widget isVisible() 恒 False（父链隐藏），用 isHidden() 断言
+        逻辑可见性（未被显式 setVisible(False)）。enterEvent/leaveEvent 已是
+        no-op（见 chat.py 注释），不再改变可见性。
+        """
         from client.core.agent.types import Message
         from client.panels.chat import _UserBubble
 
         msg = Message(role="user", content="hello", source="user", id="m1")
         bubble = _UserBubble(msg)
         try:
-            assert bubble._hover_button_row.isVisible() is False
+            assert bubble._hover_button_row is not None
+            assert bubble._hover_button_row.isHidden() is False
+            # hover 路径已废弃：no-op 实现不应包含 setVisible(False)
+            import inspect
+            assert "setVisible(False)" not in inspect.getsource(type(bubble).leaveEvent)
+            assert "setVisible(False)" not in inspect.getsource(type(bubble).enterEvent)
         finally:
             bubble.deleteLater()
             qapp.processEvents()
@@ -169,14 +181,60 @@ class TestAssistantTextBlockHoverButton:
             block.deleteLater()
             qapp.processEvents()
 
-    def test_hover_copy_btn_hidden_initially(self, qapp):
-        """hover Copy 按钮初始隐藏（未 finalize）。"""
+    def test_actions_row_gated_by_turn_end(self, qapp):
+        """2026-09-13 第二轮反馈：按钮行默认隐藏，仅轮次结束（set_actions_visible）显示。
+
+        注：isHidden() 只反映 widget 自身的显式隐藏，子按钮不继承父容器的 hidden 状态，
+        所以断言容器 _actions_row。
+        """
         from client.panels.chat import _AssistantTextBlock
 
         block = _AssistantTextBlock(content="hello")
         try:
-            assert block._hover_copy_btn.isVisible() is False
-            assert block._finalized is False
+            assert block._actions_row is not None
+            assert block._actions_row.isHidden() is True
+            block.set_actions_visible(True)
+            assert block._actions_row.isHidden() is False
+            block.set_actions_visible(False)
+            assert block._actions_row.isHidden() is True
+        finally:
+            block.deleteLater()
+            qapp.processEvents()
+
+    def test_copy_plain_signal_emits_rendered_text(self, qapp):
+        """复制文本按钮 → copy_plain_requested 携带渲染后纯文本。"""
+        from client.panels.chat import _AssistantTextBlock
+
+        block = _AssistantTextBlock(content="")
+        try:
+            block.start_streaming()
+            block.append_text_delta("# 标题\n\n正文 **加粗**")
+            block.finalize_text("# 标题\n\n正文 **加粗**")
+            got = []
+            block.copy_plain_requested.connect(got.append)
+            block._emit_copy_plain()
+            assert len(got) == 1
+            assert "**" not in got[0]  # 纯文本不含 markdown 标记
+            assert "标题" in got[0]
+        finally:
+            block.deleteLater()
+            qapp.processEvents()
+
+    def test_branch_button_gated_by_seq(self, qapp):
+        """分支按钮：默认禁用；set_branch_point(seq>0) 后启用并随信号携带 seq。"""
+        from client.panels.chat import _AssistantTextBlock
+
+        block = _AssistantTextBlock(content="hello")
+        try:
+            assert block._branch_btn.isEnabled() is False
+            got = []
+            block.branch_requested.connect(got.append)
+            block._emit_branch()
+            assert got == []  # seq=0 时点击无效
+            block.set_branch_point(7)
+            assert block._branch_btn.isEnabled() is True
+            block._emit_branch()
+            assert got == [7]
         finally:
             block.deleteLater()
             qapp.processEvents()

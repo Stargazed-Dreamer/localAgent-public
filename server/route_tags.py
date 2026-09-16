@@ -1,7 +1,7 @@
 """路由自动打 tag：x-agent-callable + x-tool-safety
 
 启动时遍历所有已注册路由，按 method + path 规则自动标注 openapi_extra。
-避免手动修改 146 个 decorator，所有规则集中在此文件审计。
+规则集中在此文件统一审计，避免散落在各路由 decorator 上手动维护。
 
 x-agent-callable（fail-open，T09 修正：与 _is_agent_callable 代码一致）：
 - 默认 True（新端点自动暴露给 agent，符合"加 MCP 端点的目的就是给 agent 用"的设计意图）
@@ -207,12 +207,20 @@ def init_op_path_map(app) -> None:
     """从 app.routes 构建 operation_id → (method, path) 映射。
 
     在 main.py 启动时调用一次，供 classify_safety_runtime_by_op() 反查。
+
+    7-2: key 取 unique_id 优先（与 auto_tag_routes / /openapi.json 一致）——
+    显式 operation_id 时两者相等；未显式时 openapi 键是 "{name}_{path}_{method}"
+    （unique_id），取 name 会让 MCP 网关按 openapi 键反查必不中。
     """
     _op_to_path.clear()
     for route in app.routes:
         if not hasattr(route, "methods") or not hasattr(route, "path"):
             continue
-        operation_id = getattr(route, "operation_id", None) or getattr(route, "name", None)
+        operation_id = (
+            getattr(route, "unique_id", None)
+            or getattr(route, "operation_id", None)
+            or getattr(route, "name", None)
+        )
         if not operation_id:
             continue
         for method in route.methods:
@@ -362,12 +370,19 @@ def build_operation_safety_map(app) -> dict[str, str]:
 
     使用 classify_safety() 按 strict 完整清单构建。运行时由 MCP 网关调
     classify_safety_runtime() 二次确认当前 level 是否真的需要审批。
+
+    7-2: key 取 unique_id 优先（与 init_op_path_map / auto_tag_routes 一致，
+    消除双 key 约定）。
     """
     mapping: dict[str, str] = {}
     for route in app.routes:
         if not hasattr(route, "methods") or not hasattr(route, "path"):
             continue
-        operation_id = getattr(route, "operation_id", None) or getattr(route, "name", None)
+        operation_id = (
+            getattr(route, "unique_id", None)
+            or getattr(route, "operation_id", None)
+            or getattr(route, "name", None)
+        )
         if not operation_id:
             continue
         for method in route.methods:

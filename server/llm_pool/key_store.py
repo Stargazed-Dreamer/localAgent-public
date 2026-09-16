@@ -50,6 +50,10 @@ from server.llm_pool.types import (  # noqa: F401
 
 logger = logging.getLogger("localagent.key_store")
 
+# keys.json 当前 schema 版本（迁移链末态）。CRUD 写 wrapper 时必须引用本常量，
+# 禁止写版本字面量——否则每次写盘后 _load_keys_cached 都会重跑迁移链并重建 .json.v8backup（5-11）
+SCHEMA_VERSION = 14
+
 # =====================================================================
 # v9 默认值：VL provider 级参数（key.vision 段缺失时使用）
 # 与原 config.example.toml [vision.vl_providers.*] 默认值一致
@@ -375,6 +379,17 @@ def _write_raw_keys_file(records: list[dict], wrapper: dict | None = None) -> No
         path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _keys_file_mtime() -> float | None:
+    """keys.json 当前 mtime（文件不存在返回 None）
+
+    check_health 用于「写入前比对 mtime」检测健康检查期间的并发修改。
+    """
+    try:
+        return _get_unified_keys_path().stat().st_mtime
+    except OSError:
+        return None
 
 
 # =====================================================================
@@ -847,6 +862,15 @@ def _to_resolved_key(rec: KeyRecord, model: str) -> ResolvedKey:
     )
 
 
+def resolved_key_from_record(rec: KeyRecord, model: str) -> ResolvedKey:
+    """公有包装：从 KeyRecord 构建 ResolvedKey（3-12）。
+
+    供跨模块（如 vl.remote_vl 的 status 链路）调用，避免依赖私有
+    _to_resolved_key 被重构后静默破坏。逻辑不搬，仅暴露稳定入口。
+    """
+    return _to_resolved_key(rec, model)
+
+
 def resolve_keys(use_case: str, tier=None) -> list[ResolvedKey]:
     """统一路由入口：按 use_case + tier 筛选可用 key
 
@@ -947,7 +971,7 @@ def add_key(record: KeyRecord) -> str:
     with _keys_file_lock:
         records_raw, wrapper = _read_raw_keys_file()
         if wrapper is None:
-            wrapper = {"version": 11, "updated_at": date.today().isoformat(), "keys": records_raw}
+            wrapper = {"version": SCHEMA_VERSION, "updated_at": date.today().isoformat(), "keys": records_raw}
             wrapper = _maybe_migrate(wrapper)
             records_raw = wrapper.get("keys", [])
 
@@ -965,7 +989,7 @@ def update_key(key_id: str, updates: dict) -> KeyRecord | None:
     with _keys_file_lock:
         records_raw, wrapper = _read_raw_keys_file()
         if wrapper is None:
-            wrapper = {"version": 11, "updated_at": date.today().isoformat(), "keys": records_raw}
+            wrapper = {"version": SCHEMA_VERSION, "updated_at": date.today().isoformat(), "keys": records_raw}
 
         for rec in records_raw:
             if rec.get("id") == key_id:
@@ -990,7 +1014,7 @@ def delete_key(key_id: str) -> bool:
     with _keys_file_lock:
         records_raw, wrapper = _read_raw_keys_file()
         if wrapper is None:
-            wrapper = {"version": 11, "updated_at": date.today().isoformat(), "keys": records_raw}
+            wrapper = {"version": SCHEMA_VERSION, "updated_at": date.today().isoformat(), "keys": records_raw}
 
         before = len(records_raw)
         records_raw = [r for r in records_raw if r.get("id") != key_id]
@@ -1005,7 +1029,7 @@ def delete_key(key_id: str) -> bool:
 def save_keys(records: list[KeyRecord]) -> None:
     """全量保存（覆盖写）"""
     with _keys_file_lock:
-        wrapper = {"version": 11, "updated_at": date.today().isoformat(),
+        wrapper = {"version": SCHEMA_VERSION, "updated_at": date.today().isoformat(),
                    "keys": [_to_dict(r) for r in records]}
         _write_raw_keys_file(wrapper["keys"], wrapper)
         _invalidate_cache()
@@ -1098,15 +1122,22 @@ def check_health(max_workers: int = 10) -> dict:
     - 失败: fail_count += 1
     - fail_count >= 3: 标记为 works=false
     更新 last_health_check 时间戳。
+
+    5-3 重构：锁内只做「读快照 + 提取去重待测列表」和「应用结果 + 写回」两段，
+    网络测试在锁外执行。此前全程持有 _keys_file_lock 跑 ThreadPoolExecutor
+    （每 key timeout=30s），每 12h 自动健康检查期间 _load_keys_cached /
+    resolve_keys / add_key / update_key 等消费者全部被阻塞几十秒。
+    写回前重新读最新文件快照应用结果，配合 mtime 比对防覆盖并发修改。
     """
+    # ---- 阶段 1：持锁读快照 + 提取去重待测列表，随即释放锁 ----
     with _keys_file_lock:
-        records_raw, wrapper = _read_raw_keys_file()
-        if wrapper is None:
-            wrapper = {"version": 11, "updated_at": date.today().isoformat(), "keys": records_raw}
+        records_raw, _wrapper = _read_raw_keys_file()
+        snapshot_mtime = _keys_file_mtime()
 
         # 按 (key, base_url) 去重，每物理 key 取一个测试 model
         # v8：优先选 LLM scope model（AIGC model 无法用 /chat/completions 测试）
         # v11：保留 protocol 字段
+        # 注意：只提取纯数据（str）出锁，不持有 record 引用
         unique: dict[tuple, dict] = {}
         for rec in records_raw:
             dedup = (rec.get("key", ""), rec.get("base_url", "").rstrip("/"))
@@ -1122,36 +1153,50 @@ def check_health(max_workers: int = 10) -> dict:
             protocol = str(rec.get("protocol", "openai") or "openai").lower().strip()
             if protocol not in ("openai", "anthropic"):
                 protocol = "openai"
-            unique[dedup] = {"record": rec, "test_model": test_model, "protocol": protocol}
+            unique[dedup] = {"key": rec.get("key", ""),
+                             "base_url": rec.get("base_url", ""),
+                             "test_model": test_model,
+                             "protocol": protocol}
 
-        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+    # ---- 阶段 2：锁外网络测试（不阻塞 key_store 消费者） ----
+    def _check_one(item: dict) -> dict:
+        result = _test_key(item["key"], item["base_url"],
+                           item["test_model"], protocol=item.get("protocol", "openai"))
+        is_ok = result.get("works") or result.get("status") == 429
+        return {"key": item["key"], "base_url": item["base_url"],
+                "is_ok": is_ok, "result": result}
 
-        def _check_one(item: dict) -> dict:
-            rec = item["record"]
-            result = _test_key(rec.get("key", ""), rec.get("base_url", ""),
-                              item["test_model"], protocol=item.get("protocol", "openai"))
-            is_ok = result.get("works") or result.get("status") == 429
-            return {"key": rec.get("key", ""), "base_url": rec.get("base_url", ""),
-                    "is_ok": is_ok, "result": result}
+    results_map: dict[tuple, dict] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_check_one, item): dedup for dedup, item in unique.items()}
+        for fut in as_completed(futures):
+            dedup = futures[fut]
+            try:
+                results_map[dedup] = fut.result()
+            except Exception as e:
+                results_map[dedup] = {"is_ok": False, "result": {"error": str(e)[:100]}}
 
-        results_map: dict[tuple, dict] = {}
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(_check_one, item): dedup for dedup, item in unique.items()}
-            for fut in as_completed(futures):
-                dedup = futures[fut]
-                try:
-                    results_map[dedup] = fut.result()
-                except Exception as e:
-                    results_map[dedup] = {"is_ok": False, "result": {"error": str(e)[:100]}}
+    # ---- 阶段 3：重新持锁，基于最新文件快照应用结果并写回 ----
+    now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+    with _keys_file_lock:
+        records_raw, wrapper = _read_raw_keys_file()
+        if _keys_file_mtime() != snapshot_mtime:
+            logger.info(
+                "keys.json 在健康检查期间被并发修改（mtime 变化），基于最新快照应用健康检查结果")
+        if wrapper is None:
+            wrapper = {"version": SCHEMA_VERSION, "updated_at": date.today().isoformat(), "keys": records_raw}
 
-        # 应用结果到所有 record（同物理 key 共享 status）
+        # 应用结果到所有被测 record（同物理 key 多条记录共享 status）。
+        # 检查期间新写入的 record（不在 results_map 中）跳过，保持原 status 不动。
         ok_count = 0
         fail_count = 0
         removed_count = 0
         details = []
         for rec in records_raw:
             dedup = (rec.get("key", ""), rec.get("base_url", "").rstrip("/"))
-            r = results_map.get(dedup, {"is_ok": False, "result": {"error": "unknown"}})
+            if dedup not in results_map:
+                continue
+            r = results_map[dedup]
             is_ok = r["is_ok"]
             result = r["result"]
 
@@ -1207,7 +1252,7 @@ def cleanup_expired(backup: bool = True) -> dict:
         path = _get_unified_keys_path()
         records_raw, wrapper = _read_raw_keys_file()
         if wrapper is None:
-            wrapper = {"version": 9, "updated_at": date.today().isoformat(), "keys": records_raw}
+            wrapper = {"version": SCHEMA_VERSION, "updated_at": date.today().isoformat(), "keys": records_raw}
 
         before = len(records_raw)
         new_records = [r for r in records_raw

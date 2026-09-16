@@ -1,8 +1,7 @@
-"""v6-lite-streaming-gui T00 单元测试：pool.stream + ToolCallAccumulator + _iter_lines_async
+"""v6-lite-streaming-gui T00 单元测试：pool.stream + ToolCallAccumulator
 
 测试范围（spec D02/D03/D04/D14）：
 - ToolCallAccumulator：半包累积 + build_all（单/多 tool_call）
-- _iter_lines_async：requests.Response 桥接为 async iterator
 - pool.stream()：MockProvider SSE 流 → 事件序列断言
 - 客户端断开 → key 释放（D14）
 
@@ -11,6 +10,9 @@
 T07：pool._stream_openai_sse 改用 httpx.AsyncClient.stream + aiter_lines，
 测试 mock 从 patch requests.post 改为 httpx.MockTransport + patch get_async_client
 （spec Anti-Cheat：测试用 httpx.MockTransport 测试 HTTP 调用）。
+
+5-13：_iter_lines_async/_safe_next_line/_STREAM_SENTINEL 三件套已从生产代码删除
+（T07 后无调用路径），其对应用例同步移除。
 """
 
 import asyncio
@@ -25,10 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from server.llm_pool.pool import (  # noqa: E402
-    _STREAM_SENTINEL,
     ToolCallAccumulator,
-    _iter_lines_async,
-    _safe_next_line,
 )
 
 # =====================================================================
@@ -87,41 +86,6 @@ def test_tool_call_accumulator_default_index():
     result = acc.build_all()
     assert len(result) == 1
     assert result[0]["id"] == "call_x"
-
-
-# =====================================================================
-# _iter_lines_async / _safe_next_line 测试
-# =====================================================================
-
-def test_safe_next_line_normal():
-    """正常读取下一行"""
-    it = iter(["line1", "line2", "line3"])
-    assert _safe_next_line(it) == "line1"
-    assert _safe_next_line(it) == "line2"
-    assert _safe_next_line(it) == "line3"
-    assert _safe_next_line(it) is _STREAM_SENTINEL
-
-
-def test_iter_lines_async_basic():
-    """_iter_lines_async 把 mock response 桥接为 async iterator"""
-    mock_resp = MagicMock()
-    mock_resp.iter_lines = MagicMock(return_value=iter([
-        'data: {"choices":[{"delta":{"content":"hello"}}]}',
-        '',
-        'data: {"choices":[{"delta":{"content":" world"}}]}',
-        'data: [DONE]',
-    ]))
-
-    async def run():
-        lines = []
-        async for line in _iter_lines_async(mock_resp):
-            lines.append(line)
-        return lines
-
-    lines = asyncio.run(run())
-    assert len(lines) == 4  # 含空行
-    assert "hello" in lines[0]
-    assert "world" in lines[2]
 
 
 # =====================================================================
@@ -318,6 +282,9 @@ def test_pool_stream_provider_error_release_key():
     pool = LLMPool.__new__(LLMPool)
     pool._acquire = MagicMock(return_value=mock_key)
     pool._release = MagicMock()
+    # 5-4：流式 429 路径会调 _compute_retry_delay 算 cooldown，此处 mock 掉
+    #（本测试只断言 release 语义，不关注 cooldown 数值）
+    pool._compute_retry_delay = MagicMock(return_value=30.0)
 
     async def run():
         events = []
@@ -342,7 +309,11 @@ def test_pool_stream_provider_error_release_key():
     assert done["finish_reason"] == "error"
     # key 释放（D14：即使错误也要 release）
     pool._release.assert_called_once()
-    assert pool._release.call_args.kwargs.get("success") is False
+    kwargs = pool._release.call_args.kwargs
+    # 5-4：流式 429 按状态码映射为 rate_limited=True（与非流式 _call_openai 对齐），
+    # 不再走 success=False 的常规失败路径（此前会经 _apply_model_health_failure 误 disable model）
+    assert kwargs.get("rate_limited") is True
+    assert kwargs.get("success", False) is False
 
 
 def test_pool_stream_no_available_keys():
@@ -376,8 +347,6 @@ if __name__ == "__main__":
         test_tool_call_accumulator_multiple_calls,
         test_tool_call_accumulator_empty,
         test_tool_call_accumulator_default_index,
-        test_safe_next_line_normal,
-        test_iter_lines_async_basic,
         test_pool_stream_openai_text_delta,
         test_pool_stream_openai_tool_call_accumulation,
         test_pool_stream_thinking_delta,

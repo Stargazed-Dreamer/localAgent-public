@@ -344,6 +344,13 @@ class MainWindow(QMainWindow):
         if not http.is_reachable():
             return
 
+        # 8-4: 上一轮 BadgeThread 仍在跑（6 个串行请求各 8s 超时，最长 ~48s > 30s 周期）
+        # 时跳过本轮：直接覆盖 self._badge_thread 会让运行中的 QThread 失去引用被 GC
+        # （"QThread: Destroyed while thread is still running" 硬崩），且旧线程 finished
+        # 晚到会读到新线程写到一半的计数（同 due_todos._refresh_async 的 isRunning 模式）
+        if getattr(self, "_badge_thread", None) is not None and self._badge_thread.isRunning():
+            return
+
         class BadgeThread(QThread):
             def __init__(self, h):
                 super().__init__()
@@ -437,6 +444,14 @@ class MainWindow(QMainWindow):
             chat_panel = cast(ChatPanel, self.panels.get("chat"))
             if chat_panel is not None and hasattr(chat_panel, "interrupt_active_session"):
                 chat_panel.interrupt_active_session()
+        except Exception:
+            pass
+        # 8-4: 停 badge 轮询并限时等待在飞线程退出，避免退出时运行中 QThread 被销毁
+        try:
+            self._badge_timer.stop()
+            _badge_t = getattr(self, "_badge_thread", None)
+            if _badge_t is not None and _badge_t.isRunning():
+                _badge_t.wait(2000)
         except Exception:
             pass
         # 阶段 5 会改为最小化到托盘；本期直接退出

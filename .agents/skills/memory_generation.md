@@ -4,6 +4,7 @@ description: >
   记忆生成与检查。触发词：生成记忆、记忆生成、记忆检查、提取记忆、更新记忆、
   记忆维护、保存经验、记忆总结。当用户要求从当前会话提取记忆、检查记忆质量、
   或会话结束前需要保存经验时触发。后端维护器只做老化+验证，生成本身由 agent 执行。
+task_type: recurring.memory_generation
 ---
 
 # 记忆生成 (memory_generation)

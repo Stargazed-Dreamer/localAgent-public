@@ -1,6 +1,6 @@
 [project]
 name = "localagent"
-version = "0.46.0"
+version = "0.48.0"
 description = "LocalAgent API backend with PaddleOCR-VL"
 requires-python = ">=3.12"
 dependencies = [
@@ -83,6 +83,13 @@ dev = [
 ]
 
 [tool.uv]
+# 默认索引锁定为官方 PyPI：项目级配置优先于全局 uv.toml 的阿里云镜像，
+# 防止任何 re-lock（uv lock / uv run 触发重解析）把 uv.lock 的 registry 整体刷成镜像（2026-09-12 修复）
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
 # PyTorch CUDA 12.6 索引（GPU 推理，驱动 610.47 兼容）
 [[tool.uv.index]]
 name = "pytorch-cu126"

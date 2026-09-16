@@ -20,6 +20,7 @@ ADR-0023 DANGEROUS_TOOLS 权限检查：
 
 import logging
 import uuid
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -640,9 +641,9 @@ async def advanced_tool(req: AdvancedToolRequest):
             elif p["in"] == "query":
                 query_params[pname] = params.pop(pname)
 
-    # 替换路径参数
+    # 替换路径参数（6-9: URL 编码——v 含 / ? # % 时原样替换会改变请求路径/查询结构）
     for k, v in path_params.items():
-        path = path.replace(f"{{{k}}}", str(v))
+        path = path.replace(f"{{{k}}}", quote(str(v), safe=""))
 
     # 剩余参数：若有 body 则作为 JSON body，否则作为 query
     body = None

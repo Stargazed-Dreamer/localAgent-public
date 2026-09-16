@@ -549,6 +549,85 @@ def test_release_approve_scan_digest_mismatch_rejected(monkeypatch, tmp_path):
     assert _release_approve(args) == EXIT_GATE_FAILURE
 
 
+def test_refresh_snapshot_digest_only_changes_digest(tmp_path):
+    """refresh_snapshot_digest：只更新 scan_digest，命中集与审批元数据不动。"""
+    from tools.release.engine.triage import load_snapshot, refresh_snapshot_digest
+
+    path = tmp_path / "public-full.json"
+    _write_snapshot(tmp_path, "public-full", "f" * 64)
+
+    refresh_snapshot_digest(path, "e" * 64)
+
+    snap = load_snapshot(path)
+    assert snap["scan_digest"] == "e" * 64
+    assert snap["approved_by"] == "tester"
+    assert snap["hits"] == [{"path": "a.py", "rule": "local-absolute-path", "count": 1}]
+
+
+def test_release_report_clean_refreshes_anchor(monkeypatch, tmp_path):
+    """第一阶段干净报告 → 快照锚点对齐本轮 scan（增量发布不再锚定死锁）。"""
+    from tools.release.cli import EXIT_OK, _release_report
+    from tools.release.engine import prepare as prepare_mod
+
+    plan = make_plan(scan_digest="e" * 64)
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    (profiles_dir / "public-full.toml").write_text(
+        PROFILE_WITH_APPROVAL.format(profile_id="public-full"), encoding="utf-8"
+    )
+    triage_dir = tmp_path / "triage"
+    _write_snapshot(triage_dir, "public-full", "f" * 64)  # 上轮批准的旧锚点
+
+    monkeypatch.setattr("tools.release.cli._PROFILES_DIR", profiles_dir)
+    monkeypatch.setattr("tools.release.cli._TRIAGE_DIR", triage_dir)
+    monkeypatch.setattr("tools.release.cli._PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(prepare_mod, "prepare_release", lambda **kwargs: plan)
+    monkeypatch.setattr(
+        prepare_mod, "collect_sensitive_hits", lambda *a, **k: ([], 1, 0)
+    )
+
+    args = SimpleNamespace(profile="public-full", source="HEAD")
+    assert _release_report(args) == EXIT_OK
+    snap = json.loads((triage_dir / "public-full.json").read_text(encoding="utf-8"))
+    assert snap["scan_digest"] == "e" * 64
+    assert snap["approved_by"] == "tester"
+    assert snap["hits"] == [{"path": "a.py", "rule": "local-absolute-path", "count": 1}]
+
+
+def test_release_report_new_hits_keeps_anchor(monkeypatch, tmp_path):
+    """第一阶段存在 NEW 命中 → 拒绝且锚点不刷新（批准仍被第二阶段拦住）。"""
+    from tools.release.cli import EXIT_GATE_FAILURE, _release_report
+    from tools.release.engine import prepare as prepare_mod
+
+    plan = make_plan(scan_digest="e" * 64)
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    (profiles_dir / "public-full.toml").write_text(
+        PROFILE_WITH_APPROVAL.format(profile_id="public-full"), encoding="utf-8"
+    )
+    triage_dir = tmp_path / "triage"
+    _write_snapshot(triage_dir, "public-full", "f" * 64)
+
+    monkeypatch.setattr("tools.release.cli._PROFILES_DIR", profiles_dir)
+    monkeypatch.setattr("tools.release.cli._TRIAGE_DIR", triage_dir)
+    monkeypatch.setattr("tools.release.cli._PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(prepare_mod, "prepare_release", lambda **kwargs: plan)
+    monkeypatch.setattr(
+        prepare_mod,
+        "collect_sensitive_hits",
+        lambda *a, **k: (
+            [{"path": "b.py", "line": 1, "rule": "local-absolute-path", "severity": "MEDIUM"}],
+            1,
+            0,
+        ),
+    )
+
+    args = SimpleNamespace(profile="public-full", source="HEAD")
+    assert _release_report(args) == EXIT_GATE_FAILURE
+    snap = json.loads((triage_dir / "public-full.json").read_text(encoding="utf-8"))
+    assert snap["scan_digest"] == "f" * 64  # 锚点未动
+
+
 def test_release_approve_full_chain(monkeypatch, tmp_path):
     """真实批准链路：写 approval → build(mock) → 写快照（未 --publish 不触达 publish）。"""
     from tools.release.cli import EXIT_OK, _release_approve

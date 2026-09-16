@@ -8,7 +8,7 @@
 
 ### 1. 检查现有 skill（必做）
 
-调用 `agent_guide(task='用户任务描述')` 获取候选清单，或读 `.agents/skills/_index.md` 查看详细 skill 信息（当前 49 个 task_type）。**重点关注**：
+调用 `agent_guide(task='用户任务描述')` 获取候选清单，或读 `.agents/skills/_index.md` 查看详细 skill 信息（task_type 完整清单见 `_index.md` 核心 Skill 段 + 组件化模块段，数量随新增/重构变动不在这里写精确数字）。**重点关注**：
 - **`dev/` 桶**（工程化开发 skill 集）：`to-spec` / `to-tickets` / `wayfinder` / `implement` / `triage` / `tdd` / `codebase-design` / `domain-modeling` / `prototype` / `grill-me` / `grilling` / `grill-with-docs` / `resolving-merge-conflicts` — 新功能开发几乎所有场景都值得先看 dev/ 桶
 - **`daily/` 桶**：`teach`（教学）/ `cangjie_extraction`（蒸馏方法论）
 - 元 skill：`skill-creator`（创建新 skill）/ `anti_hallucination`（小修补防幻觉）/ `neat-freak`（文档同步）/ `task_closure`（任务收尾）
@@ -125,6 +125,16 @@
 
 ---
 
+## 文档与注释变更（2026-09-16 防过时整改新增，详见 AGENTS.md「文档防过时规范」）
+
+- [ ] 是否新写了易漂移的统计数字（面板/工具/条目/图标/ADR/schema 版本/间隔天数）？→ 改为指向代码常量、运行时清单或定性描述
+- [ ] 行为重构（尤其是"改掉旧行为"类）是否 grep 了旧行为关键词并同步全部 docstring / `docs/*.md` / config 注释？
+- [ ] 文档中引用的文件路径是否实际存在？移动/删除文件后是否全仓 grep 清理了引用？
+- [ ] 写"当前是 X"前是否实测（import 常量 / 数文件 / 跑发现逻辑），而非照抄其他文档？
+- [ ] 改 `.agents/rules/` 或 `.trae/rules/` 后是否双向同步并 diff 确认一致？
+
+---
+
 ## 代码变更
 
 - [ ] 新增的路由是否在 `server/main.py` 中注册？
@@ -133,6 +143,42 @@
 - [ ] 新增的接口是否有 `/status` 查询端点？
 - [ ] 错误处理是否完善（不暴露内部细节）？
 - [ ] 是否有硬编码的路径/端口/密钥？→ 路径/端口移入 `config.toml`；密钥移入 `data/secret/secrets.toml`（非 LLM 密钥）或 `data/llm/keys.json`（LLM 密钥），通过 `lib/secret` 读取
+
+## Guide 关键词维护（强制，每次新增/修改 skill 必查）
+
+> **背景**：2026-08-08 测试 guide 功能时发现"我今天都干了啥，帮我捋一下时间线"无法路由到 daily_summary（得分仅 6，未达 strong_match 阈值），且 60+ skill 的 keywords 存在大量跨 skill 重复、泛动词、同 skill 内重复，导致路由串台。本规则防止同类问题复发。
+
+**核心原则：keywords 是路由的"指纹"，必须唯一、具体、可区分。向量化是安全网，不是脏关键词的借口。**
+
+### 评分机制速查（写 keyword 前必读）
+
+GUIDE_REGISTRY 的 `match_task_candidates` 五路加权打分：
+1. **kw_exact**（+10/词）：keyword 完整出现在用户 query 中 → 最强信号
+2. **2-gram 重叠**（+2/重叠 bigram，上限 16）：query 与 entry 的 2-gram 交集
+3. **同义词组命中**（+3/组 + 2/组不同词）：语义相关
+4. **kw_fuzzy**（+3/词 if ratio≥50%）：keyword 的 2-gram 大部分在 query 中
+5. **domain_hints**（+10/domain）：context 含特定域名时加分
+
+**strong_match 判定**：kw_exact 命中 OR kw_fuzzy ratio≥80% OR 向量化（cosine≥0.6 OR score≥阈值 AND cosine≥0.4）。
+
+### 检查项（每次新增/修改 skill 的 keywords 时必查）
+
+- [ ] **跨 skill 重复检查**：新增 keyword 前，用 Grep 搜该词在所有 `GUIDE_REGISTRY` 条目（`server/agent_guide_data.py` + `workspace/*/loop_actions.py`）中是否已存在。若已存在于其他 skill → 必须改为组合词（如"抽卡"→"鸣潮抽卡"）或放弃该 keyword
+- [ ] **禁止泛动词**：单独的"开发/翻页/磁盘/记账/抽卡/寻访/日程/存档"等泛动词禁止作为 keyword——它们会让多个 skill 同时 kw_exact 命中导致平局。必须用组合词（"磁盘清理"/"鸣潮抽卡"/"文章存档"）
+- [ ] **同 skill 内去重**：同一 skill 的 keywords 列表内不能有重复词，且不能有语义重叠的变体（如"客户端开发"与"开发客户端"同时存在）
+- [ ] **短英文 keyword（≤4 字符纯 ASCII）**：IRR/NPV/DCF/TDD/ADR/WIP 等已自动跳过 kw_fuzzy（避免 bigram 误匹配），但仍参与 kw_exact。新增短英文 keyword 时确认它的完整子串不会出现在常见英文 query 中
+- [ ] **向量化兜底验证**：对口语化 query（无 keyword 命中），确认向量化能正确路由。测试方法：`uv run python temp/test_match_logic.py`（或直接调 `match_task_candidates(query, top_n=3)`）
+- [ ] **盲测集回测（强制）**：修改 keywords 后必须跑 `uv run python tests/guide_eval/run_eval.py`（tests/guide_eval/cases.jsonl 固化 ~135 条真实/口语 query + 期望 top1 标注），top1 命中率 < 85% 即红。pytest 挂 quick 层（tests/guide_eval/test_guide_eval.py）。known_gap=true 的用例是已知路由缺口 backlog，修复串台后把 known_gap 移除并更新 note
+
+### 已知坑点（历史教训）
+
+| 坑点 | 症状 | 修复 |
+|------|------|------|
+| 4 个抽卡 skill 都有单独"抽卡" | "鸣潮抽卡"让 4 个 skill 同时 kw_exact +10 平局 | 移除单独"抽卡"，保留"鸣潮抽卡"等组合词 |
+| "异环"/"鸣潮"/"终末地"单独词 | yihuan_gacha 与 yihuan_simulator 串台 | 移除单独游戏名词，用"异环抽卡"/"异环棋盘"区分 |
+| "记账"在 accounting 和 cross_workspace_advisor 重复 | "记账"串到 cross_workspace_advisor | 从 cross_workspace_advisor 移除，保留组合词"生活记账" |
+| dev.goal_engineering 有单独"开发" | "开发新功能"命中所有 dev 桶 skill | 移除单独"开发" |
+| daily_summary 无口语化变体 | "干了啥/捋/时间线"得分仅 6，未达 strong_match | 加正式变体 + 向量化兜底 |
 
 ## 密钥统一管理（强制，2026-08-06 lib/secret 改造起）
 
@@ -143,7 +189,7 @@
 | 密钥类型 | 存储位置 | 读取方式 |
 |----------|----------|----------|
 | LLM/VL/AIGC 密钥（api_key/base_url/model） | `data/llm/keys.json` | `lib.secret.get_llm_keys_path()` 获取路径，`server/llm_pool/key_store.py` 统一加载 |
-| 非 LLM 密钥（tushare_token/github_token/example_token 等） | `data/secret/secrets.toml` `[tokens]` 段 | `lib.secret.get_secret(key)` 或 `lib.secret.get_secret_or_raise(key)` |
+| 非 LLM 密钥（tushare_token/github_token/gh_mirror_pat 等） | `data/secret/secrets.toml` `[tokens]` 段 | `lib.secret.get_secret(key)` 或 `lib.secret.get_secret_or_raise(key)` |
 
 ### 禁止行为
 
@@ -219,7 +265,7 @@
 - [ ] `tools_manifest.json` - 新增工具是否添加到清单？（GUI 自动读取此文件）
 - [ ] `client/widgets/tool_runner.py` - 仅在 GUI 展示、分类、队列或启动流程变化时更新；新增工具通常只改 `tools_manifest.json`。（旧 `tools_launcher.py`/`tools_manifest.md`/`launcher.bat` 已删除，由 `client/panels/tools.py` + `client/widgets/tool_runner.py` 替代）
 - [ ] `AGENTS.md` - 工具脚本表是否更新？（项目结构已程序化，见上方"项目结构变更"段；AGENTS.md 只保留简要大纲）
-- [ ] `server/agent_guide.py` 的 `GUIDE_REGISTRY` - 新增 skill 时是否同步添加条目？（task_type 命名规范：`{scope}.{name}`，scope=recurring/adhoc/system/dev）
+- [ ] `server/agent_guide.py` 的 `GUIDE_REGISTRY` - 新增 skill 时是否同步添加条目？（task_type 命名规范：`{scope}.{name}`，内置 scope=recurring/adhoc/system/dev/daily，workspace 扩展可引入新 scope 如 recording）
 
 ## 配置变更
 

@@ -468,7 +468,8 @@ class RunnerConfig:
     use_stream: bool = True
     # 看门狗（D15）：0 = 禁用
     stream_idle_timeout_secs: int = 90      # SSE 流空闲超时（秒）
-    stall_detection_window_secs: int = 30   # stall 检测窗口（秒）
+    # 默认 0=禁用：推理模型服务端静默思考 >30s 属常态，token 速率 stall 检测误杀正常流
+    stall_detection_window_secs: int = 0    # stall 检测窗口（秒）
     # v6-lite-streaming-gui T03: 打字机配置（spec D07/D08/D09）
     # typewriter_mode: close（一次性）/ fast（chunk 到达即渲染，默认）/ normal（16ms 60fps）
     # 注：此字段供 ChatPanel 读取默认值，SessionRunner 本身不使用

@@ -48,6 +48,7 @@ import signal
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from server.activity_tracker.activity_signal import compute_intensity
 
@@ -136,6 +137,9 @@ class VLQuotaManager:
         self._dirty: bool = False
         # Ticket 06: shutdown hooks 注册标记（避免重复注册，单例场景下只注册一次）
         self._shutdown_hooks_registered: bool = False
+        # 6-3: 注册时保存的原信号 handler（flush 后恢复并重发信号，保住默认语义）
+        # 值为 signal.Handlers 联合类型（SIG_DFL/default_int_handler/callable），用 Any 承载
+        self._original_handlers: dict[int, Any] = {}
         # D1: 每小时 focus 放行次数（用于 focus_cap 约束，防止焦点频繁变化击穿 pace）
         self._focus_approvals_by_hour: dict[str, int] = {}
 
@@ -358,23 +362,32 @@ class VLQuotaManager:
         - atexit：覆盖 Python 正常退出（sys.exit / 主线程结束）
         - SIGINT：覆盖 Ctrl+C（KeyboardInterrupt）
         - SIGTERM：覆盖 kill 命令（默认信号）
+
+        6-3 修复：signal.signal 是"替换"不是"链式"——此前无条件覆盖既有 handler，
+        且 handler 只 flush 不恢复默认行为，Ctrl+C 后 KeyboardInterrupt 不再抛出，
+        uvicorn 优雅关停被破坏（表现为"按了没反应"）。现在：
+        - 当前 handler 已是非默认（其他组件如 uvicorn 已注册）→ 不覆盖，只留 atexit flush
+        - 当前是默认 → 注册本 handler；_signal_handler 在 flush 后恢复默认语义
         注意：signal.signal 只能在主线程调用，且 SIGTERM 在 Windows 上不被支持
         （Windows 只支持 SIGINT 和 SIGBREAK），需 try/except 兜底。
         """
         # atexit：最可靠的退出钩子，所有正常退出路径都会触发
         atexit.register(self.flush)
-        # SIGINT：Ctrl+C 触发
-        try:
-            signal.signal(signal.SIGINT, self._signal_handler)
-        except (ValueError, OSError) as e:
-            # 非主线程或 Windows 限制
-            logger.warning("注册 SIGINT handler 失败（不影响 atexit 兜底）: %s", e)
-        # SIGTERM：kill 命令触发（Windows 不支持，try/except 兜底）
-        try:
-            signal.signal(signal.SIGTERM, self._signal_handler)
-        except (ValueError, OSError, AttributeError) as e:
-            # Windows 无 SIGTERM 常量，或非主线程
-            logger.warning("注册 SIGTERM handler 失败（不影响 atexit 兜底）: %s", e)
+        # 6-3: SIGINT 的 Python 默认 handler 是 default_int_handler（非 SIG_DFL）
+        _default_handlers = (signal.SIG_DFL, signal.default_int_handler, None)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                current = signal.getsignal(sig)
+                if current not in _default_handlers:
+                    logger.info(
+                        "信号 %s 已有自定义 handler，跳过注册（atexit flush 仍兜底）", sig
+                    )
+                    continue
+                self._original_handlers[sig] = current
+                signal.signal(sig, self._signal_handler)
+            except (ValueError, OSError, AttributeError) as e:
+                # 非主线程 / Windows 限制 / 平台无该信号常量
+                logger.warning("注册 %s handler 失败（不影响 atexit 兜底）: %s", sig, e)
 
     def _signal_handler(self, signum, frame) -> None:
         """Ticket 06: 信号处理器（SIGINT/SIGTERM 触发时强制 flush 后退出）
@@ -382,12 +395,30 @@ class VLQuotaManager:
         注意：signal handler 中应避免复杂操作（如 IO），但本场景下配额文件
         丢失会导致当日 VL 配额统计失真，值得在 handler 中强制 flush。
         flush() 内部有 try/except 兜底，不会抛异常中断退出流程。
+
+        6-3: flush 后恢复默认信号语义（能走到这里说明注册时是默认 handler）：
+        - SIGINT 默认语义是抛 KeyboardInterrupt（uvicorn 优雅关停依赖它）。
+          Windows 上 os.kill(pid, SIGINT) 等价 TerminateProcess 硬杀，不能重发，
+          直接在 handler 内抛出等价异常。
+        - SIGTERM（实际仅 posix 会被投递）恢复默认 handler 后重发信号走默认终止。
         """
         try:
             self.flush()
         except Exception as e:
             logger.warning("信号 handler 中 flush 失败: %s", e)
-        # 不主动 sys.exit，让默认 handler 链继续（atexit 仍会触发）
+        original = self._original_handlers.get(signum)
+        if original is not None:
+            try:
+                signal.signal(signum, original)
+            except (ValueError, OSError) as e:
+                logger.warning("恢复 %s 原 handler 失败: %s", signum, e)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        try:
+            signal.raise_signal(signum)
+        except (OSError, ValueError, AttributeError) as e:
+            # 重发失败时不主动 sys.exit，atexit 仍会触发
+            logger.warning("信号 %s 重发失败（atexit 兜底）: %s", signum, e)
 
     # ---------- 核心决策 ----------
 

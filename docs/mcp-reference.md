@@ -265,10 +265,10 @@ localagent_advanced_tool(tool="models_pause", params={"resource": "gpu"})
 
 | 分类 | 排除工具 | 原因 |
 |------|---------|------|
-| **基础设施/系统** | `shutdown_server`, `health_health_get`, `mcp_stats`, `mcp_stats_reset`, `get_config_config_get`, `update_config_api_config_post`, `llm_pool_*`(8), `set_keep_awake`, `clear_skip_cache` | 非 agent 使用：监控/运维/脚本驱动 |
+| **基础设施/系统** | `shutdown_server`, `health_health_get`, `mcp_stats`, `mcp_stats_reset`, `get_config_config_get`, `update_config_api_config_post`, `llm_pool_*`(7), `set_keep_awake`, `clear_skip_cache` | 非 agent 使用：监控/运维/脚本驱动 |
 | **v6-lite 引擎专用** | `llm_pool_chat_tools`, `llm_pool_stream` | v6-lite 对话引擎 LLMGateway/SSE 专用端点，不进 agent tool catalog（防递归，REST 仍可用） |
 | **GUI/脚本专用** | `activity_daily_*`(4), `user_message_*`(4) | 由 GUI 面板和日报系统管理 |
-| **零调用状态** | `system_status`, `keep_awake_status`, `docviewer_status`, `memory_maintain_status`, `agent_guide_usage` | 通过 `/health` 获取聚合状态 |
+| **零调用状态** | `system_status`, `keep_awake_status`, `docviewer_status`, `memory_maintain_status` | 通过 `/health` 获取聚合状态 |
 | **入站网关** | `inbound_v1_models`, `inbound_v1_chat_completions`, `inbound_keys_list`, `inbound_keys_create`, `inbound_keys_update`, `inbound_keys_delete`, `inbound_calls_list`, `inbound_stats` | OpenAI 兼容中转端点，消费者是外部 harness（Cline/Cherry Studio）与「入站管理」GUI 面板，不进 agent 工具列表 |
 
 ### 脚本驱动功能（非 agent 直接调用）
@@ -277,7 +277,7 @@ localagent_advanced_tool(tool="models_pause", params={"resource": "gpu"})
 
 ## v6-lite-streaming-gui：真流式 + DoomLoop + SessionFacade
 
-**SDD 流程 `temp/sdd/v6-lite-streaming-gui/`**（7 ticket 全部 completed）。三项打包：后端真 SSE 流式 + DoomLoop thinking_delta 尾重复检测 + SessionFacade 5 方法封装。
+**SDD 流程 `temp/sdd/v6-lite-streaming-gui/`**（7 ticket 全部 completed；产物目录已随 temp 清理，行为描述以本节和 `docs/chat-engine.md` 为准）。三项打包：后端真 SSE 流式 + DoomLoop thinking_delta 尾重复检测 + SessionFacade 5 方法封装。
 
 ### 后端真流式（D02/D03/D04/D14）
 
@@ -289,15 +289,14 @@ localagent_advanced_tool(tool="models_pause", params={"resource": "gpu"})
 
 ### DoomLoopDetector（D10/D11）
 
-检测 `thinking_delta` 尾重复（spec D10/D11）。`client/core/agent/doom_loop.py` `DoomLoopDetector` 在 runner `_stream_llm` 内逐 chunk 喂入 thinking_delta，命中尾重复（`pattern*N` 模式，`tail_size=2000` / `min_repeat_len=50` / `repeat_threshold=3`）时：
+检测 `thinking_delta` 尾重复（spec D10/D11）。`client/core/agent/doom_loop.py` `DoomLoopDetector` 在 runner `_stream_llm` 内逐 chunk 喂入 thinking_delta，命中尾重复（`pattern*N` 模式，`tail_size=2000` / `min_repeat_len=50` / `repeat_threshold=3`）时（**B1 重构后不重试**）：
 
 1. mid-stream abort（中断当前 SSE 流）
-2. 不消耗 retry budget（`has_attempted_*` 不变）
-3. backoff + jitter（200ms + random(0, 300ms)）
-4. 注入"避免重复"系统提示重新发起请求
-5. 最多 `max_retries=3` 次连续命中写 error event 终止
+2. 已收到的 partial text 落库为 `source="partial"` 消息，streaming 事件标 `invalidated`
+3. 写一条用户可见但 LLM 不可见的系统警告（`source="system_warning"`）
+4. 写 `transition(doom_loop_detected)` 事件，会话状态置 `interrupted`，`stop_reason="doom_loop_detected"`
 
-非连续命中重置 retry 计数器。`thinking_delta` 缺失时 DoomLoop 不生效（不降级到 `text_delta`）。
+用户看到警告后自行决定换种问法或新开对话（用户消息即隐式 nudge）。`thinking_delta` 缺失时 DoomLoop 不生效（不降级到 `text_delta`）。
 
 ### SessionFacade（D12/D13）
 
@@ -315,16 +314,16 @@ ChatPanel `_ChatWorker` 改用 SessionFacade（不再直接构造 SessionRunner�
 
 ### chat-panel-v2 重设计（UI 层升级）
 
-**SDD 流程 `temp/sdd/chat-panel-v2/`**（12 ticket 全部 completed）。基于 wip_45dd436b（防关机/崩溃丢失会话）扩展为完整对话面板重设计，484 项 chat 相关测试全过。
+**SDD 流程产物 `temp/sdd/chat-panel-v2/`（12 ticket 全部 completed）已随 temp 清理**，设计沉淀以本节和 `docs/chat-engine.md` 为准。基于 wip_45dd436b（防关机/崩溃丢失会话）扩展为完整对话面板重设计，484 项 chat 相关测试全过。
 
-**EventStore schema v5**（`client/core/agent/event_store.py` + `types.py`）：
-- sessions 表加 `group_name TEXT`（NULL=未分组）+ `pinned INTEGER DEFAULT 0`（0/1）两列
-- messages 表加 `model TEXT` 列（assistant 消息模型名，气泡下方小字显示）
+**EventStore 列扩展**（schema 版本以 `client/core/agent/event_store.py` 的 `_SCHEMA_VERSION` 为准）：
+- sessions 表有 `group_name TEXT`（NULL=未分组）+ `pinned INTEGER DEFAULT 0`（0/1）两列
+- messages 表有 `model TEXT` 列（assistant 消息模型名，气泡下方小字显示）
 - 迁移幂等：ALTER TABLE ADD COLUMN（旧 DB 自动补默认值）
 
 **UI 主体**（`client/panels/chat.py`）：
 - **开始页**：模板 tab + 最近 5 对话 + 分组选择器
-- **模板管理**：`data/chat_templates.json`（schema `{id, name, prompt, skills[], created_at, updated_at}`），左列表+右编辑区（49 个 skill 复选框）+ 失焦自动保存
+- **模板管理**：`data/chat_templates.json`（schema `{id, name, prompt, skills[], created_at, updated_at}`），左列表+右编辑区（全量 skill 复选框）+ 失焦自动保存
 - **侧边栏树形**：QTreeWidget 三区（置顶/分组/未分组），三点菜单（删除/重命名/移动/置顶/导出），搜索框实时过滤
 - **消息时间线块结构**：6 块类（_UserBubble/_AssistantTextBlock/_ThinkingBlock/_ToolCallBlock/_SystemBlock + _TimelineBlock 基类），每段独立块按 seq 时间顺序排列，sticky 标题栏显示当前可见可折叠块标题
 - **对话控制三模式**：发送/队列/引导 3 tab，空闲态只显示发送，运行态默认引导；队列只允许 1 条（重复禁用队列 tab），超长截断+编辑取消；队列持久化（source="queue" + visible=0，启动恢复 banner）
@@ -346,7 +345,7 @@ ChatPanel `_ChatWorker` 改用 SessionFacade（不再直接构造 SessionRunner�
 - `typewriter_mode`：close / fast（默认） / normal
 - `typewriter_normal_interval_ms`：normal 档 QTimer 间隔（默认 16ms = 60fps）
 - `stream_idle_timeout_secs`：SSE 流空闲超时（默认 90s）
-- `stall_detection_window_secs`：stall 检测窗口（默认 30s）
+- `stall_detection_window_secs`：stall 检测窗口（**默认 0 = 禁用**；2026-09-12 起默认关闭——推理模型服务端静默思考期不吐 token 属常态，token 速率检测会误杀正常流，真死流由空闲超时兜底；需要时可显式配置开启）
 
 `[runner.doom_loop]` 子段：`enabled` / `tail_size` / `min_repeat_len` / `repeat_threshold` / `max_retries` / `backoff_base_ms` / `backoff_jitter_ms`
 

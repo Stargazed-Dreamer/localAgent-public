@@ -111,7 +111,7 @@ class TestTemplateManagerPanelComponents:
         panel = _TemplateManagerPanel()
         try:
             buttons = panel.findChildren(QPushButton)
-            plus_btns = [b for b in buttons if b.text() == "+" and b.toolTip() == "新建模板"]
+            plus_btns = [b for b in buttons if b.text() == "＋ 新建模板" and b.toolTip() == "新建模板"]
             assert len(plus_btns) >= 1, "应有 + 新建模板 按钮（D14）"
         finally:
             panel.deleteLater()
@@ -303,7 +303,7 @@ class TestTemplateManagerPanelNewTemplate:
     """点 + 新建模板（D14）。"""
 
     def test_new_template_creates_entry(self, qapp, isolated_templates_path):
-        """点 + → 列表项 +1 + 选中新模板。"""
+        """点 + → 列表项 +1 + 选中未命名模板。"""
         from client.panels.chat import _TemplateManagerPanel
 
         panel = _TemplateManagerPanel()
@@ -317,8 +317,8 @@ class TestTemplateManagerPanelNewTemplate:
             )
             # 新模板应被选中
             assert panel._current_template_id is not None
-            assert panel._name_edit.text() == "新模板", (
-                f"新模板 name 应为 '新模板'，实际 {panel._name_edit.text()!r}"
+            assert panel._name_edit.text() == "未命名模板", (
+                f"新模板 name 应为 '未命名模板'，实际 {panel._name_edit.text()!r}"
             )
         finally:
             panel.deleteLater()

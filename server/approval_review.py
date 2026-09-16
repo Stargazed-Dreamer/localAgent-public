@@ -345,6 +345,8 @@ def _build_review_prompt(operation_id: str, request_data: dict,
     cmd = request_data.get("cmd") or request_data.get("command") or ""
     cwd = request_data.get("cwd", "")
     endpoint_desc = _ENDPOINT_DESCS.get(operation_id, operation_id)
+    # 动态获取工具输出路径，与 _TOOL_PATH_PREFIXES 同源，避免硬编码用户名（TP-15）
+    tool_output_dir = _TOOL_PATH_PREFIXES[0] if _TOOL_PATH_PREFIXES else "(LOCALAPPDATA 未配置)"
 
     untrusted = json.dumps({
         "code": code[:2000],
@@ -372,7 +374,7 @@ def _build_review_prompt(operation_id: str, request_data: dict,
         "- 写操作（open(w/a)、覆盖文件、mkdir、移动、删除）才需要更谨慎评估\n"
         "- 简单理解：读几乎都放行，写才需要审\n\n"
         "工具路径白名单（免审路径）：\n"
-        "- C:\\Users\\admin\\AppData\\Local\\Temp\\trae\\toolcall-output —— "
+        f"- {tool_output_dir} —— "
         "这是 Trae IDE 工具调用输出目录，agent 读写此路径是正常工具协作行为，"
         "访问该路径（无论读写）一律 APPROVE\n\n"
         "输出格式（严格）：\n"
@@ -384,7 +386,7 @@ def _build_review_prompt(operation_id: str, request_data: dict,
         f"[trusted_bg 项目背景]\n"
         f"LocalAgent 是个人 AI Agent 项目。审批防极端错误，不是刁难。\n"
         f"本项目运行在 Trae IDE 中，agent 通过 MCP 工具与后端协作，工具输出路径"
-        f"C:\\Users\\admin\\AppData\\Local\\Temp\\trae\\toolcall-output 的读写是正常协作流程。\n\n"
+        f"{tool_output_dir} 的读写是正常协作流程。\n\n"
         f"[trusted_meta 端点元数据]\n"
         f"- operation_id: {operation_id}\n"
         f"- 功能: {endpoint_desc}\n"
@@ -585,7 +587,8 @@ def _llm_review(operation_id: str, request_data: dict,
     prompt, system_prompt = _build_review_prompt(operation_id, request_data, method, path)
 
     cfg = get_command_guard_config()
-    timeout = cfg.get("llm_review_timeout", 15)
+    # fallback 与 config.py 默认值对齐（5，此前误写 15）；用 .get 兼容测试注入的部分字段 dict
+    timeout = cfg.get("llm_review_timeout", 5)
 
     # tier 由 use_case="command_guard" 自动查 USE_CASE_REGISTRY.default_tier（=[3,5]）
     # 不再读 config.toml [llm.models] / [command_guard.llm_review_model_tier]
@@ -825,7 +828,12 @@ async def user_review_for_llm_deny(
         }
     """
     from server.command_guard import run_gui_dialog
-    from server.http_guard import create_pending, get_pending_http, record_http_decision
+    from server.http_guard import (
+        _extract_body_preview,
+        create_pending,
+        get_pending_http,
+        record_http_decision,
+    )
 
     approval_id = create_pending(method, path, body)
     log_approval_detailed({
@@ -833,7 +841,9 @@ async def user_review_for_llm_deny(
         "operation_id": operation_id, "method": method, "path": path,
         "approval_id": approval_id, "llm_decision": llm_decision,
         "llm_reason": llm_reason,
-        "body_preview": body.decode("utf-8", errors="replace") if body else "",
+        # 复用 http_guard 预览提取（过滤 _ 前缀/approval_token 等内部字段），避免完整 body
+        # 中的密钥字段进入审计日志（"日志不回显密钥值"约束）
+        "body_preview": _extract_body_preview(body),
     })
     try:
         pending = get_pending_http(approval_id)

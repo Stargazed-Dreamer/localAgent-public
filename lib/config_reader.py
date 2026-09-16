@@ -59,9 +59,18 @@ def load_config() -> dict:
 
 
 def save_config(config: dict):
-    """保存配置到 config.toml（并刷新内存缓存）"""
+    """保存配置到 config.toml（并刷新内存缓存）
+
+    7-1: 写盘在 _config_lock 内 + 临时文件写完 os.replace 原子替换——
+    原实现锁外 write_text（以 "w" 打开先截断），约 10 处 load_config() 读者
+    随时可能读到半截/空文件抛 TOMLDecodeError；两个写方并发还会互相截断。
+    """
     global _config_cache, _config_mtime
-    CONFIG_PATH.write_text(toml.dumps(config), encoding="utf-8")
+    payload = toml.dumps(config)
     with _config_lock:
+        # tmp 文件名带 pid：跨进程写方并发也不互踩 tmp
+        tmp_path = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.{os.getpid()}.tmp")
+        tmp_path.write_text(payload, encoding="utf-8")
+        os.replace(tmp_path, CONFIG_PATH)
         _config_cache = dict(config)
         _config_mtime = os.path.getmtime(CONFIG_PATH)

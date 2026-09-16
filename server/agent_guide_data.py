@@ -198,6 +198,39 @@ GUIDE_REGISTRY: dict[str, dict] = {
         "level": "standard",
     },
 
+    "adhoc.bat_writing": {
+        "skill": "bat_writing",
+        "name": "批处理编写与修复",
+        "skill_file": ".agents/skills/bat_writing/SKILL.md",
+        "keywords": [
+            "写bat", "写 bat", "bat脚本", "bat 脚本", "bat 乱码", "bat 跑不了",
+            "批处理", "批处理乱码", "批处理报错", "批处理编码", ".bat", ".cmd",
+            "启动脚本", "不是内部或外部命令", "找不到批处理标签",
+            "batch script", "cmd脚本", "cmd 脚本",
+        ],
+        "description": "编写/修复中文 Windows 批处理：GBK+CRLF+无BOM 铁律、写完必须 --check 自检、坏了用 scripts/fix_bat_encoding.py 修复",
+        "memory_key": None,
+        "first_action": "读 .agents/skills/bat_writing/SKILL.md；确认目标机代码页（本机 ACP=OEMCP=936 → GBK）；按 references/guide.md 模板编写；写完必须跑 uv run python .agents/skills/bat_writing/scripts/fix_bat_encoding.py <文件> --check，全 OK 才算完成，不过则 --inplace 修复后复检；交付前实际运行一次",
+        "workflow_summary": "1.读SKILL.md确认铁律 2.确认目标机代码页 3.按模板编写(标签用英文/%~dp0拼路径/中途不chcp) 4.--check自检(BOM/GBK/CRLF/末尾换行) 5.不过则--inplace修复后复检 6.cmd实跑验证",
+        "mcp_tools_priority": [
+            "Read (.agents/skills/bat_writing/SKILL.md，写 bat 前必读)",
+            "Write/Edit (bat 内容)",
+            "exec_cmd (uv run python .agents/skills/bat_writing/scripts/fix_bat_encoding.py <文件> --check 自检)",
+            "exec_cmd (同脚本 --inplace 修复)",
+        ],
+        "key_pitfalls": [
+            "三铁律：GBK(CP936)+CRLF+无BOM，任意一条破坏脚本就以'编码问题'的方式炸",
+            "LF-only 是最常见死法：cmd 对 LF-only 文件按字符数定位行偏移，GBK 双字节导致逐行错位，报错全是半截汉字；纯 ASCII 的 LF-only 往往能跑，所以坑几乎只在中文脚本上爆",
+            "不信任任何写入工具的行尾/编码：Edit/Write/编辑器都可能产出 LF 或 UTF-8，GBK 与 UTF-8 在乱码爆发前肉眼无法分辨，写完必须 --check",
+            "禁止脚本中途切 chcp：运行中切代码页让 cmd 缓存的字节↔字符映射失效；含中文时禁用 UTF-8+chcp 65001 方案（实测 echo 行会被误解析成命令）",
+            "goto/call 标签用英文；提权重启后工作目录变 System32，路径一律 %~dp0 拼接",
+            "文件末尾留换行（最后一行无换行符会被吞）；交付前实际运行一次，不是只在 IDE 里看过源码",
+            "--check 全过还报错 → 是脚本逻辑问题，不是编码问题，按普通 bug 排查",
+        ],
+        "prerequisites": ["目标机为 Windows（本机 ACP=OEMCP=936 已实测）"],
+        "level": "standard",
+    },
+
     "adhoc.office_docx": {
         "skill": "office_docx",
         "name": "Word 文档生成",

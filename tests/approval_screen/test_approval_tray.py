@@ -23,6 +23,23 @@ def _qapp():
     yield app
 
 
+def _wait_poll_done(poller, timeout_ms=3000):
+    """8-8 Poller HTTP 线程化后等待单次轮询完成（worker 更新 _last_ids/_first_poll
+    + 信号 queued 回主线程派发），保证顺序 _poll() 之间无竞态。"""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        QCoreApplication.processEvents()
+        if not poller._busy:
+            QCoreApplication.processEvents()
+            return True
+        time.sleep(0.01)
+    return False
+
+
 # ========== taskbar_flash ==========
 
 
@@ -152,6 +169,7 @@ class TestPollerNewArrivals:
         arrivals = []
         poller.new_arrivals.connect(lambda ids: arrivals.append(ids))
         poller._poll()
+        assert _wait_poll_done(poller)
         assert arrivals == []
         poller.deleteLater()
 
@@ -183,9 +201,11 @@ class TestPollerNewArrivals:
         poller.new_arrivals.connect(lambda ids: arrivals.append(ids))
 
         poller._poll()  # first poll: a1, no arrivals
+        assert _wait_poll_done(poller)
         assert arrivals == []
 
         poller._poll()  # second poll: a1 + a2, a2 is new
+        assert _wait_poll_done(poller)
         assert arrivals == [["a2"]]
         poller.deleteLater()
 
@@ -217,7 +237,9 @@ class TestPollerNewArrivals:
         poller.new_arrivals.connect(lambda ids: arrivals.append(ids))
 
         poller._poll()
+        assert _wait_poll_done(poller)
         poller._poll()
+        assert _wait_poll_done(poller)
         assert arrivals == []
         poller.deleteLater()
 
@@ -251,8 +273,11 @@ class TestPollerNewArrivals:
         poller.new_arrivals.connect(lambda ids: arrivals.append(ids))
 
         poller._poll()  # a1, no arrivals (first)
+        assert _wait_poll_done(poller)
         poller._poll()  # empty, no arrivals
+        assert _wait_poll_done(poller)
         poller._poll()  # a1 again, arrivals
+        assert _wait_poll_done(poller)
         assert arrivals == [["a1"]]
         poller.deleteLater()
 

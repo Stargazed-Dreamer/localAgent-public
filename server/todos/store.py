@@ -93,7 +93,11 @@ class TodosStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
-        self._write_lock = threading.Lock()
+        # 单连接 check_same_thread=False 被多线程共享（router 读走 asyncio.to_thread、
+        # loop_actions 后台轮询、事件循环线程写），同连接并发 step 会立即报
+        # "database is locked"（不走 busy_timeout）。读写必须全互斥；
+        # RLock 是因为 get_stats→get_due_todos→list_todos 存在同线程嵌套加锁。
+        self._conn_lock = threading.RLock()
 
     def initialize(self) -> None:
         if self._conn is not None:
@@ -162,7 +166,7 @@ class TodosStore:
         condition_status = todo.get("condition_status")
         if condition and not condition_status:
             condition_status = "active"
-        with self._write_lock:
+        with self._conn_lock:
             self.conn.execute(
                 """INSERT INTO todos (id, title, skill, type, status, frequency,
                        last_done_at, next_due_at, condition, condition_status, notes,
@@ -192,8 +196,9 @@ class TodosStore:
         return result
 
     def get_todo(self, todo_id: str) -> Optional[dict]:
-        cur = self.conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,))
-        row = cur.fetchone()
+        with self._conn_lock:
+            cur = self.conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,))
+            row = cur.fetchone()
         if not row:
             return None
         return self._deserialize_row(row, is_wip=False)
@@ -209,10 +214,12 @@ class TodosStore:
             conditions.append("type = ?")
             params.append(todo_type)
         where = " AND ".join(conditions) if conditions else "1=1"
-        cur = self.conn.execute(
-            f"SELECT * FROM todos WHERE {where} ORDER BY updated_at DESC", params
-        )
-        return [self._deserialize_row(r, is_wip=False) for r in cur.fetchall()]
+        with self._conn_lock:
+            cur = self.conn.execute(
+                f"SELECT * FROM todos WHERE {where} ORDER BY updated_at DESC", params
+            )
+            rows = cur.fetchall()
+        return [self._deserialize_row(r, is_wip=False) for r in rows]
 
     def update_todo(self, todo_id: str, updates: dict) -> Optional[dict]:
         if not updates:
@@ -228,7 +235,7 @@ class TodosStore:
             return self.get_todo(todo_id)
         set_clauses.append("updated_at = datetime('now', 'localtime')")
         params.append(todo_id)
-        with self._write_lock:
+        with self._conn_lock:
             self.conn.execute(
                 f"UPDATE todos SET {', '.join(set_clauses)} WHERE id = ?", params
             )
@@ -236,7 +243,7 @@ class TodosStore:
         return self.get_todo(todo_id)
 
     def delete_todo(self, todo_id: str) -> bool:
-        with self._write_lock:
+        with self._conn_lock:
             cur = self.conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
             self.conn.commit()
             return cur.rowcount > 0
@@ -263,7 +270,7 @@ class TodosStore:
         if todo_type == "triggered":
             next_due = None
             new_status = "pending"
-        with self._write_lock:
+        with self._conn_lock:
             self.conn.execute(
                 """UPDATE todos SET status=?, last_done_at=?, next_due_at=?,
                        updated_at=datetime('now', 'localtime') WHERE id=?""",
@@ -281,6 +288,7 @@ class TodosStore:
         """
         today = datetime.now().strftime("%Y-%m-%d")
         # 同时查 recurring 和 phased_recurring（triggered 不进 due 列表）
+        # list_todos 自带 _conn_lock（RLock 同线程重入安全）
         todos = []
         for t in self.list_todos():
             if t.get("type") not in ("recurring", "phased_recurring"):
@@ -417,7 +425,7 @@ class TodosStore:
             return {"triggered": False, "reason": f"暂不支持 event={event_type}", "todo_id": todo_id}
 
         # 触发：更新 next_due_at=today（标记已触发待处理）
-        with self._write_lock:
+        with self._conn_lock:
             self.conn.execute(
                 """UPDATE todos SET next_due_at=?, condition_status='active',
                        updated_at=datetime('now', 'localtime') WHERE id=?""",
@@ -432,7 +440,7 @@ class TodosStore:
         import uuid
         task_id = task.get("id") or f"wip_{uuid.uuid4().hex[:8]}"
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with self._write_lock:
+        with self._conn_lock:
             self.conn.execute(
                 """INSERT INTO wip_tasks (id, title, status, priority, goal, progress,
                        tags, next_steps, related_skills, related_files,
@@ -462,8 +470,9 @@ class TodosStore:
         return result
 
     def get_wip(self, task_id: str) -> Optional[dict]:
-        cur = self.conn.execute("SELECT * FROM wip_tasks WHERE id = ?", (task_id,))
-        row = cur.fetchone()
+        with self._conn_lock:
+            cur = self.conn.execute("SELECT * FROM wip_tasks WHERE id = ?", (task_id,))
+            row = cur.fetchone()
         if not row:
             return None
         return self._deserialize_row(row, is_wip=True)
@@ -478,26 +487,29 @@ class TodosStore:
         """
         if summary:
             cols = "id, title, status, priority, progress, updated_at"
+            with self._conn_lock:
+                if status:
+                    cur = self.conn.execute(
+                        f"SELECT {cols} FROM wip_tasks WHERE status = ? ORDER BY updated_at DESC",
+                        (status,),
+                    )
+                else:
+                    cur = self.conn.execute(
+                        f"SELECT {cols} FROM wip_tasks ORDER BY updated_at DESC"
+                    )
+                return [dict(r) for r in cur.fetchall()]
+        with self._conn_lock:
             if status:
                 cur = self.conn.execute(
-                    f"SELECT {cols} FROM wip_tasks WHERE status = ? ORDER BY updated_at DESC",
+                    "SELECT * FROM wip_tasks WHERE status = ? ORDER BY updated_at DESC",
                     (status,),
                 )
             else:
                 cur = self.conn.execute(
-                    f"SELECT {cols} FROM wip_tasks ORDER BY updated_at DESC"
+                    "SELECT * FROM wip_tasks ORDER BY updated_at DESC"
                 )
-            return [dict(r) for r in cur.fetchall()]
-        if status:
-            cur = self.conn.execute(
-                "SELECT * FROM wip_tasks WHERE status = ? ORDER BY updated_at DESC",
-                (status,),
-            )
-        else:
-            cur = self.conn.execute(
-                "SELECT * FROM wip_tasks ORDER BY updated_at DESC"
-            )
-        return [self._deserialize_row(r, is_wip=True) for r in cur.fetchall()]
+            rows = cur.fetchall()
+        return [self._deserialize_row(r, is_wip=True) for r in rows]
 
     def update_wip(self, task_id: str, updates: dict) -> Optional[dict]:
         if not updates:
@@ -513,7 +525,7 @@ class TodosStore:
             return self.get_wip(task_id)
         set_clauses.append("updated_at = datetime('now', 'localtime')")
         params.append(task_id)
-        with self._write_lock:
+        with self._conn_lock:
             self.conn.execute(
                 f"UPDATE wip_tasks SET {', '.join(set_clauses)} WHERE id = ?", params
             )
@@ -521,7 +533,7 @@ class TodosStore:
         return self.get_wip(task_id)
 
     def delete_wip(self, task_id: str) -> bool:
-        with self._write_lock:
+        with self._conn_lock:
             cur = self.conn.execute("DELETE FROM wip_tasks WHERE id = ?", (task_id,))
             self.conn.commit()
             return cur.rowcount > 0
@@ -529,20 +541,21 @@ class TodosStore:
     # ─── 统计 ─────────────────────────────────────────────────
 
     def get_stats(self) -> dict:
-        todos_total = self.conn.execute("SELECT COUNT(*) FROM todos").fetchone()[0]
-        todos_due = len(self.get_due_todos())
-        wip_total = self.conn.execute("SELECT COUNT(*) FROM wip_tasks").fetchone()[0]
-        wip_active = self.conn.execute(
-            "SELECT COUNT(*) FROM wip_tasks WHERE status = 'active'"
-        ).fetchone()[0]
-        type_counts = {}
-        for row in self.conn.execute(
-            "SELECT type, COUNT(*) as cnt FROM todos GROUP BY type"
-        ).fetchall():
-            type_counts[row["type"]] = row["cnt"]
-        archived_count = self.conn.execute(
-            "SELECT COUNT(*) FROM todos WHERE status = 'archived'"
-        ).fetchone()[0]
+        with self._conn_lock:  # get_due_todos 内部经 list_todos 重入，RLock 安全
+            todos_total = self.conn.execute("SELECT COUNT(*) FROM todos").fetchone()[0]
+            todos_due = len(self.get_due_todos())
+            wip_total = self.conn.execute("SELECT COUNT(*) FROM wip_tasks").fetchone()[0]
+            wip_active = self.conn.execute(
+                "SELECT COUNT(*) FROM wip_tasks WHERE status = 'active'"
+            ).fetchone()[0]
+            type_counts = {}
+            for row in self.conn.execute(
+                "SELECT type, COUNT(*) as cnt FROM todos GROUP BY type"
+            ).fetchall():
+                type_counts[row["type"]] = row["cnt"]
+            archived_count = self.conn.execute(
+                "SELECT COUNT(*) FROM todos WHERE status = 'archived'"
+            ).fetchone()[0]
         return {
             "available": True,
             "todos_total": todos_total,
@@ -554,6 +567,7 @@ class TodosStore:
         }
 
     def close(self) -> None:
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        with self._conn_lock:
+            if self._conn:
+                self._conn.close()
+                self._conn = None

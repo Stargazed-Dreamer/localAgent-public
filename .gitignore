@@ -180,3 +180,41 @@ workspace/maa-patch/*
 
 # bilibili_gacha 脚本运行时自动生成的清理状态备份（cleanup_state.json.bak-<日期>）
 workspace/bilibili_gacha/*.bak-*
+
+# task_room 原始聊天数据导出含 uploadtoken/secret 等真凭据，永不入库（2026-09-12）
+workspace/task_room/backup/
+
+# task_room Obsidian 附件（微信图片/PDF/zip 等大体积个人文件，79MB+，永不入库 2026-09-13；曾误入库已改历史剔除）
+workspace/task_room/resource/
+
+# chat_digest 行级回滚点（目标群原始消息行，个人数据，永不入库 2026-09-14）
+workspace/chat_digest/backup/
+
+# Obsidian vault 编辑器目录（通配任意层级 .obsidian/：编辑器自动生成的本地配置与 UI 状态，不进仓库 2026-09-13）
+.obsidian/
+
+# web_archive 微信源浏览器调试临时日志
+temp_wechat_source_browser.log
+
+# 后端/工具运行日志（按日期滚动的本地日志，运行时产物不入库 2026-09-14）
+logs/
+
+# chat_digest digests 总结产物（md+json 含群聊行级原文与发言人昵称，GOGO 等报告深描具体成员言论，
+# 与 backup/ 同隐私级别，个人数据不入库 2026-09-16；SKILL「可入库」措辞已同步修正）
+workspace/chat_digest/digests/
+
+# web_archive 小林coding 归档正文（第三方版权文章全文，与 xiaoheihe/weixin 等其他爬取站点一致不入库
+# 2026-09-16；index_xiaolin.json / report_xiaolin.md 元数据清单保留入库）
+workspace/web_archive/xiaolin/*.md
+
+# task_room 导出数据（群消息行级导出 json/md，与 backup/ 同隐私级别，不入库 2026-09-16；
+# classified/ 整理笔记与 SKILL.md 方法论保留入库）
+workspace/task_room/export/
+
+# web_archive skland 纯图片缓存（skland_images.py 下载的 webp，哈希命名幂等可重下，不入库 2026-09-16）
+workspace/web_archive/skland/
+
+# yefeng_group4 个人数据（两群微信聊天导出 + 群成员名单/画像 xlsx，个人数据不入库 2026-09-16；
+# SKILL.md/manifest.toml/plan/ 教学规划入库）
+workspace/yefeng_group4/exports/
+workspace/yefeng_group4/roster/

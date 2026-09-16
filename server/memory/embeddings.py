@@ -10,6 +10,7 @@ import gc
 import hashlib
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -33,7 +34,12 @@ class EmbeddingEngine:
                 无返回值，直接初始化实例属性以准备模型加载和推理。
             """
             self.model_name = model_name
-            self.cache_dir = cache_dir
+            # 5-7: 相对路径基于项目根解析（不依赖 cwd），同 manager.py db_path 的处理
+            cache_dir_path = Path(cache_dir)
+            if not cache_dir_path.is_absolute():
+                # embeddings.py 在 server/memory/ 下，3 级 parent 到项目根
+                cache_dir_path = Path(__file__).resolve().parent.parent.parent / cache_dir_path
+            self.cache_dir = str(cache_dir_path)
             # 构建模型本地目录路径：容错两种命名约定
             #   ① org_model（如 "BAAI_bge-small-zh-v1.5"，model_name.replace("/", "_")）
             #   ② model（如 "bge-small-zh-v1.5"，去掉 org 前缀，HF snapshot 常见结构）

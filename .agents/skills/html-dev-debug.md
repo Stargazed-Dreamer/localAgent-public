@@ -1,6 +1,7 @@
 ---
 name: "html-dev-debug"
 description: "编写和调试 HTML 工具页面。当用户要求创建或修改 HTML 页面（如可视化 Dashboard、工具页面）时触发。核心方法：浏览器控制 + 截图 + OCR 闭环验证。"
+task_type: dev.html_debug
 ---
 
 # HTML 工具开发与调试

@@ -4,13 +4,28 @@ import sys
 from pathlib import Path
 
 # 密钥文件路径从 lib/secret 获取（单一真源，禁止硬编码 "data/llm/keys.json"）
+from lib.config_reader import load_config
 from lib.secret import get_config_path, get_llm_keys_path
 
 # 项目根目录：client/core/constants.py → parents[2] = localAgent/
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+
+def _derive_server_url() -> str:
+    """从 config.toml [server] port 派生后端 URL（8-9：端口收敛单一真源）。
+
+    用户改 config.toml 端口后主客户端与审批面板不再静默失联；
+    读取失败/缺省回退 8766。
+    """
+    try:
+        port = int(load_config().get("server", {}).get("port", 8766))
+    except Exception:
+        port = 8766
+    return f"http://127.0.0.1:{port}"
+
+
 # 服务端 URL
-SERVER_URL = "http://127.0.0.1:8766"
+SERVER_URL = _derive_server_url()
 SERVER_HEALTH_PATH = "/health"
 
 # Fake LLM Proxy URL（可选进程）

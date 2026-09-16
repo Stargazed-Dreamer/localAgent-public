@@ -97,6 +97,9 @@ class InboxStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        # 5-8: 补写锁——连接 check_same_thread=False（GUI 面板与 Loop action 并发写
+        # 同一单连接时事务可交叉 commit），与 MemoryStore/TodosStore 的约定一致
+        self._write_lock = threading.Lock()
 
     def initialize(self) -> None:
         import os
@@ -132,21 +135,22 @@ class InboxStore:
 
     def create(self, item: dict) -> dict:
         item_id = item.get("id") or f"inbox_{uuid.uuid4().hex[:8]}"
-        self.conn.execute(
-            """INSERT INTO inbox_items (id, source, category, title, description,
-                   payload, status, resolution, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL,
-                   datetime('now', 'localtime'), datetime('now', 'localtime'))""",
-            (
-                item_id,
-                item["source"],
-                item["category"],
-                item["title"],
-                item.get("description", ""),
-                json.dumps(item.get("payload", {}), ensure_ascii=False),
-            ),
-        )
-        self.conn.commit()
+        with self._write_lock:  # 5-8: 写操作包锁
+            self.conn.execute(
+                """INSERT INTO inbox_items (id, source, category, title, description,
+                       payload, status, resolution, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL,
+                       datetime('now', 'localtime'), datetime('now', 'localtime'))""",
+                (
+                    item_id,
+                    item["source"],
+                    item["category"],
+                    item["title"],
+                    item.get("description", ""),
+                    json.dumps(item.get("payload", {}), ensure_ascii=False),
+                ),
+            )
+            self.conn.commit()
         result = self.get(item_id)
         assert result is not None  # 刚 INSERT 的行必存在，收窄返回类型
         return result
@@ -196,28 +200,31 @@ class InboxStore:
             set_clauses.append("resolved_at = datetime('now', 'localtime')")
         set_clauses.append("updated_at = datetime('now', 'localtime')")
         params.append(item_id)
-        self.conn.execute(
-            f"UPDATE inbox_items SET {', '.join(set_clauses)} WHERE id = ?", params
-        )
-        self.conn.commit()
+        with self._write_lock:  # 5-8: 写操作包锁
+            self.conn.execute(
+                f"UPDATE inbox_items SET {', '.join(set_clauses)} WHERE id = ?", params
+            )
+            self.conn.commit()
         return self.get(item_id)
 
     def delete(self, item_id: str) -> bool:
-        cur = self.conn.execute("DELETE FROM inbox_items WHERE id = ?", (item_id,))
-        self.conn.commit()
+        with self._write_lock:  # 5-8: 写操作包锁
+            cur = self.conn.execute("DELETE FROM inbox_items WHERE id = ?", (item_id,))
+            self.conn.commit()
         return cur.rowcount > 0
 
     def cleanup_resolved(self, days: int = 10) -> int:
         """删除已解决/忽略超过 N 天的条目，返回删除数"""
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-        cur = self.conn.execute(
-            """DELETE FROM inbox_items
-               WHERE status IN ('resolved', 'ignored')
-                 AND ((resolved_at IS NOT NULL AND resolved_at < ?)
-                      OR (resolved_at IS NULL AND updated_at < ?))""",
-            (cutoff, cutoff),
-        )
-        self.conn.commit()
+        with self._write_lock:  # 5-8: 写操作包锁
+            cur = self.conn.execute(
+                """DELETE FROM inbox_items
+                   WHERE status IN ('resolved', 'ignored')
+                     AND ((resolved_at IS NOT NULL AND resolved_at < ?)
+                          OR (resolved_at IS NULL AND updated_at < ?))""",
+                (cutoff, cutoff),
+            )
+            self.conn.commit()
         return cur.rowcount
 
     def batch_op(self, action: str,
@@ -260,8 +267,9 @@ class InboxStore:
         where = " AND ".join(conditions) if conditions else "1=1"
 
         if action == "delete":
-            cur = self.conn.execute(f"DELETE FROM inbox_items WHERE {where}", params)
-            self.conn.commit()
+            with self._write_lock:  # 5-8: 写操作包锁
+                cur = self.conn.execute(f"DELETE FROM inbox_items WHERE {where}", params)
+                self.conn.commit()
             return {"affected": cur.rowcount, "action": action}
 
         # 状态变更：resolve→resolved, ignore→ignored, pending→pending
@@ -275,11 +283,12 @@ class InboxStore:
             set_clauses.append("resolved_at = datetime('now', 'localtime')")
         elif action == "pending":
             set_clauses.append("resolved_at = NULL")
-        cur = self.conn.execute(
-            f"UPDATE inbox_items SET {', '.join(set_clauses)} WHERE {where}",
-            sql_params,
-        )
-        self.conn.commit()
+        with self._write_lock:  # 5-8: 写操作包锁
+            cur = self.conn.execute(
+                f"UPDATE inbox_items SET {', '.join(set_clauses)} WHERE {where}",
+                sql_params,
+            )
+            self.conn.commit()
         return {"affected": cur.rowcount, "action": action}
 
     def get_stats(self) -> dict:
@@ -368,23 +377,26 @@ async def get_item(item_id: str):
 @router.post("", operation_id="inbox_create")
 async def create_item(item: InboxItemCreate):
     """创建收件箱条目（Loop Action 调用）"""
-    return get_store().create(item.model_dump())
+    # 5-8: 写端点统一 to_thread（与 list/get 读端点一致）
+    return await asyncio.to_thread(get_store().create, item.model_dump())
 
 
 @router.patch("/{item_id}", operation_id="inbox_update")
 async def update_item(item_id: str, updates: InboxItemUpdate):
     """更新收件箱条目（标记 resolved/ignored + resolution）"""
-    existing = get_store().get(item_id)
+    store = get_store()
+    existing = await asyncio.to_thread(store.get, item_id)
     if not existing:
         raise HTTPException(status_code=404, detail="条目不存在")
     update_data = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
-    return get_store().update(item_id, update_data)
+    return await asyncio.to_thread(store.update, item_id, update_data)
 
 
 @router.delete("/{item_id}", operation_id="inbox_delete")
 async def delete_item(item_id: str):
     """删除收件箱条目"""
-    if not get_store().delete(item_id):
+    # 5-8: 写端点统一 to_thread
+    if not await asyncio.to_thread(get_store().delete, item_id):
         raise HTTPException(status_code=404, detail="条目不存在")
     return {"deleted": True, "id": item_id}
 
@@ -393,7 +405,8 @@ async def delete_item(item_id: str):
 async def cleanup_items():
     """清理已解决/忽略超过 auto_cleanup_days 天的条目"""
     cfg = get_inbox_config()
-    deleted = get_store().cleanup_resolved(days=cfg["auto_cleanup_days"])
+    # 5-8: 写端点统一 to_thread
+    deleted = await asyncio.to_thread(get_store().cleanup_resolved, days=cfg["auto_cleanup_days"])
     return {"deleted": deleted, "cleanup_days": cfg["auto_cleanup_days"]}
 
 
@@ -405,7 +418,9 @@ async def batch_items(req: InboxBatchRequest):
     ids:    指定 id 列表（优先）；为空时按 source/category/status 筛选
     """
     try:
-        result = get_store().batch_op(
+        # 5-8: 写端点统一 to_thread
+        result = await asyncio.to_thread(
+            get_store().batch_op,
             action=req.action,
             ids=req.ids,
             source=req.source,

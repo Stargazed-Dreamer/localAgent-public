@@ -23,10 +23,6 @@ router = APIRouter(prefix="/system", tags=["System"])
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 ES_DISPLAY_REQUIRED = 0x00000002
-ES_AWAYMODE_REQUIRED = 0x00000040  # Windows Vista+，允许"离开模式"（系统不休眠但可屏保）
-
-# 是否支持离开模式（Vista+）
-_AWAYMODE_SUPPORTED = sys.platform == "win32"
 
 
 # ========== 防休眠管理器 ==========

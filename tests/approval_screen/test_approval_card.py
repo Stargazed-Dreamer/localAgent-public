@@ -61,6 +61,25 @@ def _make_shell_item(approval_id="test_001", seconds_left=180):
     }
 
 
+def _wait_for(condition, timeout_ms=3000):
+    """8-8 决策提交线程化后信号经 queued 连接回主线程，轮询等待其送达。
+
+    在 worker 线程 mock（requests.post 被 monkeypatch，瞬时返回）下
+    decision_done → card_closed 仍需一次事件循环派发，不能同步断言。
+    """
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        QCoreApplication.processEvents()
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def _make_http_item(approval_id="http_001", seconds_left=120):
     return {
         "approval_id": approval_id,
@@ -187,7 +206,7 @@ class TestDecisionSubmission:
         closed = []
         card.card_closed.connect(lambda aid: closed.append(aid))
         card._submit_decision("approve")
-        assert closed == ["test_001"]
+        assert _wait_for(lambda: closed == ["test_001"])
         # 验证 POST 被调用
         assert any(
             "approve" in str(c.get("json", {}).get("decision", ""))
@@ -202,7 +221,7 @@ class TestDecisionSubmission:
         closed = []
         card.card_closed.connect(lambda aid: closed.append(aid))
         card._submit_decision("deny")
-        assert closed == ["test_001"]
+        assert _wait_for(lambda: closed == ["test_001"])
         card.deleteLater()
 
     def test_decision_409_marks_timeout(self, monkeypatch):
@@ -221,7 +240,7 @@ class TestDecisionSubmission:
 
         card = ApprovalCard(_make_shell_item())
         card._submit_decision("approve")
-        assert card._is_timeout is True
+        assert _wait_for(lambda: card._is_timeout)
         assert not card._ack_btn.isHidden()
         card.deleteLater()
 

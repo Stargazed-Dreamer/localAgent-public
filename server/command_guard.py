@@ -106,6 +106,13 @@ def _invalidate_dcg_cache() -> None:
 
 
 def consume_token(token: str, command: str, shell: str, cwd: str) -> bool:
+    """验证并消费一次性放行令牌。
+
+    有意设计（2026-09-13 code review 1-5 决策：保持 fail-closed）：token 先 pop
+    再比对指纹，指纹不匹配（agent 改了命令/参数后重试）时 token 已作废，需重新
+    走人审。这防止"一个批准令牌在参数变化的多次重试间被反复试探"，代价是
+    改参数重试要多批一次——属安全优先的取舍，勿改为"先比对再决定是否消费"。
+    """
     if not token:
         return False
     _cleanup()

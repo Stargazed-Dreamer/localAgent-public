@@ -5,6 +5,7 @@ description: >
   sites/<domain>.md 获取踩坑经验；任务收尾时把非显然行为（DOM 特性/反爬/登录态/防盗链等）
   写入对应网站文件。触发词：浏览器踩坑、网站经验、browser lessons、网站坑、DOM 坑。
   适用范围：任何调用 browser_* MCP 工具或 Playwright 的任务（详见正文完整列表）。
+task_type: adhoc.browser_automation
 ---
 
 # 分网站浏览器操作经验（browser_lessons）

@@ -9,7 +9,7 @@
 
 - **多 key 并发**：每个 key 独立并发限制（默认 3），round-robin 选择，429 自动冷却
 - **per-project token 统计**：每次调用按 project 标签记录 prompt/completion/total tokens，持久化到 JSON
-- **key 定期健康检查**：每 7 天检查一次，连续失败 3 次自动清除
+- **key 定期健康检查**：按 `key_store.py` 的 `HEALTH_CHECK_INTERVAL_DAYS` 周期检查，连续失败自动标记不可用
 - **余额耗尽自动剔除**：402/401 状态码自动标记 key 为 expired
 - **后端统一管理（拉链排队）**：所有脚本通过 HTTP 代理调用后端共享池，多来源任务自动交错调度
 
@@ -44,7 +44,6 @@
 | `/llm/pool/stats` | GET | `llm_pool_stats` | per-project token 统计（合并所有 stats 文件） |
 | `/llm/pool/health-check` | POST | `llm_pool_health_check` | key 健康检查（`cleanup=false` 默认，测试所有 key 可用性） |
 | `/llm/pool/cleanup` | POST | `llm_pool_cleanup` | 物理删除 `works=false` 的 key（自动备份到 `<path>.cleanup-backup-<ts>`） |
-| `/llm/pool/health-status` | GET | `llm_pool_health_status` | 健康检查状态（不执行检查，返回各 key 的 fail_count/works） |
 
 > **监控能力**：`/llm/pool/models` 和 `/llm/pool/recent-calls` 已加入 `GATEWAY_EXCLUDE`（监控面板专用，不进 MCP），agent 用 `/health.llm_pool` 获取聚合状态。`/health.agent.models` 区分 configured vs available，key 冷却时不再让所有 model 从展示中消失。`LLMKey.is_free` 在 `__post_init__` 中基于 model 名 + privacy_warning 推断（关键词：`free`/`免费`/`trial`/`试用`），用于"免费服务可用性统计"。`_recent_calls: deque[CallRecord]` 环形缓冲（200 条）由 `self.lock` 保护线程安全，记录每次调用的 ts/key_name/model/success/tokens/error/duration_ms。
 >
@@ -100,7 +99,7 @@ result = call_llm_simple("请回复OK", project="我的项目")
 
 ### Key 健康检查
 
-- **自动提醒**：`load_keys_from_tested_file()` 加载时如果超过 7 天未检查，会打印提醒
+- **自动提醒**：`load_keys_from_tested_file()` 加载时如果超过健康检查间隔（`HEALTH_CHECK_INTERVAL_DAYS`）未检查，会打印提醒
 - **手动触发**：`POST /llm/pool/health-check`（默认 `cleanup=false`，仅测试不删除）或 `check_keys_health("data/llm/keys.json")`
 - **清理**：连续失败 3 次的 key 标记为 `status.works=false`；调用 `POST /llm/pool/cleanup` 或 `cleanup_expired_keys("data/llm/keys.json", backup=True)` 物理删除（删除前自动备份到 `<path>.cleanup-backup-<ts>`）
 - **key 明文存储**：`data/llm/keys.json` 中 `key` 字段为明文（本地项目 + 公开分享的 key；文件已 gitignore）
@@ -263,7 +262,9 @@ uv run python tools/llm/llm_token_stats.py --import
 
 核心是 **USE_CASE_REGISTRY + resolve_keys() 路由层**：use_case 定义与敏感过滤集中管理，调用方按 use_case 选 key。
 
-##### USE_CASE_REGISTRY（18 个 use_case）
+##### USE_CASE_REGISTRY
+
+> 条目数随迭代增长，以 `server/llm_pool/types.py` 的 `USE_CASE_REGISTRY` 为准。
 
 | use_case | scope | sensitive | default_tier | 典型调用方 |
 |----------|-------|-----------|--------------|-----------|
@@ -279,9 +280,9 @@ uv run python tools/llm/llm_token_stats.py --import
 | `stock_advisor_closing` | llm | 否 | (3, 5) | Stock Advisor 收盘总结（15:05） |
 | `stock_advisor_evening` | llm | 否 | (4, 5) | Stock Advisor 晚间深度复盘（21:00，含多空辩论） |
 | `stock_advisor_query` | llm | 否 | (3, 5) | Stock Advisor 盘中午询（adhoc 即时回答） |
-| `vl_ocr` | vl | **是** | (5, 5) | `server/remote_vl.py::ocr()` 文档 VL 识别 |
-| `vl_vision` | vl | **是** | (5, 5) | `server/remote_vl.py::understand()/locate()` 图像理解/定位 |
-| `vl_activity_tracker` | vl | **是** | (5, 5) | `server/loop_actions.py:163` Loop 活动追踪截图描述 |
+| `vl_ocr` | vl | **是** | (2, 5) | `server/remote_vl.py::ocr()` 文档 VL 识别 |
+| `vl_vision` | vl | **是** | (2, 5) | `server/remote_vl.py::understand()/locate()` 图像理解/定位 |
+| `vl_activity_tracker` | vl | **是** | (2, 5) | `server/loop_actions.py:163` Loop 活动追踪截图描述 |
 | `aigc_image_gen` | aigc_image | 否 | (3, 5) | 文生图/图生图 |
 | `aigc_image_edit` | aigc_image | 否 | (3, 5) | 图像编辑 |
 | `aigc_video_gen` | aigc_video | 否 | (3, 5) | 视频生成 |
@@ -323,9 +324,9 @@ LLM 池的隐私控制由三个不同维度的机制协同工作：
 
 > 敏感 use_case 的真源是 `server/llm_pool/key_store.py` 的 `USE_CASE_REGISTRY`（程序代码），config.toml 不提供此配置。新增敏感 use_case 需修改代码（保证 sensitive 标志与 use_case 语义一致）。
 
-#### key 记录格式（v11 schema）
+#### key 记录格式
 
-`data/llm/keys.json` 文件结构：
+`data/llm/keys.json` 文件结构（schema 版本以 `key_store.py` 的 `SCHEMA_VERSION` 为准）：
 
 ```json
 {
@@ -415,7 +416,7 @@ LLM 池的隐私控制由三个不同维度的机制协同工作：
 > **共享上游池去重 + 并发隔离机制**：key 级 `pool_key` 字段为共享上游池去重标识（默认空字符串视为独立池）。同一 `pool_key` 的多个 key 视为共享上游配额（如多个 OpenRouter key 访问同一 Anthropic 上游池），`get_status` 的 `total_max_concurrency_deduped` 按 `pool_key` 分组取 `max(max_concurrency)`，`dedup_ratio` 反映真实并发上限与简单相加的比值。配套 3 项机制：
 > - **Model Lockout**：`LLMKey.model_cooldowns` 字典（model_name → cooldown_until），单 model 429 时只冷却该 model 而不冻结整个 key，同 key 其他 model 仍可用。`_release(rate_limited=True, model="m1")` 会同时写 key 级 cooldown（fallback 信号）和 model 级 cooldown（精细隔离）。
 > - **Saturation Reflow**：`LLMKey.saturation` (0-1) 记录上游响应头的饱和信号。`_call_openai/_call_anthropic` 解析 `x-ratelimit-remaining-*`/`anthropic-ratelimit-unified-*-utilization` 写回；429 时自动设为 1.0。`_acquire` 在 round-robin 中优先选 `effective_saturation < 0.7` 的低饱和 key，避免硬 429。saturation 有 30s TTL，过期视为 0。
-> - **LKGP 会话粘性**：`call(session_id="xxx")` 传入会话 ID 时，优先复用上次成功的 (key, model)。命中条件：粘性记录未过期（默认 30 分钟）+ key 仍可用 + 该 model 未在 cooldown。失败回退到 round-robin 不阻塞。`rate_limited`/`expired` 自动清粘性，HTTP 500/timeout 不清（保留可能可恢复的会话）。`/llm/pool/session` GET 查看粘性详情，DELETE `{session_id}` 主动清粘性。
+> - **LKGP 会话粘性**：`call(session_id="xxx")` 传入会话 ID 时，优先复用上次成功的 (key, model)。命中条件：粘性记录未过期（默认 30 分钟）+ key 仍可用 + 该 model 未在 cooldown。失败回退到 round-robin 不阻塞。`rate_limited`/`expired` 自动清粘性，HTTP 500/timeout 不清（保留可能可恢复的会话）。
 >
 > `pool_key` 仅在非空时写入 keys.json（保持文件简洁），用户通过 `/keys` API 显式设置。
 >
@@ -455,7 +456,7 @@ LLM 池的隐私控制由三个不同维度的机制协同工作：
 >
 > **自动规范化**：`create_key` / `update_key` 时会自动去掉误填的 `/chat/completions` / `/messages` / `/completions` 后缀（`_normalize_base_url()`），避免 URL 重复拼接。但建议填写时就按上述格式填到版本号级别。
 >
-> **自动迁移**：`migrate_v4_to_v5()` → `migrate_v7_to_v8()` → `migrate_v8_to_v9()` → `migrate_v10_to_v11()` → `migrate_v11_to_v12()` 启动时自动检测旧格式并迁移。v7→v8 将 `models: list[str]` 转为 `list[dict]` 并赋默认 `tier=3`；v8→v9 从 `config.toml [vision.vl_providers.*]` 按 `base_url` 匹配写入 key 的 `vision` 段（需运行 `tools/migrate_keys_v8_to_v9.py`，因 config.toml 已无 VL 段，新部署无需此步）；v10→v11 为所有 key 补 `protocol: "openai"` 默认值（model 不主动写入 `display_name`，直到用户编辑时才写入）；v11→v12 仅升级 version 号，`pool_key` 由用户按需通过 `/keys` API 设置。迁移幂等，多次执行无副作用。
+> **自动迁移**：启动时自动检测旧格式 keys.json 并逐级迁移到当前版本（各版本迁移语义见 `key_store.py` 的 `migrate_v*_to_v*()` 系列函数 docstring，历史迁移中有一步需手动跑 `tools/migrate_keys_v8_to_v9.py`，仅针对存在旧 `[vision.vl_providers]` 配置的部署）。迁移幂等，多次执行无副作用。
 
 #### Key 管理 API
 
@@ -470,7 +471,7 @@ key 的增删改查通过 `/keys/*` 端点（`server/apikey.py`），不是 `/ll
 | `/keys/{id}` | DELETE | 删除 key |
 | `/keys/usage` | GET | key 用量映射（每个 use_case 用哪些 key） |
 | `/keys/health-check` | POST | 触发 key 健康检查（同 `/llm/pool/health-check`） |
-| `/use-cases` | GET | 列出 USE_CASE_REGISTRY 全部 18 个 use_case（v5 新增，v15 扩展） |
+| `/use-cases` | GET | 列出 USE_CASE_REGISTRY 全部 use_case |
 
 ### 旧 schema 自动迁移
 

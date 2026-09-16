@@ -5,6 +5,7 @@ description: >
   待办清单、check tasks、what to do、今天做啥、这周做啥、有什么没做、任务提醒。
   当用户询问有哪些任务、需要提醒、查询待办、或会话开始想了解当前该做什么时触发。
   通过 /todos/due 检查周期性任务是否到期，通过 /wip 汇总未完成待办。
+task_type: system.task_reminder
 ---
 
 # 任务提醒 (task_reminder)

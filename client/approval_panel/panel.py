@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from client.approval_panel import settings as panel_settings
 from client.approval_panel.card import ApprovalCard
+from client.core.constants import SERVER_URL  # 8-9: 端口单一真源
 from lib.ui import tokens as T
 
 
@@ -146,7 +147,7 @@ class ApprovalPanel(QMainWindow):
                 import requests as req
 
                 req.post(
-                    f"http://127.0.0.1:8766/approvals/{approval_id}/activity",
+                    f"{SERVER_URL}/approvals/{approval_id}/activity",
                     timeout=3.0,
                 )
             except req.RequestException:

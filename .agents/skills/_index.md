@@ -646,7 +646,7 @@
 
 ---
 
-### auto_shutdown (auto_shutdown) [adhoc]
+### 62. 自动关机 (auto_shutdown) [adhoc]
 
 | 属性 | 值 |
 |------|------|
@@ -1172,7 +1172,7 @@
 
 ---
 
-### 58. 后端自主 agent 会话 (headless_session) [adhoc]
+### 58. 后端自主 agent 会话 (adhoc.headless_session) [adhoc]
 
 | 属性 | 值 |
 |------|------|
@@ -1230,6 +1230,23 @@
 **与 `public-release` 的关系**：`public-release` 编排源码分发审计与打包；本 skill 是公开前 README 修订的执行层，常被 `public-release` 编排调用。
 
 **与 `neat-freak` 的边界**：`neat-freak` 做会话后文档一致性同步；本 skill 起草/修订 README 门面文件。
+
+---
+
+### 61. 批处理编写与修复 (bat_writing) [adhoc]
+
+| 属性 | 值 |
+|------|------|
+| **触发词** | 写bat、bat脚本、批处理、.bat、.cmd、启动脚本、bat乱码、bat跑不了、批处理报错、不是内部或外部命令、找不到批处理标签、batch script、cmd脚本 |
+| **Skill 文件** | `.agents/skills/bat_writing/SKILL.md`（+ `references/guide.md` 实测细节 / `scripts/fix_bat_encoding.py` 自检+修复） |
+| **task_type** | `adhoc.bat_writing` |
+| **用途** | 编写和修复能在中文 Windows 上跑起来的 .bat/.cmd；核心铁律 GBK(CP936)+CRLF+无BOM，写完必须 `--check` 自检全 OK 才算完成 |
+
+**何时必须遵循**：新建任何 bat/cmd 脚本、修改现有 bat、排查"bat 跑不了/乱码/'XX' 不是内部或外部命令/找不到批处理标签"——先跑自检排除编码/行尾问题再查逻辑（九成"乱码报错"是 LF-only 行尾问题）。
+
+**工作流**：读 SKILL.md → 确认目标机代码页（本机 ACP=OEMCP=936 → GBK）→ 按模板编写（标签用英文/`%~dp0` 拼路径/中途不 chcp）→ `uv run python .agents/skills/bat_writing/scripts/fix_bat_encoding.py <文件> --check` 自检 → 不过则 `--inplace` 修复后复检 → cmd 实跑验证。
+
+**关键坑**：LF-only 是最常见死法（cmd 按字符数定位行偏移，GBK 双字节逐行错位，报错全是半截汉字；纯 ASCII 的 LF-only 往往能跑，所以坑只在中文脚本上爆）；不信任任何写入工具的行尾/编码；含中文禁止 UTF-8+chcp 方案。
 
 ---
 

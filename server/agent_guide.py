@@ -14,7 +14,6 @@
   3. 可纠错 — task 匹配返回候选清单，agent 能看到"从哪些里选的"，错了能重选
 """
 
-import copy
 import json
 import logging
 import re
@@ -72,10 +71,14 @@ def _ensure_usage_loaded():
         _usage_loaded = True
 
 
-def _save_usage():
+def _save_usage(snapshot: dict):
+    """原子落盘 usage 快照（6-4：接收持锁快照，线程内不再读共享 _usage）"""
     try:
         USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        USAGE_FILE.write_text(json.dumps(_usage, ensure_ascii=False, indent=2), encoding="utf-8")
+        # tmp 文件名带线程 id：两线程并发落盘不互踩 tmp；replace 原子替换防半截文件
+        tmp = USAGE_FILE.with_name(f"{USAGE_FILE.stem}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(USAGE_FILE)
     except OSError:
         pass
 
@@ -108,17 +111,16 @@ def _ensure_history_loaded():
         _history_loaded = True
 
 
-def _save_history():
+def _save_history(payload: dict):
+    """原子落盘 history 快照（6-4：接收持锁快照，线程内不再读共享 _history）"""
     try:
         HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "max_size": HISTORY_MAX_SIZE,
-            "records": _history,
-        }
-        HISTORY_FILE.write_text(
+        tmp = HISTORY_FILE.with_name(f"{HISTORY_FILE.stem}.{threading.get_ident()}.tmp")
+        tmp.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        tmp.replace(HISTORY_FILE)
     except OSError:
         pass
 
@@ -153,7 +155,10 @@ def _record_usage(
         entry["last_called"] = now
         if task_query:
             entry["last_task_query"] = task_query[:100]
-    threading.Thread(target=_save_usage, daemon=True).start()
+        # 6-4: 持锁做快照传给落盘线程——原实现线程内直接 json.dumps(_usage)，
+        # 与主线程 dict 变更并发可能 RuntimeError: dictionary changed size during iteration
+        usage_snapshot = {k: dict(v) if isinstance(v, dict) else v for k, v in _usage.items()}
+    threading.Thread(target=_save_usage, args=(usage_snapshot,), daemon=True).start()
 
     # 2. 历史记录（FIFO，最近 HISTORY_MAX_SIZE 条）
     _ensure_history_loaded()
@@ -171,7 +176,9 @@ def _record_usage(
         # 注：用 del 而非 _history = _history[...] 后者会让 Python 把 _history 当作局部变量
         if len(_history) > HISTORY_MAX_SIZE:
             del _history[:-HISTORY_MAX_SIZE]
-    threading.Thread(target=_save_history, daemon=True).start()
+        # 6-4: 持锁快照（浅拷贝 list，record dict 不可变使用）
+        history_payload: dict = {"max_size": HISTORY_MAX_SIZE, "records": list(_history)}
+    threading.Thread(target=_save_history, args=(history_payload,), daemon=True).start()
 
 
 
@@ -883,6 +890,27 @@ class GeneralGuideResponse(BaseSchema):
 
 # ========== 路由 ==========
 
+def _general_response(match_hint: str | None) -> dict:
+    """GeneralGuide 响应公共构造（6-10：invalid task_type / 无匹配 / 无参三处分支共用，
+    新增字段只改一处，避免漏改某个分支）。match_hint=None 时不含该键（与原无参响应一致）。"""
+    resp: dict = {
+        "mode": "general",
+        "usage": GENERAL_GUIDE["usage"],
+        "session_startup": GENERAL_GUIDE["session_startup"],
+        "session_closure": GENERAL_GUIDE["session_closure"],
+        "task_categories": _build_task_categories(),
+        "mcp_tool_categories": _build_mcp_tool_categories(),
+        "global_pitfalls": GENERAL_GUIDE["global_pitfalls"],
+        "environment_notes": GENERAL_GUIDE["environment_notes"],
+        "file_locations": GENERAL_GUIDE["file_locations"],
+        "mcp_priority": GENERAL_GUIDE["mcp_priority"],
+        "dev_entry_points": _DEV_ENTRY_POINTS,
+    }
+    if match_hint is not None:
+        resp["match_hint"] = match_hint
+    return resp
+
+
 @router.get("", operation_id="agent_guide")
 def get_agent_guide(
     task: str | None = Query(None, description="用户任务描述（自然语言），用于关键词匹配"),
@@ -931,20 +959,9 @@ def get_agent_guide(
             return result
         # task_type 传了但不存在 → 回退到 GeneralGuide
         _record_usage("general", None, f"[invalid task_type={task_type}] {task or ''}", context=context)
-        resp = {
-            "mode": "general",
-            "usage": GENERAL_GUIDE["usage"],
-            "session_startup": GENERAL_GUIDE["session_startup"],
-            "session_closure": GENERAL_GUIDE["session_closure"],
-            "task_categories": _build_task_categories(),
-            "mcp_tool_categories": _build_mcp_tool_categories(),
-            "global_pitfalls": GENERAL_GUIDE["global_pitfalls"],
-            "environment_notes": GENERAL_GUIDE["environment_notes"],
-            "file_locations": GENERAL_GUIDE["file_locations"],
-            "mcp_priority": GENERAL_GUIDE["mcp_priority"],
-            "dev_entry_points": _DEV_ENTRY_POINTS,
-            "match_hint": f"task_type='{task_type}' 不存在，请浏览 task_categories 全量清单选正确的 task_type",
-        }
+        resp = _general_response(
+            f"task_type='{task_type}' 不存在，请浏览 task_categories 全量清单选正确的 task_type"
+        )
         if structure_payload:
             resp["project_structure"] = structure_payload
         return resp
@@ -1010,39 +1027,14 @@ def get_agent_guide(
             return result
         # 无匹配 → GeneralGuide + 提示
         _record_usage("general", None, task, context=context)
-        resp = {
-            "mode": "general",
-            "usage": GENERAL_GUIDE["usage"],
-            "session_startup": GENERAL_GUIDE["session_startup"],
-            "session_closure": GENERAL_GUIDE["session_closure"],
-            "task_categories": _build_task_categories(),
-            "mcp_tool_categories": _build_mcp_tool_categories(),
-            "global_pitfalls": GENERAL_GUIDE["global_pitfalls"],
-            "environment_notes": GENERAL_GUIDE["environment_notes"],
-            "file_locations": GENERAL_GUIDE["file_locations"],
-            "mcp_priority": GENERAL_GUIDE["mcp_priority"],
-            "dev_entry_points": _DEV_ENTRY_POINTS,
-            "match_hint": "未匹配到任务，请浏览 task_categories 全量清单选 task_type",
-        }
+        resp = _general_response("未匹配到任务，请浏览 task_categories 全量清单选 task_type")
         if structure_payload:
             resp["project_structure"] = structure_payload
         return resp
 
     # 3. 无参 → GeneralGuide（防呆）
     _record_usage("general", None, None, context=None)
-    resp = {
-        "mode": "general",
-        "usage": GENERAL_GUIDE["usage"],
-        "session_startup": GENERAL_GUIDE["session_startup"],
-        "session_closure": GENERAL_GUIDE["session_closure"],
-        "task_categories": _build_task_categories(),
-        "mcp_tool_categories": _build_mcp_tool_categories(),
-        "global_pitfalls": GENERAL_GUIDE["global_pitfalls"],
-        "environment_notes": GENERAL_GUIDE["environment_notes"],
-        "file_locations": GENERAL_GUIDE["file_locations"],
-        "mcp_priority": GENERAL_GUIDE["mcp_priority"],
-        "dev_entry_points": _DEV_ENTRY_POINTS,
-    }
+    resp = _general_response(match_hint=None)
     if structure_payload:
         resp["project_structure"] = structure_payload
     return resp
@@ -1094,48 +1086,6 @@ def _compute_structure_diff() -> dict | None:
     except Exception as e:
         logger.debug(f"计算结构漂移失败: {e}")
         return None
-
-
-@router.get("/usage", operation_id="agent_guide_usage")
-def get_agent_guide_usage():
-    """Agent Guide 使用统计 — 检测 undertriggering（哪些 skill 从未被路由到）。
-
-    局限：仅追踪走后端 /guide 的调用。agent 直接 Read .md 文件不经过此端点，
-    无法追踪。因此 "未被调用" 不等于 "未被使用"，仅表示未通过 agent_guide 路由。
-    """
-    _ensure_usage_loaded()
-    with _usage_lock:
-        usage_copy = copy.deepcopy(_usage)
-
-    called_keys = set(usage_copy.keys()) - {"__general__"}
-    all_keys = set(GUIDE_REGISTRY.keys())
-    never_called = sorted(all_keys - called_keys)
-
-    total_calls = sum(e["count"] for e in usage_copy.values())
-    general_calls = usage_copy.get("__general__", {}).get("count", 0)
-
-    per_scope = {}
-    for task_type in all_keys:
-        scope = task_type.split(".", 1)[0]
-        if scope not in per_scope:
-            per_scope[scope] = {"total": 0, "called": 0, "never": 0}
-        per_scope[scope]["total"] += 1
-        if task_type in called_keys:
-            per_scope[scope]["called"] += 1
-        else:
-            per_scope[scope]["never"] += 1
-
-    return {
-        "total_calls": total_calls,
-        "general_guide_calls": general_calls,
-        "task_guide_calls": total_calls - general_calls,
-        "called_count": len(called_keys),
-        "never_called_count": len(never_called),
-        "never_called": never_called,
-        "per_scope": per_scope,
-        "usage_detail": usage_copy,
-        "limitation_note": "仅追踪 /guide 端点调用。agent 直接 Read .md 文件不经过此端点，无法追踪。never_called 不等于未被使用，仅表示未通过 agent_guide 路由。",
-    }
 
 
 def reset_usage() -> None:

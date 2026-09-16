@@ -202,7 +202,7 @@ class MatchAppResponse(BaseSchema):
 
 
 @router.post("/match_app", response_model=MatchAppResponse, operation_id="screen_match_app")
-async def screen_match_app(req: MatchAppRequest):
+def screen_match_app(req: MatchAppRequest):
     """Match computer_use app experience files by process_name.
 
     Scans .agents/skills/computer_use/apps/*.md, matches by filename (process_name
@@ -472,7 +472,7 @@ def _build_initial_file(process_name: str, aliases: list[str], today: str) -> st
 
 
 @router.post("/write_lesson", response_model=WriteLessonResponse, operation_id="screen_write_lesson")
-async def screen_write_lesson(req: WriteLessonRequest):
+def screen_write_lesson(req: WriteLessonRequest):
     """Write software experience to .agents/skills/computer_use/apps/<process_name>.md.
 
     Closes the self-updating loop for computer use methodology: after an agent

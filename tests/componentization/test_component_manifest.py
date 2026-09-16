@@ -387,7 +387,7 @@ paths = ["data.db", "user_notes.json"]
         ]
 
     def test_web_archive_backup_parsed(self):
-        """web_archive [backup] 段正确解析：urls*.json + index.json"""
+        """web_archive [backup] 段正确解析：urls*.json + index*.json（随存档源扩展）"""
         manifests = _reload_manifests()
         m = manifests["web_archive"]
         assert m.backup is not None, "web_archive 未声明 [backup] 段"
@@ -396,7 +396,10 @@ paths = ["data.db", "user_notes.json"]
             "urls_unique.json",
             "urls_custom.json",
             "urls_feishu.json",
+            "urls_tencent.json",
             "index.json",
+            "index_tencent.json",
+            "index_xiaolin.json",
         ]
 
     def test_gh_mirror_backup_decoupled_from_watch(self):

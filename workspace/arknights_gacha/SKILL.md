@@ -4,6 +4,7 @@ description: >
   明日方舟寻访记录采集与统计。触发词：明日方舟抽卡、方舟寻访、更新方舟记录、arknights抽卡、
   方舟抽卡统计、导入小黑盒数据、方舟寻访记录。当用户要求获取或更新明日方舟的寻访（抽卡）记录，
   或导入小黑盒导出数据时触发。
+task_type: recurring.arknights_gacha
 ---
 
 # 明日方舟寻访记录 (arknights_gacha)

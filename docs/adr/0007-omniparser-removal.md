@@ -41,7 +41,7 @@ OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8�
 - 纯图标无文字场景依赖远程 VL，网络/配额受限时降级（VL provider 级 fallback 已在 [0.31.0] 引入缓解）。
 - 主后端不再加载 Florence2 processor，仅 `tools/image_organizer/` 工具从 HF cache 加载（孤立工具，影响可控）。
 
-**回退路径**：OmniParser 代码在 git 历史（[0.30.0] 移除提交）中可恢复，但 2.06 GB 模型权重需重新下载；AGPL 风险会随恢复回归。鉴于调用 0 次的强证据，回退无实际意义。
+**回退路径**：OmniParser 代码在 git 历史（[0.30.0] 移除提交）中可恢复，但 2.06 GB 模型权重需重新下载；AGPL 风险会随恢复回归。鉴于调用 0 次的强证据，回退无实际意义。若未来出现"远程 VL 不可用 + 有图标检测需求"的场景，优先评估 ONNX 格式的轻量图标检测路径（绕开 ultralytics/AGPL），而非恢复完整 OmniParser 管线（2026-09-16 记忆归档时从 `omniparser_removal` 记忆并入的重新启用条件）。
 
 ## References
 

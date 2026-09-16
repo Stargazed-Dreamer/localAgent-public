@@ -509,7 +509,11 @@ def _render_template(template_str: str, params: dict) -> str:
         elif value is None:
             rendered = rendered.replace(placeholder, "")
         else:
-            rendered = rendered.replace(placeholder, str(value))
+            # 6-7: 数值/其他类型也过转义——params 可能传入字符串（如
+            # count="1)\nos.system('x')#"），str() 后必须转义防逃逸注入
+            # （合并层已按声明 type 强制转换，此处兜底）
+            safe_value = str(value).replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+            rendered = rendered.replace(placeholder, safe_value)
     return rendered
 
 
@@ -583,7 +587,21 @@ async def template_tool(req: TemplateExecRequest):
     params = {}
     for p in tmpl["parameters"]:
         if p["name"] in req.params:
-            params[p["name"]] = req.params[p["name"]]
+            value = req.params[p["name"]]
+            # 6-7: 按声明 type 强制转换——数值占位符被 str() 原样拼进代码，
+            # 传 "1)\nos.system('x')#" 可注入任意代码；int/float 转换失败 422
+            if p["type"] in ("int", "float") and not isinstance(value, bool):
+                try:
+                    value = int(value) if p["type"] == "int" else float(value)
+                except (TypeError, ValueError):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"模板 '{req.template}' 参数 '{p['name']}' 需要 "
+                            f"{p['type']} 类型，收到: {value!r}"
+                        ),
+                    )
+            params[p["name"]] = value
         else:
             params[p["name"]] = p["default"]
 

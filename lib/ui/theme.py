@@ -88,6 +88,12 @@ QPushButton[kind="danger"] {
 }
 QPushButton[kind="danger"]:hover { background-color: $DANGER_WASH; }
 QPushButton[kind="danger"]:pressed { background-color: $DANGER; color: $TEXT_ON_ACCENT; }
+/* 带属性选择器的 danger 规则与通用 :disabled 同优先级但写在后面会盖掉它，禁用态必须显式补 */
+QPushButton[kind="danger"]:disabled {
+    background-color: transparent;
+    border-color: $BORDER;
+    color: $TEXT_DISABLED;
+}
 QPushButton[kind="ghost"] {
     background-color: transparent;
     border: 1px solid transparent;

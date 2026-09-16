@@ -19,7 +19,7 @@
 - **混合召回**：alpha 加权融合（`hybrid_alpha=0.5`，0=纯BM25，1=纯向量）
 - **降级模式**：嵌入模型不可用时自动降级为 BM25-only
 
-> **禁用语义检索**：在 `config.toml` 的 `[memory]` 段设置 `enable_semantic = false` 可完全跳过嵌入模型下载与加载（当前项目已采用此配置）。
+> **禁用语义检索**：在 `config.toml` 的 `[memory]` 段设置 `enable_semantic = false` 可完全跳过嵌入模型下载与加载。
 > - **不受影响**：KV 存储（`/memory/{key}`）、时间线查询（`/memory/timeline`）、Recent 滑动窗口、记忆压缩、自动记录、BM25 关键词检索
 > - **不可用**：向量语义搜索（`/memory/search` 退化为 BM25-only）、语义索引构建（`/memory/reindex` 跳过向量部分）
 > - **适用场景**：网络受限无法下载模型、计划改用简单文本存储替代向量检索
@@ -70,7 +70,7 @@
 
 ## 记忆维护器（maintainer）
 
-后端内置 `MemoryMaintainer`，每 6 小时自动运行一次（下次记忆 API 调用时触发，非定时器）。职责：
+后端内置 `MemoryMaintainer`，由 `[loops.memory]` 定时循环自动运行（间隔见该配置段，默认每 6 小时），另有记忆 API 调用时的惰性触发兜底。职责：
 
 ### aging（老化）
 
@@ -92,7 +92,8 @@
 
 ### 触发机制
 
-- **自动**：每次记忆 API 调用时检查 `schema_info['maintainer_last_run']`，距上次 >6h 则在后台 `_async_maintenance` 中触发
+- **定时循环**：`[loops.memory]` 注册为 Loop 定时任务（APScheduler `IntervalTrigger`），按 `maintain_interval` 周期直接调 `maintainer.run()`
+- **惰性兜底**：每次记忆 API 调用时检查 `schema_info['maintainer_last_run']`，距上次超过间隔则在后台 `_async_maintenance` 中触发
 - **手动**：`POST /memory/maintain`（`force=true` 忽略时间检查）
 
 ### 配置
@@ -155,7 +156,7 @@ model_tier = "cheap"                            # 验证用模型层级（get_ke
 | user | 用户偏好/身份 | 90 天 | 用户喜欢用 curl.exe 而非 PowerShell curl |
 | feedback | 用户反馈 | 30 天 | "你这报告太啰嗦了，下次精简点" |
 | project | 项目状态/进度/约定 | 7 天 | 异环抽卡清洗脚本 v3 新增道具映射 |
-| reference | 参考资料/链接/命令 | 30 天 | ModelScope VL API 限流 RPM≈5 |
+| reference | 参考资料/链接/命令 | 30 天 | ModelScope VL API 限流较严，需低频串行调用 |
 | experience | debug 解决方案/坑点/最佳实践 | 14 天 | sqlite WAL 模式下并发写需开 shared_cache |
 
 > **staleness 警告**：`memory_get` / `memory_search` / `agent_guide` 返回的记忆会自动追加 `memory_age`（相对时间 today/yesterday/N days ago）+ `staleness_warning`（超阈值才填）+ `trust_recall_hint`（常驻"引用前请验证"）。

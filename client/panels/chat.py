@@ -29,13 +29,13 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import (
-    QEasingCurve,
-    QPropertyAnimation,
+    QEvent,
     Qt,
     QThread,
     QTimer,
     Signal,
 )
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -43,7 +43,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
-    QGraphicsOpacityEffect,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -168,8 +167,10 @@ _LARGE_MESSAGE_THRESHOLD = 4000
 # T05: content="" 的 assistant 消息占位文本（spec D6）
 _EMPTY_ASSISTANT_PLACEHOLDER = "思考中..."
 
-# T06: 动效时长（spec D5，淡入 150ms，工具卡展开 200ms）
-_FADE_IN_DURATION_MS = 150
+# 2026-09-13：消息块淡入动画（原 spec D46 #4，QGraphicsOpacityEffect 150ms）已整体移除。
+# 淡入连续引发三起问题：①切换会话整页闪烁；②与自适应高度布局叠加参与布局震荡（卡死）；
+# ③工具调用块偶发停留在透明度≈0，直到鼠标 hover 强制重绘才显示。块改为即时呈现。
+
 _TOOL_CARD_EXPAND_DURATION_MS = 200
 
 # chat-panel-v2 T10（D47）：token 单位换算（B/K/M/B/T，整数 ≤3 位 + 1 位小数）
@@ -201,6 +202,30 @@ def _format_token_count(tokens_count: int) -> str:
                 return f"{value:.1f}{unit}"
     # < 1000，用原值
     return str(int(tokens_count))
+
+
+def _format_last_updated(ts: float) -> str:
+    """顶栏 last_updated 文本（2026-09-13）：只显示 HH:MM 对隔天会话有歧义。
+
+    今天 → HH:MM；昨天 → 昨天 HH:MM；今年更早 → MM-DD HH:MM；跨年 → YYYY-MM-DD HH:MM。
+    ts 为 0/负 → 空串。
+    """
+    if not ts or ts <= 0:
+        return ""
+    import time as _time
+    from datetime import date, datetime
+
+    dt = datetime.fromtimestamp(ts)
+    today = date.today()
+    d = dt.date()
+    hm = dt.strftime("%H:%M")
+    if d == today:
+        return hm
+    if d == date.fromordinal(today.toordinal() - 1):
+        return f"昨天 {hm}"
+    if d.year == today.year:
+        return dt.strftime("%m-%d ") + hm
+    return dt.strftime("%Y-%m-%d ") + hm
 
 
 def _truncate_title(title: str, max_chars: int = 32) -> str:
@@ -526,12 +551,12 @@ def _format_session_as_json(
 
 
 class _TimelineBlock(QFrame):
-    """时间线块基类（D45）：淡入动效（D46 #4）+ 弹性布局（D46 #9）。
+    """时间线块基类（D45）：弹性布局（D46 #9）。
 
     所有块共享：
-    - QGraphicsOpacityEffect 0.0→1.0 150ms OutQuad 淡入（出错静默降级）
     - QSizePolicy.Expanding 水平方向，竖直方向 Preferred（不固定高度）
     - 不设 setMaximumHeight（D40：展开后高度自适应）
+    - 即时呈现（2026-09-13：原 D46 #4 淡入动效已移除，见模块头部注释）
 
     T08 sticky 标题栏接口（D42/D42a）：
     - is_collapsible：是否可折叠（True=sticky 候选；False=不触发 sticky 标题）
@@ -544,22 +569,9 @@ class _TimelineBlock(QFrame):
         super().__init__(parent)
         self.setObjectName("timelineBlock")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self._apply_fade_in()
-
-    def _apply_fade_in(self) -> None:
-        """D46 #4：淡入动效（150ms OutQuad，出错静默降级）。"""
-        try:
-            effect = QGraphicsOpacityEffect(self)
-            effect.setOpacity(0.0)
-            self.setGraphicsEffect(effect)
-            anim = QPropertyAnimation(effect, b"opacity", self)
-            anim.setDuration(_FADE_IN_DURATION_MS)
-            anim.setStartValue(0.0)
-            anim.setEndValue(1.0)
-            anim.setEasingCurve(QEasingCurve.Type.OutQuad)
-            anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-        except Exception as e:
-            logger.debug("fade-in animation failed (degraded to no anim): %s", e)
+        # 2026-09-13：原 _apply_fade_in 淡入动画已整体移除——QGraphicsOpacityEffect
+        # 连续引发切换闪烁/布局震荡参与/工具块停在透明度 0 直到 hover 才显示三类问题，
+        # 块改为即时呈现（详见模块头部注释）。
 
     # ------------------------------------------------------------------
     # T08 sticky 标题栏接口（D42/D42a）
@@ -582,6 +594,103 @@ class _TimelineBlock(QFrame):
     def collapse(self) -> None:
         """折叠本块（sticky 标题点击时调用，默认 no-op）。"""
         return
+
+
+def _sync_doc_height(view: QTextEdit, padding: int = 12, min_height: int = 28) -> int:
+    """按当前宽度与内容重算文本视图高度，min/max 同步（返回计算值）。
+
+    QTextEdit/QTextBrowser 默认不参与 heightForWidth：构造时控件宽度未定，
+    document 按默认窄宽（~100px）折行 → min 高度虚高，且布局/内容变化后不再重算，
+    表现为 user 气泡/assistant 块下方大片空白。min/max 同步为内容驱动值
+    （随内容/宽度变化，非写死像素，符合 spec D4 弹性精神）。
+
+    防震荡（2026-09-13 用户实测卡死/滚动异常）：高度重算改变布局 → 外层滚动条
+    出现/消失 → 宽度变化 → 折行变化 → 高度再变，可能形成布局震荡（表现为主线程
+    忙死循环 + 滚动异常）。两道防线：① 计算高度用控件宽度而非 viewport 宽度
+    （与内部滚动条解耦）；② 迟滞——与当前值差 ≤3px 不动。
+    """
+    text_width = max(view.width() - padding, 50)
+    doc = view.document()
+    doc.setTextWidth(text_width)
+    h = max(int(doc.size().height()) + padding, min_height)
+    # 迟滞：与当前已应用高度差 ≤3px 时不重设（防滚动条/折行来回抖动的布局震荡）
+    if abs(h - view.maximumHeight()) <= 3:
+        return h
+    view.setMinimumHeight(h)
+    view.setMaximumHeight(h)
+    return h
+
+
+class _AutoHeightTextEdit(QTextEdit):
+    """内容驱动高度的只读 QTextEdit（user 气泡/thinking 用，内容变更后须调 sync_height）。
+
+    内部滚动条常关：视图始终按内容全展开，滚动交给外层时间线滚动区；
+    这同时消除"内滚滚动条出现→viewport 变窄→折行变多→高度变大"的反馈环。
+    """
+
+    def __init__(self, *, min_height: int = 28, parent=None):
+        super().__init__(parent)
+        self._height_padding = 14  # 余量：文档 margin 8 + 舍入安全 6（宁多留白不裁切内滚）
+        self._min_height = min_height
+        self.setReadOnly(True)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sp = self.sizePolicy()
+        sp.setHeightForWidth(True)
+        self.setSizePolicy(sp)
+
+    def sync_height(self) -> None:
+        if not self.isVisible():
+            # 隐藏/未布局时宽度无效（Qt 默认 ~100px），算出来的高度是垃圾值；
+            # 等真正显示时 showEvent/resizeEvent 会补算
+            return
+        _sync_doc_height(self, self._height_padding, self._min_height)
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
+        super().showEvent(event)
+        self.sync_height()
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
+        # 高度自适应视图永不内滚（2026-09-13 用户反馈"无滚动条但内容能滚"）：
+        # 高度计算与实际渲染有像素级误差时内容可能溢出几个 px，滚轮会把这点
+        # 溢出滚出来，观感滑稽。直接忽略 → 滚轮永远滚外层时间线。
+        event.ignore()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
+        super().resizeEvent(event)
+        self.sync_height()
+
+
+class _AutoHeightTextBrowser(QTextBrowser):
+    """内容驱动高度的只读 QTextBrowser（assistant 文本块用，保留链接点击）。"""
+
+    def __init__(self, *, min_height: int = 28, parent=None):
+        super().__init__(parent)
+        self._height_padding = 14  # 余量：文档 margin 8 + 舍入安全 6（宁多留白不裁切内滚）
+        self._min_height = min_height
+        self.setReadOnly(True)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sp = self.sizePolicy()
+        sp.setHeightForWidth(True)
+        self.setSizePolicy(sp)
+
+    def sync_height(self) -> None:
+        if not self.isVisible():
+            return
+        _sync_doc_height(self, self._height_padding, self._min_height)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
+        # 高度自适应视图永不内滚（同 _AutoHeightTextEdit）：滚轮永远滚外层时间线
+        event.ignore()
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
+        super().showEvent(event)
+        self.sync_height()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
+        super().resizeEvent(event)
+        self.sync_height()
 
 
 class _UserBubble(_TimelineBlock):
@@ -607,8 +716,9 @@ class _UserBubble(_TimelineBlock):
         is_steer = self._message.source == "steer"
         is_queue = self._message.source == "queue"
         content_text = _content_to_text(self._message.content)
-        # D33：只有 user（非 steer/queue）才显示 hover 按钮
-        self._can_hover = not is_steer and not is_queue
+        # D33（2026-09-13 改常态显示）：user/steer/queue 一律显示复制/删除按钮行，
+        # 不再 hover 显隐（显隐会导致下方所有块位移跳动）
+        self._can_hover = True
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 6, 12, 6)
@@ -644,8 +754,8 @@ class _UserBubble(_TimelineBlock):
         blayout.addWidget(role_label)
 
         # 内容（user 用 setPlainText，不 md 渲染）
-        content_view = QTextEdit()
-        content_view.setReadOnly(True)
+        # 自适应高度：构造期宽度未定，QTextEdit 默认 min 高度按窄宽折行会虚增（气泡下方空白）
+        content_view = _AutoHeightTextEdit()
         content_view.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         content_view.setPlainText(content_text)
         content_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -653,8 +763,7 @@ class _UserBubble(_TimelineBlock):
             f"QTextEdit {{ background: transparent; color: {tokens.TEXT_PRIMARY};"
             f" border: none; padding: 0; font-size: {tokens.FONT_BODY}px; }}"
         )
-        doc_height = content_view.document().size().height()
-        content_view.setMinimumHeight(min(max(int(doc_height) + 12, 28), 520))
+        content_view.sync_height()
         blayout.addWidget(content_view)
 
         bubble_row.addWidget(bubble)
@@ -699,20 +808,23 @@ class _UserBubble(_TimelineBlock):
             button_container = QWidget()
             button_container.setObjectName("userHoverButtons")
             button_container.setLayout(button_row)
-            button_container.setVisible(False)
+            # 常态显示（2026-09-13）：hover 显隐会造成布局跳动。
+            # ⚠ 无 parent 的 QWidget 在 addWidget 之前 setVisible(True) 会作为
+            # 独立顶层窗口闪现（标题=应用显示名"LocalAgent 客户端"，即用户看到的
+            # "Loc... 小窗口"）；必须先 addWidget 并入可见树，由父链带出显示
             outer.addWidget(button_container)
             self._hover_button_row = button_container
 
     def enterEvent(self, event) -> None:
-        """D33：鼠标进入块时显示 hover 按钮。"""
-        if self._hover_button_row is not None:
-            self._hover_button_row.setVisible(True)
+        """D33（2026-09-13 起废弃 hover 显示改为常态显示）：保留方法兼容旧测试，no-op。
+
+        hover 显隐会导致按钮行插入/移除时下方所有块位移（"整个屏幕都动"），
+        改为按钮行常驻。
+        """
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
-        """D33：鼠标离开块时隐藏 hover 按钮。"""
-        if self._hover_button_row is not None:
-            self._hover_button_row.setVisible(False)
+        """同上，no-op（按钮行常驻，不再随 hover 显隐）。"""
         super().leaveEvent(event)
 
 
@@ -730,11 +842,13 @@ class _AssistantTextBlock(_TimelineBlock):
     """
 
     # T11 信号：ChatPanel 连接
-    copy_requested = Signal(str)  # 参数 = accumulated text
+    copy_requested = Signal(str)  # 参数 = accumulated text（markdown 原文）
+    copy_plain_requested = Signal(str)  # 2026-09-13：渲染后纯文本（QTextDocument 转换）
+    branch_requested = Signal(int)  # 2026-09-13：分支 = 从本条回复复制历史开新对话（参数=seq）
 
     def __init__(self, content: str = "", parent=None):
         # 流式状态字段（需在 super().__init__ 前初始化）
-        self._content_view: QTextBrowser | None = None
+        self._content_view: _AutoHeightTextBrowser | None = None
         self._accumulated_text: str = content
         self._is_streaming: bool = False
         self._degraded_to_close: bool = False
@@ -753,23 +867,21 @@ class _AssistantTextBlock(_TimelineBlock):
         outer.setContentsMargins(12, 6, 12, 6)
         outer.setSpacing(2)
 
-        # 内容区（QTextBrowser setMarkdown）
-        content_view = QTextBrowser()
+        # 内容区（QTextBrowser setMarkdown，内容驱动高度）
+        content_view = _AutoHeightTextBrowser()
         content_view.setOpenExternalLinks(True)
-        content_view.setReadOnly(True)
         content_view.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         content_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        content_view.setStyleSheet(
-            f"QTextBrowser {{ background: transparent; color: {tokens.TEXT_PRIMARY};"
-            f" border: none; padding: 0; font-size: {tokens.FONT_BODY}px; }}"
-        )
+        content_view.setStyleSheet(self._content_stylesheet(tokens.TEXT_PRIMARY))
         if content:
             content_view.setMarkdown(content)
+            # [stream error] 前缀 = provider 流错误（error-as-output-variant），红色区分普通回复
+            if content.startswith("[stream error]"):
+                content_view.setStyleSheet(self._content_stylesheet(tokens.DANGER_TEXT))
         else:
             content_view.setMarkdown(_EMPTY_ASSISTANT_PLACEHOLDER)
             self._showing_placeholder = True
-        doc_height = content_view.document().size().height()
-        content_view.setMinimumHeight(min(max(int(doc_height) + 12, 28), 520))
+        content_view.sync_height()
         outer.addWidget(content_view)
         self._content_view = content_view
 
@@ -781,23 +893,78 @@ class _AssistantTextBlock(_TimelineBlock):
         self._model_label.setVisible(False)
         outer.addWidget(self._model_label)
 
-        # T11 D33：hover Copy 按钮（左对齐，默认隐藏，finalize 后才激活）
-        copy_btn = QPushButton("📋 复制")
+        # 操作按钮行（2026-09-13 第二轮反馈：只在"完整 agent 轮次"的最后一条回复显示，
+        # 中间轮次的回复不带按钮；行本身常驻不随 hover 显隐，防布局跳动）：
+        # 复制MD（markdown 原文）/ 复制文本（渲染后纯文本）/ 分支（复制历史开新对话）
+        actions_container = QWidget()
+        btn_row = QHBoxLayout(actions_container)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(4)
+
+        def _small_btn(text: str, tip: str) -> QPushButton:
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {tokens.TEXT_TERTIARY};"
+                f" border: 1px solid {tokens.BORDER};"
+                f" border-radius: {tokens.RADIUS_SM}px; padding: 2px 8px;"
+                f" font-size: {tokens.FONT_SMALL}px; }}"
+                f"QPushButton:hover {{ background: {tokens.BG_HOVER}; }}"
+            )
+            return b
+
+        copy_btn = _small_btn("📋 复制MD", "复制本轮回复原文（Markdown）")
         copy_btn.setObjectName("assistantCopyBtn")
-        copy_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {tokens.TEXT_TERTIARY};"
-            f" border: 1px solid {tokens.BORDER};"
-            f" border-radius: {tokens.RADIUS_SM}px; padding: 2px 8px;"
-            f" font-size: {tokens.FONT_SMALL}px; }}"
-            f"QPushButton:hover {{ background: {tokens.BG_HOVER}; }}"
-        )
-        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.setVisible(False)
-        copy_btn.clicked.connect(
-            lambda: self.copy_requested.emit(self._accumulated_text)
-        )
-        outer.addWidget(copy_btn)
+        copy_btn.clicked.connect(lambda: self.copy_requested.emit(self._accumulated_text))
+        btn_row.addWidget(copy_btn)
         self._hover_copy_btn = copy_btn
+
+        copy_plain_btn = _small_btn("复制文本", "复制渲染后的纯文本（无 Markdown 标记）")
+        copy_plain_btn.setObjectName("assistantCopyPlainBtn")
+        copy_plain_btn.clicked.connect(self._emit_copy_plain)
+        btn_row.addWidget(copy_plain_btn)
+
+        self._branch_seq = 0
+        branch_btn = _small_btn("⑂ 分支", "从本条回复复制全部历史，开一个新的对话（可走出不同走向）")
+        branch_btn.setObjectName("assistantBranchBtn")
+        branch_btn.setEnabled(False)  # 拿到消息 seq 后启用（set_branch_point）
+        branch_btn.clicked.connect(self._emit_branch)
+        btn_row.addWidget(branch_btn)
+        self._branch_btn = branch_btn
+
+        btn_row.addStretch()
+        # 默认隐藏：是否为轮次结束由 _poll_session_state 统一判定（apply_turn_end_flags）
+        actions_container.setVisible(False)
+        outer.addWidget(actions_container)
+        self._actions_row = actions_container
+
+    def set_actions_visible(self, visible: bool) -> None:
+        """轮次结束标记：True = 本条是完整 agent 轮次的最后回复，显示操作按钮。"""
+        if self._actions_row is not None:
+            self._actions_row.setVisible(visible)
+
+    def _emit_copy_plain(self) -> None:
+        """复制渲染后纯文本：QTextDocument 已把 markdown 转成排版文本，toPlainText 即纯文本。"""
+        if self._content_view is not None:
+            self.copy_plain_requested.emit(self._content_view.toPlainText())
+
+    def _emit_branch(self) -> None:
+        if self._branch_seq > 0:
+            self.branch_requested.emit(self._branch_seq)
+
+    def set_branch_point(self, seq: int) -> None:
+        """设置分支点（本条回复在会话内的 seq），拿到 seq 后启用分支按钮。"""
+        self._branch_seq = int(seq)
+        if self._branch_btn is not None:
+            self._branch_btn.setEnabled(self._branch_seq > 0)
+
+    @staticmethod
+    def _content_stylesheet(color: str) -> str:
+        return (
+            f"QTextBrowser {{ background: transparent; color: {color};"
+            f" border: none; padding: 0; font-size: {tokens.FONT_BODY}px; }}"
+        )
 
     def start_streaming(self) -> None:
         """标记此块为流式状态（打字机增量 append 模式）。"""
@@ -807,6 +974,7 @@ class _AssistantTextBlock(_TimelineBlock):
         if self._showing_placeholder and self._content_view is not None:
             self._content_view.setPlainText("")
             self._showing_placeholder = False
+            self._content_view.sync_height()
 
     def append_text_delta(self, delta: str) -> None:
         """增量 append 文本 delta（>4k 自动降级，D46 #6）。"""
@@ -821,11 +989,13 @@ class _AssistantTextBlock(_TimelineBlock):
         if len(self._accumulated_text) > _LARGE_MESSAGE_THRESHOLD:
             self._degraded_to_close = True
             self._content_view.setPlainText("")
+            self._content_view.sync_height()
             return
         cursor = self._content_view.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         cursor.insertText(delta)
         self._content_view.setTextCursor(cursor)
+        self._content_view.sync_height()
 
     def finalize_text(self, full_text: str) -> None:
         """流结束，一次性 setMarkdown 渲染最终文本。"""
@@ -837,8 +1007,10 @@ class _AssistantTextBlock(_TimelineBlock):
             self._content_view.setMarkdown(full_text)
         else:
             self._content_view.setPlainText("")
-        doc_height = self._content_view.document().size().height()
-        self._content_view.setMinimumHeight(min(max(int(doc_height) + 12, 28), 520))
+        # [stream error] 前缀 = provider 流错误（error-as-output-variant），红色区分普通回复
+        if full_text.startswith("[stream error]"):
+            self._content_view.setStyleSheet(self._content_stylesheet(tokens.DANGER_TEXT))
+        self._content_view.sync_height()
         self._update_model_label()
         # T11: finalize 后激活 hover Copy 按钮
         self._finalized = True
@@ -855,22 +1027,17 @@ class _AssistantTextBlock(_TimelineBlock):
             self._content_view.setMarkdown(self._accumulated_text)
         else:
             self._content_view.setPlainText("（已中断）")
-        doc_height = self._content_view.document().size().height()
-        self._content_view.setMinimumHeight(min(max(int(doc_height) + 12, 28), 520))
+        self._content_view.sync_height()
         self._update_model_label()
         # T11: 中断也算 finalize，激活 hover Copy 按钮
         self._finalized = True
 
     def enterEvent(self, event) -> None:
-        """D33：鼠标进入块时显示 Copy 按钮（仅 finalize 后）。"""
-        if self._hover_copy_btn is not None and self._finalized:
-            self._hover_copy_btn.setVisible(True)
+        """D33（2026-09-13 起按钮常态显示）：保留方法兼容旧测试，no-op。"""
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
-        """D33：鼠标离开块时隐藏 Copy 按钮。"""
-        if self._hover_copy_btn is not None:
-            self._hover_copy_btn.setVisible(False)
+        """同上，no-op（按钮行常驻，不再随 hover 显隐）。"""
         super().leaveEvent(event)
 
     def set_model(self, model: str) -> None:
@@ -906,7 +1073,7 @@ class _ThinkingBlock(_TimelineBlock):
 
     def __init__(self, content: str = "", parent=None):
         self._content: str = content
-        self._view: QTextEdit | None = None
+        self._view: _AutoHeightTextEdit | None = None
         self._toggle_btn: QPushButton | None = None
         self._expanded: bool = False
         self._accumulated: str = content
@@ -947,9 +1114,8 @@ class _ThinkingBlock(_TimelineBlock):
         header.addStretch()
         flayout.addLayout(header)
 
-        # thinking 内容（默认折叠）
-        view = QTextEdit()
-        view.setReadOnly(True)
+        # thinking 内容（默认折叠；自适应高度，展开后无内滚 D40）
+        view = _AutoHeightTextEdit()
         view.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         view.setStyleSheet(
             f"QTextEdit {{ background: transparent; color: {tokens.TEXT_SECONDARY};"
@@ -970,6 +1136,9 @@ class _ThinkingBlock(_TimelineBlock):
         self._expanded = not self._expanded
         if self._view is not None:
             self._view.setVisible(self._expanded)
+            if self._expanded:
+                # 显示后按实际宽度同步高度（隐藏期间宽度未定）
+                self._view.sync_height()
         if self._toggle_btn is not None:
             self._toggle_btn.setText(
                 "▼ thinking" if self._expanded else "▶ thinking"
@@ -1000,12 +1169,15 @@ class _ThinkingBlock(_TimelineBlock):
             cursor.movePosition(cursor.MoveOperation.End)
             cursor.insertText(delta)
             self._view.setTextCursor(cursor)
+            self._view.sync_height()
 
     def finalize(self, full_text: str) -> None:
         """流结束，替换完整 thinking 文本。"""
         self._is_streaming = False
         if self._view is not None:
             self._view.setPlainText(full_text)
+            if self._expanded:
+                self._view.sync_height()
 
     def finalize_as_interrupted(self) -> None:
         """D43: 流式中断 → 把已累积 thinking 转正为独立 thinking 块。"""
@@ -1013,6 +1185,8 @@ class _ThinkingBlock(_TimelineBlock):
         self._interrupted = True
         if self._view is not None and self._accumulated:
             self._view.setPlainText(self._accumulated)
+            if self._expanded:
+                self._view.sync_height()
 
 
 class _ToolCallBlock(_TimelineBlock):
@@ -1481,6 +1655,8 @@ class _MessageTimeline(QFrame):
         self._streaming_model: str = ""
         # tool_call_id → _ToolCallBlock 映射（用于 tool_result 附加）
         self._tool_call_blocks: dict[str, _ToolCallBlock] = {}
+        # seq → _AssistantTextBlock 映射（2026-09-13：完整轮次判定用）
+        self._assistant_blocks_by_seq: dict[int, _AssistantTextBlock] = {}
 
     # ------------------------------------------------------------------
     # 块追加接口
@@ -1523,6 +1699,8 @@ class _MessageTimeline(QFrame):
                 atb.set_model(message.model)
             self.append_block(atb)
             blocks.append(atb)
+            if message.seq > 0:
+                self._assistant_blocks_by_seq[message.seq] = atb
         return blocks
 
     def append_tool_result(
@@ -1577,13 +1755,32 @@ class _MessageTimeline(QFrame):
             self.append_block(self._streaming_thinking_block)
         self._streaming_thinking_block.append_delta(delta)
 
-    def finalize_streaming_assistant(self, full_text: str, model: str = "") -> None:
-        """流结束，finalize streaming assistant 块。"""
+    def finalize_streaming_assistant(
+        self, full_text: str, model: str = "", seq: int = 0
+    ) -> _AssistantTextBlock | None:
+        """流结束，finalize streaming assistant 块。返回该块（供调用方连接信号/设分支点）。
+
+        seq > 0 时按 seq 登记，参与完整轮次判定（2026-09-13）。
+        """
         if self._streaming_assistant_block is not None:
-            self._streaming_assistant_block.finalize_text(full_text)
+            block = self._streaming_assistant_block
+            block.finalize_text(full_text)
             if model:
-                self._streaming_assistant_block.set_model(model)
+                block.set_model(model)
             self._streaming_assistant_block = None
+            if seq > 0:
+                self._assistant_blocks_by_seq[seq] = block
+            return block
+        return None
+
+    def apply_turn_end_flags(self, turn_end_seqs: set[int]) -> None:
+        """2026-09-13 用户反馈：操作按钮只出现在"完整 agent 轮次"的最后一条回复。
+
+        turn_end_seqs = 轮次结束的 assistant 消息 seq 集合（由 ChatPanel 按消息序判定：
+        assistant 且下一条是 user、或已是最后一条）。不在集合内的中间回复隐藏按钮行。
+        """
+        for seq, block in self._assistant_blocks_by_seq.items():
+            block.set_actions_visible(seq in turn_end_seqs)
 
     def finalize_streaming_thinking(self, full_thinking: str) -> None:
         """流结束，finalize streaming thinking 块。"""
@@ -1633,6 +1830,7 @@ class _MessageTimeline(QFrame):
         self._streaming_assistant_block = None
         self._streaming_thinking_block = None
         self._tool_call_blocks.clear()
+        self._assistant_blocks_by_seq.clear()
 
     def scroll_to_bottom(self, scroll_area: QScrollArea) -> None:
         """滚动到底部。"""
@@ -1763,6 +1961,17 @@ class _ChatWorker(QThread):
                 registry.register_builtin_tools(builtin_executor)
             except Exception as e:
                 logger.warning("register_builtin_tools failed (fail-open): %s", e)
+            # 8-13（2026-09-13 code review）：terminal_inspector / terminal_killer 有意延后
+            # 注入（client/core/agent 内无现成实现类，仅 runner 消费 + 测试 mock；注入需
+            # 自写 HTTP 回调，本次不实现）。影响范围声明——以下两层保障当前未生效：
+            # - spec D6"3 分钟唤醒"：runner._execute_with_wakeup 见
+            #   terminal_inspector=None 直接返回原结果，exec_python 长任务依赖模型自觉
+            #   exec_inspect 轮询 + server 端兜底
+            # - spec D11"session 结束 kill 残留 terminal"：runner._cleanup_terminals 见
+            #   terminal_killer=None 直接跳过，残留 terminal 由 server 端 idle 兜底
+            # 若要启用：注入 async (tid, timeout) -> dict（POST /exec/inspect）与
+            # async (tid) -> bool（POST /exec/kill）两个回调；建议用 asyncio.to_thread
+            # 包同步 requests，避免长阻塞等待（inspect 可达 180s）冻结 worker 事件循环。
             deps = RunnerDeps(
                 llm_gateway=gateway,
                 event_store=store,
@@ -1793,9 +2002,37 @@ class _ChatWorker(QThread):
             self._facade = None  # 清理引用
 
     def interrupt(self) -> None:
-        """主线程调用，触发中断。"""
+        """主线程调用，触发中断。
+
+        双层保障（2026-09-13 code review 8-1：A2 此前全 client 零调用）：
+        - A1：set interrupt_event——runner 在工具循环/主循环顶部检查；但阻塞的
+          await 点（审批等待最长 200s / LLM 调用）不返回时，排队的事件永远不会
+          被检查到。
+        - A2：调度 facade.interrupt() → runner_task.cancel() 强制中止挂起的
+          await；runner._run_loop 捕获 CancelledError 返回 interrupted。
+        """
+        # 8-15: run() finally 已 close loop 但线程尚未退出的窗口期 isRunning() 仍为
+        # True，此时 call_soon_threadsafe 对已关闭 loop 抛 RuntimeError 到主线程槽；
+        # is_closed() 守卫直接忽略（loop 已关 = 会话已结束，无需中断）
+        if self._loop is None or self._loop.is_closed():
+            return
         if self._loop and self._interrupt_event:
             self._loop.call_soon_threadsafe(self._interrupt_event.set)
+        # 守卫后立即捕获局部变量（与 _do_steer 同理：调度执行前 run() 的
+        # finally 可能已置 self._facade = None）
+        facade = self._facade
+        session_id = self._session_id
+        if self._loop and facade is not None:
+
+            async def _do_interrupt_a2():
+                try:
+                    await facade.interrupt(session_id)
+                except Exception as e:
+                    logger.warning("ChatWorker.interrupt A2 failed: %s", e)
+
+            self._loop.call_soon_threadsafe(
+                lambda: asyncio.ensure_future(_do_interrupt_a2(), loop=self._loop)
+            )
 
     def steer(self, text: str) -> None:
         """主线程调用，注入引导消息（spec D13 steer UI）。
@@ -1861,6 +2098,21 @@ class _StartPage(QFrame):
         set_text_role(title, "primary")
         top_row.addWidget(title)
         top_row.addStretch()
+        # 2026-09-13 用户反馈：新建模板入口从 tab 栏 corner 挪到标题行
+        # （corner widget 与真实模板 tab 语义撞车且几何被裁剪）。
+        # 文案用"前往"——按钮是跳转到模板管理面板，不是就地创建；
+        # 不用绿色——绿色（accent）留给真正执行创建的按钮，避免语义误导。
+        new_tpl_btn = QPushButton("前往新建模板")
+        new_tpl_btn.setToolTip("打开模板管理面板，可在其中新建/编辑模板")
+        new_tpl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        new_tpl_btn.setStyleSheet(
+            f"QPushButton {{ border: 1px solid {tokens.BORDER}; border-radius: {tokens.RADIUS_SM};"
+            f" background: {tokens.BG_PANEL}; color: {tokens.TEXT_SECONDARY};"
+            f" padding: 4px 10px; font-size: {tokens.FONT_SMALL}px; }}"
+            f"QPushButton:hover {{ background: {tokens.BG_HOVER}; color: {tokens.TEXT_PRIMARY}; }}"
+        )
+        new_tpl_btn.clicked.connect(self.manage_templates_requested.emit)
+        top_row.addWidget(new_tpl_btn)
         group_label = QLabel("分组：")
         set_text_role(group_label, "secondary")
         top_row.addWidget(group_label)
@@ -1875,27 +2127,19 @@ class _StartPage(QFrame):
             f" border: 1px solid {tokens.BORDER}; border-radius: {tokens.RADIUS_SM};"
             f" padding: 2px 6px; font-size: 12px; }}"
         )
-        # 占位项
+        # 占位项（2026-09-13 用户反馈：选它不会立即弹窗，分组实际在发送时创建，
+        # 文案要如实表达延后语义）
         self._group_combo.addItem("（未分组）", "")
-        self._group_combo.addItem("（新建分组...）", "__new__")
+        self._group_combo.addItem("（发起对话时新建分组）", "__new__")
         top_row.addWidget(self._group_combo)
         layout.addLayout(top_row)
 
         # --- 模板 tab ---
+        # 2026-09-13 用户反馈：corner widget 的"＋ 新建模板"与真实模板 tab 语义撞车
+        # （误建的"新模板"模板看着像重复入口）且几何被 QTabWidget corner 区域裁剪。
+        # 改为：按钮挪到标题行右端（见 top_row），tab 只放真实模板。
         self._template_tabs = QTabWidget()
         self._template_tabs.setObjectName("templateTabs")
-        # "+" 按钮放在 tab 栏右侧（corner widget）
-        add_tab_btn = QPushButton("+")
-        add_tab_btn.setFixedSize(24, 24)
-        add_tab_btn.setToolTip("新建模板（打开模板管理面板）")
-        add_tab_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_tab_btn.setStyleSheet(
-            f"QPushButton {{ border: 1px solid {tokens.BORDER}; border-radius: {tokens.RADIUS_SM};"
-            f" background: {tokens.BG_PANEL}; font-size: 14px; }}"
-            f"QPushButton:hover {{ background: {tokens.BG_HOVER}; }}"
-        )
-        add_tab_btn.clicked.connect(self.manage_templates_requested.emit)
-        self._template_tabs.setCornerWidget(add_tab_btn)
         layout.addWidget(self._template_tabs)
 
         # 单输入框设计（用户定版）：不使用模板/使用模板都是模板 tab 内的输入位置，
@@ -2039,7 +2283,9 @@ class _StartPage(QFrame):
     def _on_send(self) -> None:
         """发送按钮：取当前 tab 文本 + 模板 skills + 分组 → emit send_requested。"""
         edit = self._current_input_edit()
-        text = edit.toPlainText().strip() if edit is not None else ""
+        if edit is None:
+            return
+        text = edit.toPlainText().strip()
         if not text:
             return
         # 取当前 tab 对应模板的 skills（template_id 存于 widget property）
@@ -2054,12 +2300,14 @@ class _StartPage(QFrame):
                     break
         # chat-panel-v2 T06（D6）：取当前分组选择
         group_name = self._current_group_selection()
+        # 发送后清空输入框（否则切回开始页时残留已发送文本，易误重复发送）
+        edit.setPlainText("")
         self.send_requested.emit(text, skills, group_name)
 
     def _current_group_selection(self) -> str:
         """返回当前选中的分组名（"" = 未分组）。
 
-        若选了"（新建分组...）" → 弹 QInputDialog 输入新分组名，
+        若选了"（发起对话时新建分组）" → 弹 QInputDialog 输入新分组名，
         取消则回退到"未分组"。选中后并把新分组名加入 combo 列表。
         """
         idx = self._group_combo.currentIndex()
@@ -2222,14 +2470,15 @@ class _TemplateManagerPanel(QFrame):
         set_text_role(title_label, "primary")
         header_row.addWidget(title_label, 1)
 
-        new_btn = QPushButton("+")
-        new_btn.setFixedSize(24, 24)
+        # 2026-09-13：原 24px 灰底"+"几乎不可见，改带文字的高对比按钮
+        new_btn = QPushButton("＋ 新建模板")
         new_btn.setToolTip("新建模板")
         new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         new_btn.setStyleSheet(
-            f"QPushButton {{ border: 1px solid {tokens.BORDER}; border-radius: {tokens.RADIUS_SM};"
-            f" background: {tokens.BG_PANEL}; font-size: 14px; }}"
-            f"QPushButton:hover {{ background: {tokens.BG_HOVER}; }}"
+            f"QPushButton {{ border: 1px solid {tokens.ACCENT_BORDER}; border-radius: {tokens.RADIUS_SM};"
+            f" background: {tokens.BG_PANEL}; color: {tokens.ACCENT};"
+            f" padding: 4px 10px; font-size: {tokens.FONT_SMALL}px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background: {tokens.ACCENT_WASH}; }}"
         )
         new_btn.clicked.connect(self._on_new_template)
         header_row.addWidget(new_btn)
@@ -2460,9 +2709,13 @@ class _TemplateManagerPanel(QFrame):
     # ------------------------------------------------------------------
 
     def _on_new_template(self) -> None:
-        """点 + 新建模板 → 创建空白模板 + 选中新模板。"""
+        """点 + 新建模板 → 创建空白模板 + 选中新模板。
+
+        默认名"未命名模板"（2026-09-13：原名"新模板"会出现在模板 tab 里，
+        与新建按钮语义撞车，用户误以为是重复入口）。
+        """
         try:
-            new_tpl = template_create(name="新模板", prompt="", skills=[])
+            new_tpl = template_create(name="未命名模板", prompt="", skills=[])
             self.refresh_template_list()
             # 选中新创建的项
             for i in range(self._template_list.count()):
@@ -2575,6 +2828,10 @@ class ChatPanel(PanelBase):
     - 中断即停（worker.interrupt → interrupt_event.set → runner 下一轮终止）
     """
 
+    # 2026-09-13 修"模型选择器选不了"：_load_models 的抓取线程调 QTimer.singleShot
+    # 永远不触发（非 Qt 线程无事件循环），改用跨线程 Signal 投递到主线程填充
+    models_loaded = Signal(list, str)  # (models: list[dict], default_model: str)
+
     PANEL_META = PanelMeta(
         id="chat",
         title="对话",
@@ -2590,6 +2847,7 @@ class ChatPanel(PanelBase):
         self._base_url = SERVER_URL
         self._db_path = DEFAULT_DB_PATH
         self._read_store: EventStore | None = None  # 主线程只读 store
+        self._reconcile_done = False  # 8-3：reconcile 只在首次 _init_read_store 跑一次
         self._worker: _ChatWorker | None = None
         self._current_session_id: str | None = None
         self._last_rendered_seq: int = 0  # 增量渲染锚点
@@ -2603,6 +2861,9 @@ class ChatPanel(PanelBase):
 
         # chat-panel-v2 T06（D15）：侧边栏搜索框状态
         self._session_filter: str = ""  # 实时按标题过滤（空=不过滤）
+        # 树重建去重签名（2026-09-13 修"列表一直展开折叠"：2s 定时器每次 clear() 重建
+        # 整棵树且强制展开所有分组 → 用户折叠后 2s 又被撑开 + 全树闪烁）
+        self._last_tree_signature: tuple | None = None
         # T06（D19）：当前正在行内重命名的会话 id（避免重渲染覆盖 LineEdit）
         self._renaming_sid: str | None = None
         self._rename_editor: QLineEdit | None = None
@@ -2634,6 +2895,7 @@ class ChatPanel(PanelBase):
 
         # T09: 对话控制三模式状态（D34/D36/D36a）
         self._mode_group: QButtonGroup | None = None
+        self._mode_tabs_frame: QFrame | None = None         # 模式栏容器（空闲态整栏隐藏）
         self._mode_send_btn: QPushButton | None = None     # 发送 tab
         self._mode_queue_btn: QPushButton | None = None    # 队列 tab
         self._mode_steer_btn: QPushButton | None = None    # 引导 tab
@@ -2723,6 +2985,9 @@ class ChatPanel(PanelBase):
         self._session_tree.setHeaderHidden(True)
         self._session_tree.setUniformRowHeights(True)
         self._session_tree.setAnimated(True)
+        # 2026-09-13 用户反馈：点分组行任意处切换展开/收起（不强求点左侧箭头）。
+        # 单击已在 itemClicked 里切换，关掉双击展开避免单击+双击语义打架
+        self._session_tree.setExpandsOnDoubleClick(False)
         self._session_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._session_tree.setStyleSheet(
             f"QTreeWidget {{ background: {tokens.BG_PANEL}; color: {tokens.TEXT_PRIMARY};"
@@ -2737,6 +3002,11 @@ class ChatPanel(PanelBase):
         self._session_tree.itemClicked.connect(self._on_session_tree_clicked)
         self._session_tree.customContextMenuRequested.connect(self._on_session_context_menu)
         self._session_tree.itemDoubleClicked.connect(self._on_session_double_clicked)
+        # 2026-09-13 用户反馈"切换对话时弹出一个 Loc... 小窗口又消失"：会话标题都被
+        # 截断显示，Qt item 视图会为截断文本自动弹完整标题 tooltip——tooltip 是真实
+        # 顶层窗口（标题取应用显示名"LocalAgent 客户端"，~214x72px），划过树项即弹出、
+        # 点击即消失。吞掉 tooltip 事件（eventFilter 在 ChatPanel 上，见 eventFilter）。
+        self._session_tree.viewport().installEventFilter(self)
         left_layout.addWidget(self._session_tree, 1)
 
         # 旧字段保留为 None（避免破坏外部引用，但实际上后续不再使用）
@@ -2878,6 +3148,12 @@ class ChatPanel(PanelBase):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # 2026-09-13 用户反馈"滚动有些动有些不动"根治：垂直滚动条常驻。
+        # 滚动条按需出现时视口宽度变化 → 全部自适应高度块重新折行变高 → 总高度变化
+        # → 滚动条又消失 → 宽度再变……结构性震荡（3px 迟滞只能压制不能根除）。
+        # 常驻后视口宽度恒定，块高度在窗口尺寸不变时永不重算。
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setStyleSheet(f"QScrollArea {{ background: {tokens.BG_BASE}; border: none; }}")
 
         self._messages_container = QWidget()
@@ -2998,6 +3274,10 @@ class ChatPanel(PanelBase):
         self._start_page.send_requested.connect(self._on_start_page_send)
         self._start_page.session_selected.connect(self._switch_session)
         self._start_page.manage_templates_requested.connect(self._on_manage_templates)
+        # 2026-09-13：模型清单跨线程信号（抓取线程 emit → 主线程填充两个选择器）
+        self.models_loaded.connect(self._populate_model_selector)
+        # 最近对话列表同样禁 tooltip（同会话树：截断文本自动弹 tooltip 小窗口）
+        self._start_page._recent_list.viewport().installEventFilter(self)
 
         # --- 模板管理面板（stack index 2，T05 实现）---
         self._template_panel = _TemplateManagerPanel()
@@ -3098,15 +3378,16 @@ class ChatPanel(PanelBase):
                                 "tier": item.get("tier", ""),
                                 "provider": item.get("provider", ""),
                             })
-                # 用 QTimer.singleShot(0, ...) 在主线程更新 UI
-                QTimer.singleShot(0, lambda: self._populate_model_selector(models, default_model))
+                # 用跨线程 Signal 投递主线程填充（2026-09-13：原 QTimer.singleShot
+                # 在非 Qt 线程永不触发，导致两个模型选择器永远只有"（默认）"）
+                self.models_loaded.emit(models, default_model)
             except Exception as e:
                 logger.warning("_load_models failed: %s", e)
 
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _populate_model_selector(self, models: list[dict], default_model: str) -> None:
-        """主线程填充模型选择器（_load_models 在线程中拿到数据后调此方法）。"""
+        """主线程填充模型选择器（会话内 + 开始页两个，_load_models 线程经信号调用）。"""
         self._available_models = models
         # 临时断开信号，避免 addItem 触发 _on_model_changed
         self._model_selector.blockSignals(True)
@@ -3114,11 +3395,7 @@ class ChatPanel(PanelBase):
             self._model_selector.clear()
             self._model_selector.addItem("（默认）", "")
             for m in models:
-                label = m["model"]
-                # 简短标注 tier/provider（避免过长）
-                tier = m.get("tier", "")
-                if tier:
-                    label = f"{label}  [tier {tier}]"
+                label = self._model_label(m)
                 self._model_selector.addItem(label, m["model"])
             # 选中默认 model
             if default_model:
@@ -3128,6 +3405,43 @@ class ChatPanel(PanelBase):
                     self._current_model = default_model
         finally:
             self._model_selector.blockSignals(False)
+
+        # 开始页选择器同步填充（原实现从未填充它——永远只有"（默认）"一项）
+        start_combo = getattr(self._start_page, "_model_selector", None)
+        if start_combo is None:
+            return
+        start_combo.blockSignals(True)
+        try:
+            start_combo.clear()
+            start_combo.addItem("（默认）", "")
+            for m in models:
+                start_combo.addItem(self._model_label(m), m["model"])
+            if default_model:
+                idx = start_combo.findData(default_model)
+                if idx >= 0:
+                    start_combo.setCurrentIndex(idx)
+        finally:
+            start_combo.blockSignals(False)
+        # 开始页选择也计入 _current_model（只接一次）
+        if not getattr(self, "_start_model_connected", False):
+            start_combo.currentIndexChanged.connect(self._on_start_page_model_changed)
+            self._start_model_connected = True
+
+    @staticmethod
+    def _model_label(m: dict) -> str:
+        """模型下拉项文本：model 名 + 简短 tier 标注。"""
+        label = m["model"]
+        tier = m.get("tier", "")
+        if tier:
+            label = f"{label}  [tier {tier}]"
+        return label
+
+    def _on_start_page_model_changed(self, _index: int) -> None:
+        """开始页选择器切换 → 同样记录到 _current_model（下条消息生效）。"""
+        combo = getattr(self._start_page, "_model_selector", None)
+        if combo is not None:
+            self._current_model = combo.currentData() or ""
+            logger.info("Model changed (start page): %s", self._current_model or "(default)")
 
     def _on_model_changed(self, _index: int) -> None:
         """T06 spec D10：用户切换模型时记录，下条消息生效（不打断当前 run）。"""
@@ -3173,7 +3487,14 @@ class ChatPanel(PanelBase):
             return
 
         # D27: store.init() 后调 reconcile()（启动恢复）
-        self._run_reconcile()
+        # 8-3（2026-09-13 code review）修复：reconcile 只在首次 _init_read_store 做。
+        # on_backend_status_change(online) 每次后端恢复在线都会重建 read store 并
+        # 调到这里——重跑 reconcile 会把"runner 只是卡在长阻塞工具上"的活跃会话
+        # 补出第二份 tool_result + 强制 interrupted，后端闪断即可触发。
+        # 启动恢复属于进程启动语义，不属于后端连接恢复语义。
+        if not self._reconcile_done:
+            self._reconcile_done = True
+            self._run_reconcile()
 
     def _run_reconcile(self) -> None:
         """D27: 运行 reconciler，恢复崩溃残留会话，banner 提示恢复数（D26）。
@@ -3423,9 +3744,27 @@ class ChatPanel(PanelBase):
         for g_list in groups_map.values():
             g_list.sort(key=lambda d: d["updated_at"], reverse=True)
 
+        # 签名去重：数据与过滤都未变时跳过重建（2s 定时器不再无谓 clear+重建，
+        # 消除全树闪烁与"用户折叠分组 2s 后又被撑开"）
+        signature: tuple = (filter_text,) + tuple(
+            (d["id"], d["title"], d["status"], d["updated_at"], d["group_name"], d["pinned"])
+            for d in sessions_dicts
+        )
+        if signature == self._last_tree_signature and not self._renaming_sid:
+            return
+        self._last_tree_signature = signature
+
         # 重渲染树
         current_selected = self._current_session_id
         renaming_sid = self._renaming_sid
+
+        # 保留用户折叠状态：clear 前记录展开的分组 header（按 UserRole 分组名或标题文本）
+        expanded_headers: set[str] = set()
+        for _i in range(self._session_tree.topLevelItemCount()):
+            _it = self._session_tree.topLevelItem(_i)
+            if _it is not None and _it.isExpanded():
+                _key = _it.data(0, Qt.ItemDataRole.UserRole) or _it.text(0)
+                expanded_headers.add(str(_key))
 
         # 若正在重命名，先取出 rename editor 的当前文本（避免重渲染丢失输入）
         renaming_text = ""
@@ -3436,6 +3775,10 @@ class ChatPanel(PanelBase):
                 renaming_text = ""
 
         self._session_tree.clear()
+
+        def _set_expanded(root: QTreeWidgetItem, key: str) -> None:
+            # 有记录按记录恢复（用户手动折叠的分组不再被强制撑开）；首渲染全展开
+            root.setExpanded(key in expanded_headers) if expanded_headers else root.setExpanded(True)
 
         def _build_session_item(d: dict) -> QTreeWidgetItem:
             sid = d["id"]
@@ -3462,6 +3805,9 @@ class ChatPanel(PanelBase):
         if pinned_sessions:
             pinned_root = QTreeWidgetItem([f"📌 置顶 ({len(pinned_sessions)})"])
             pinned_root.setData(0, Qt.ItemDataRole.UserRole + 1, "header")
+            # 稳定展开 key（2026-09-13 修"分支/删除后分组自动收回"：原用含数量的
+            # 标题文本做 key，数量一变 key 失配 → 被误判为用户折叠过 → 强制收起）
+            pinned_root.setData(0, Qt.ItemDataRole.UserRole, "__pinned__")
             pinned_root.setForeground(0, Qt.GlobalColor.transparent)  # 仅作分组视觉
             font = pinned_root.font(0)
             font.setBold(True)
@@ -3471,7 +3817,7 @@ class ChatPanel(PanelBase):
                 child = _build_session_item(d)
                 pinned_root.addChild(child)
                 _select_if_current(child, d["id"])
-            pinned_root.setExpanded(True)
+            _set_expanded(pinned_root, "__pinned__")
 
         # 2. 分组列表（UTF-8 顺序排序）
         for group_name in sorted(groups_map.keys()):
@@ -3487,12 +3833,14 @@ class ChatPanel(PanelBase):
                 child = _build_session_item(d)
                 group_root.addChild(child)
                 _select_if_current(child, d["id"])
-            group_root.setExpanded(True)
+            _set_expanded(group_root, group_name)
 
         # 3. 未分组
         if ungrouped:
             ungrouped_root = QTreeWidgetItem([f"📪 未分组 ({len(ungrouped)})"])
             ungrouped_root.setData(0, Qt.ItemDataRole.UserRole + 1, "header")
+            # 稳定展开 key（同上，标题文本含数量会随增删变化导致 key 失配）
+            ungrouped_root.setData(0, Qt.ItemDataRole.UserRole, "__ungrouped__")
             font = ungrouped_root.font(0)
             font.setBold(True)
             ungrouped_root.setFont(0, font)
@@ -3501,7 +3849,7 @@ class ChatPanel(PanelBase):
                 child = _build_session_item(d)
                 ungrouped_root.addChild(child)
                 _select_if_current(child, d["id"])
-            ungrouped_root.setExpanded(True)
+            _set_expanded(ungrouped_root, "__ungrouped__")
 
         # 4. 重命名中：把 rename editor 重新挂到对应会话项上
         if renaming_sid:
@@ -3545,8 +3893,20 @@ class ChatPanel(PanelBase):
         self._refresh_session_list()
 
     def _on_session_tree_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        """单击会话项 → 切换会话。点击分组标题无反应。"""
+        """单击会话项 → 切换会话；单击分组标题行任意处 → 切换展开/收起。
+
+        2026-09-13 用户反馈：不强求点到左侧箭头才能展开收起。
+        点击命中左侧箭头（decoration）时 Qt 已原生切换，这里按点击位置避开，防双重切换。
+        """
         item_kind = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if item_kind == "header":
+            viewport = self._session_tree.viewport()
+            click_pos = viewport.mapFromGlobal(QCursor.pos())
+            rect = self._session_tree.visualItemRect(item)
+            on_arrow = (click_pos.x() - rect.x()) < self._session_tree.indentation()
+            if not on_arrow:
+                item.setExpanded(not item.isExpanded())
+            return
         if item_kind != "session":
             return
         sid = item.data(0, Qt.ItemDataRole.UserRole)
@@ -3588,6 +3948,7 @@ class ChatPanel(PanelBase):
         )
         act_move = menu.addAction("📁  移动到分组...")
         menu.addSeparator()
+        act_copy = menu.addAction("📋  复制会话（分支副本）")
         act_export = menu.addAction("📤  导出...")
         act_delete = menu.addAction("🗑  删除...")
 
@@ -3600,10 +3961,33 @@ class ChatPanel(PanelBase):
             self._toggle_pin_session(sid, pinned)
         elif action is act_move:
             self._move_session_to_group(sid, current_group=group_name)
+        elif action is act_copy:
+            self._copy_whole_session(sid)
         elif action is act_export:
             self._export_session(sid)
         elif action is act_delete:
             self._delete_session_with_confirm(sid)
+
+    def _copy_whole_session(self, sid: str) -> None:
+        """右键"复制会话"（2026-09-13 用户需求）：复制全部 user/assistant 历史为分支副本。
+
+        upto_seq 取极大值 → 复制所有可见 user/assistant 消息（branch_session 内部
+        剥离 tool 消息/tool_calls，保证新会话对 provider 合法）。
+        """
+        if self._read_store is None:
+            return
+        try:
+            new_sid = self._safe_read(
+                self._read_store.branch_session(sid, upto_seq=2**31 - 1)
+            )
+        except Exception:
+            logger.warning("copy whole session failed (sid=%s)", sid, exc_info=True)
+            return
+        if not new_sid:
+            return
+        self._last_tree_signature = None
+        self._refresh_session_list()
+        self._switch_session(new_sid)
 
     # ------------------------------------------------------------------
     # 行内重命名（D19）
@@ -3708,11 +4092,23 @@ class ChatPanel(PanelBase):
         self._refresh_session_list()
 
     def eventFilter(self, obj, event) -> bool:
-        """Esc 取消重命名（QLineEdit 默认 Esc 不关闭，需手动接管）。"""
+        """事件过滤器：① Esc 取消重命名（QLineEdit 默认 Esc 不关闭）；
+        ② 吞掉会话树/最近对话列表的 tooltip（2026-09-13 用户反馈"切换时弹出
+        Loc... 小窗口又消失"——Qt 为截断文本自动弹完整标题 tooltip，它是真实
+        顶层窗口，标题取应用显示名"LocalAgent 客户端"，划过列表项即弹出、
+        点击即消失；tooltip 无信息价值，直接吞掉）。
+        """
         from PySide6.QtCore import QEvent
-        if obj is self._rename_editor and event.type() == QEvent.Type.KeyPress:
+        if event.type() == QEvent.Type.KeyPress and obj is self._rename_editor:
             if event.key() == Qt.Key.Key_Escape:
                 self._cancel_rename()
+                return True
+        if event.type() in (QEvent.Type.ToolTip, QEvent.Type.HelpRequest):
+            recent_viewport = None
+            recent_list = getattr(self._start_page, "_recent_list", None)
+            if recent_list is not None:
+                recent_viewport = recent_list.viewport()
+            if obj is self._session_tree.viewport() or obj is recent_viewport:
                 return True
         return super().eventFilter(obj, event)
 
@@ -4100,6 +4496,13 @@ class ChatPanel(PanelBase):
 
     def _on_worker_finished(self, outcome) -> None:
         """worker 完成，停止轮询，最终渲染。"""
+        # 8-2（2026-09-13 code review）修复：只让"当前 worker"的完成事件驱动 UI 状态。
+        # _send_in_send_mode 会在旧 worker 仍退出中时替换 self._worker 启动新 run，
+        # 旧 worker 的 finished_run 信号仍连着本槽——不拦截会停掉新 run 的轮询 +
+        # 重置按钮/运行态。直接调用（测试/调试，不经信号）时 sender() 为 None，不拦截。
+        _sender = self.sender()
+        if _sender is not None and _sender is not self._worker:
+            return
         self._poll_timer.stop()
         self._send_btn.setEnabled(True)
         self._interrupt_btn.setEnabled(False)
@@ -4127,6 +4530,8 @@ class ChatPanel(PanelBase):
         self._send_btn.setEnabled(True)
         self._interrupt_btn.setEnabled(False)
         # 手动重置 mode tab（不走 _set_running_state，避免触发 _check_queue_after_run）
+        if self._mode_tabs_frame is not None:
+            self._mode_tabs_frame.setVisible(False)
         if self._mode_queue_btn is not None:
             self._mode_queue_btn.setVisible(False)
         if self._mode_steer_btn is not None:
@@ -4207,6 +4612,10 @@ class ChatPanel(PanelBase):
         # --- mode tab 容器 ---
         tabs_frame = QFrame()
         tabs_frame.setObjectName("modeTabsBar")
+        # 空闲态整栏隐藏（2026-09-13 用户反馈：无引导/队列上下文时单独一个"发送"tab
+        # 没有意义且占一行）；运行态才显示 3 tab
+        tabs_frame.setVisible(False)
+        self._mode_tabs_frame = tabs_frame
         tabs_frame.setStyleSheet(
             f"QFrame {{ background: {tokens.BG_PANEL};"
             f" border: none; border-bottom: 1px solid {tokens.BORDER}; }}"
@@ -4330,7 +4739,9 @@ class ChatPanel(PanelBase):
         """
         self._is_running_state = is_running
         if is_running:
-            # 运行态：显示全部 3 tab + 默认选中「引导」（D34a）
+            # 运行态：显示模式栏（3 tab）+ 默认选中「引导」（D34a）
+            if self._mode_tabs_frame is not None:
+                self._mode_tabs_frame.setVisible(True)
             if self._mode_queue_btn is not None:
                 self._mode_queue_btn.setVisible(True)
             if self._mode_steer_btn is not None:
@@ -4340,7 +4751,9 @@ class ChatPanel(PanelBase):
                 self._mode_steer_btn.setChecked(True)
             self._on_mode_tab_clicked(MODE_STEER)
         else:
-            # 空闲态：只显示「发送」tab + 选中「发送」
+            # 空闲态：整个模式栏隐藏（2026-09-13 用户反馈），仅重置 tab 状态
+            if self._mode_tabs_frame is not None:
+                self._mode_tabs_frame.setVisible(False)
             if self._mode_queue_btn is not None:
                 self._mode_queue_btn.setVisible(False)
             if self._mode_steer_btn is not None:
@@ -4484,8 +4897,18 @@ class ChatPanel(PanelBase):
         - 然后正常 start 新 run（复用现有 _on_send 流程）
         """
         if self._worker is not None and self._worker.isRunning():
+            old_worker = self._worker
             # 中断当前 worker（D43 已在 T07 实现：streaming 转正为中断消息）
-            self._worker.interrupt()
+            old_worker.interrupt()
+            # 8-2（2026-09-13 code review）修复：旧 worker 稍后才异步退出，先断开其
+            # 全部信号——避免其 error/session_started 事件（error 弹窗 + 重置按钮/
+            # 停轮询）打断下面启动的新 run；finished_run 路径另有
+            # _on_worker_finished 的 sender 守卫双保险。
+            for _sig in (old_worker.finished_run, old_worker.error, old_worker.session_started):
+                try:
+                    _sig.disconnect()
+                except (TypeError, RuntimeError):
+                    pass  # 已断开/对象销毁，视为成功
             # 等待 worker 实际结束（异步：下一轮 _on_worker_finished 会切回空闲态）
             # 这里直接走 _on_send 后续逻辑（start 新 run），不等待
         # 走现有 _on_send 的 session 创建 + worker 启动逻辑
@@ -4636,12 +5059,19 @@ class ChatPanel(PanelBase):
                     self._pending_steer_previews.discard(_content_to_text(m.content).strip())
                 elif m.role == "assistant" and self._message_timeline.has_streaming_assistant():
                     # T07: 流结束，finalize streaming assistant 块 + thinking 块
-                    self._message_timeline.finalize_streaming_assistant(
-                        _content_to_text(m.content), model=m.model or ""
+                    streamed_block = self._message_timeline.finalize_streaming_assistant(
+                        _content_to_text(m.content), model=m.model or "", seq=m.seq,
                     )
                     if m.thinking:
                         self._message_timeline.finalize_streaming_thinking(m.thinking)
                     self._last_streaming_seq = 0
+                    # 2026-09-13：流式块转正后补接新按钮信号 + 设分支点
+                    if streamed_block is not None:
+                        streamed_block.copy_plain_requested.connect(
+                            self._on_block_copy_plain_requested
+                        )
+                        streamed_block.branch_requested.connect(self._on_branch_from_message)
+                        streamed_block.set_branch_point(m.seq)
                 else:
                     self._append_message(m, tool_call_status)
                 self._last_rendered_seq = m.seq
@@ -4649,6 +5079,17 @@ class ChatPanel(PanelBase):
 
         # 更新已有 tool_call 卡片的状态
         self._update_tool_card_statuses(tool_call_status)
+
+        # 2026-09-13 用户反馈：操作按钮只出现在"完整 agent 轮次"（用户一句 → agent
+        # 多次调用工具+多段输出后）的最后一条回复。判定：assistant 且下一条是 user、
+        # 或已是消息流末尾。中间轮次的回复按钮行隐藏。
+        turn_end_seqs = {
+            m.seq
+            for i, m in enumerate(messages)
+            if m.role == "assistant"
+            and (i + 1 >= len(messages) or messages[i + 1].role == "user")
+        }
+        self._message_timeline.apply_turn_end_flags(turn_end_seqs)
 
         self._empty_hint.setVisible(len(messages) == 0)
 
@@ -4677,9 +5118,12 @@ class ChatPanel(PanelBase):
                 # 首个 delta 时创建 streaming assistant 块
                 if not self._message_timeline.has_streaming_assistant():
                     streaming_block = self._message_timeline.start_streaming_assistant()
-                    # T11: 连接 hover Copy 信号（finalize 后才激活）
+                    # T11: 连接 Copy 信号（+2026-09-13 复制文本）
                     if isinstance(streaming_block, _AssistantTextBlock):
                         streaming_block.copy_requested.connect(self._on_block_copy_requested)
+                        streaming_block.copy_plain_requested.connect(
+                            self._on_block_copy_plain_requested
+                        )
                 self._message_timeline.append_text_delta(delta)
             elif ev.type == "streaming_thinking_delta":
                 delta = ev.payload.get("delta", "")
@@ -4729,19 +5173,68 @@ class ChatPanel(PanelBase):
                     self._connect_block_hover_signals(b, message)
 
     def _connect_block_hover_signals(self, block, message: Message) -> None:
-        """T11 D33：连接 hover 按钮信号（user=Copy/Delete, assistant=Copy）。"""
+        """T11 D33：连接操作按钮信号（user/steer/queue=Copy/Delete, assistant=Copy/分支）。
+
+        2026-09-13 起按钮常态显示；assistant 块拿到 message.seq 后启用"分支"按钮。
+        """
         if isinstance(block, _UserBubble):
             block.copy_requested.connect(self._on_block_copy_requested)
             if message.id:  # 只在有 id 时连 delete（否则 delete 无意义）
                 block.delete_requested.connect(self._on_block_delete_requested)
         elif isinstance(block, _AssistantTextBlock):
             block.copy_requested.connect(self._on_block_copy_requested)
+            block.copy_plain_requested.connect(self._on_block_copy_plain_requested)
+            if message.seq > 0:
+                block.branch_requested.connect(self._on_branch_from_message)
+                block.set_branch_point(message.seq)
 
     def _on_block_copy_requested(self, text: str) -> None:
         """T11 D33：hover Copy 按钮 → 复制到剪贴板。"""
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(text)
+
+    def _on_block_copy_plain_requested(self, text: str) -> None:
+        """复制渲染后纯文本到剪贴板（2026-09-13 用户需求：多数时候要无 markdown 标记）。"""
+        if text:
+            clipboard = QApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText(text)
+
+    def _on_branch_from_message(self, seq: int) -> None:
+        """分支（2026-09-13 用户需求）：从某条 assistant 回复复制历史，开新对话。
+
+        复制范围 = 当前会话 seq ≤ 该回复的全部 user/assistant 可见消息
+        （tool 消息与 tool_calls 剥离，保证新会话上下文对 provider 合法）。
+        创建后自动刷新列表并切到新会话。
+        """
+        if self._read_store is None or not self._current_session_id or seq <= 0:
+            return
+        sid = self._current_session_id
+        session = self._safe_read(self._read_store.get_session(sid))
+        base_title = ""
+        if session is not None:
+            base_title = (
+                getattr(session, "title", "")
+                if not isinstance(session, dict)
+                else session.get("title", "")
+            ) or ""
+        base_title = (base_title or "对话")[:30]
+        try:
+            new_sid = self._safe_read(
+                self._read_store.branch_session(
+                    sid, upto_seq=seq, title=f"{base_title} (分支)"
+                )
+            )
+        except Exception:
+            logger.warning("branch session failed (sid=%s seq=%s)", sid, seq, exc_info=True)
+            return
+        if not new_sid:
+            return
+        # 强制列表重建 + 切到新会话
+        self._last_tree_signature = None
+        self._refresh_session_list()
+        self._switch_session(new_sid)
 
     def _on_block_delete_requested(self, message_id: str) -> None:
         """T11 D32/D33：hover Delete 按钮 → 弹确认对话框 + 删除消息。
@@ -4875,7 +5368,10 @@ class ChatPanel(PanelBase):
     # ------------------------------------------------------------------
 
     def _refresh_last_updated(self) -> None:
-        """D47: 刷新 last_updated 标签（HH:MM 格式，用会话 updated_at 时间）。"""
+        """D47: 刷新 last_updated 标签（2026-09-13 起区分今天/昨天/更早，避免误解）。
+
+        今天 → HH:MM；昨天 → 昨天 HH:MM；今年更早 → MM-DD HH:MM；跨年 → YYYY-MM-DD HH:MM。
+        """
         if self._last_updated_label is None:
             return
         if self._current_session_id is None or self._read_store is None:
@@ -4891,13 +5387,7 @@ class ChatPanel(PanelBase):
                     if not isinstance(session, dict)
                     else session.get("updated_at", 0.0)
                 )
-                if updated_at:
-                    import time as _time
-                    self._last_updated_label.setText(
-                        _time.strftime("%H:%M", _time.localtime(updated_at))
-                    )
-                else:
-                    self._last_updated_label.setText("")
+                self._last_updated_label.setText(_format_last_updated(updated_at))
             else:
                 self._last_updated_label.setText("")
         except Exception:

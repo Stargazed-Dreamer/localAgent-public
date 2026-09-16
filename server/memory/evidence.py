@@ -334,7 +334,9 @@ class EvidenceLedger:
         """清理超过 evidence_audit_keep_days 的旧证据"""
         retention = days if days is not None else self.config.evidence_audit_keep_days
         cutoff_dt = datetime.now() - timedelta(days=retention)
-        cutoff = cutoff_dt.isoformat(timespec="seconds")
+        # 5-12: created_at 由 datetime('now','localtime') 生成（空格分隔）；此前
+        # isoformat 用 "T" 分隔，' '(0x20) < 'T'(0x54) 导致 cutoff 当天整日记录被提前删除
+        cutoff = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
         # T06：DELETE + commit 包入 _write_lock
         with self.store._write_lock:
             cur = self.store.conn.execute(

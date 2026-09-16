@@ -11,7 +11,7 @@ dev_toolkit 是一套 AI Agent 协作工具包，包含：
 - **checklist.md** — 功能变更检查清单
 - **.agents/skills/** — 23 个 skill 蓝图（SDD 链 + 安全网 + 验证调试 + 元 skill + 工程化开发 + UI/UX）
 - **.agents/rules/** — 编码准则 + skill 设计规范
-- **参考文档** — `html_toolkit.md` / `mcp_builder.md` / `webapp_testing.md` / `skill_creator.md` / `project_essentials.md`
+- **参考文档** — `html_toolkit.md` / `mcp_builder.md` / `webapp_testing.md` / `skill_creator.md` / `project_essentials.md` / `team_playbook.md`
 
 **本质**：参考蓝图，不是运行代码。部署后必须按项目实际情况裁剪。
 

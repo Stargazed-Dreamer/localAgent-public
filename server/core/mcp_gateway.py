@@ -217,7 +217,10 @@ def setup_mcp(app):
                                         )
                                     ]
                                 # 未弹过人审（layer1=skipped，非审查端点），走标准 approval_required 流程
-                                approval_id = check_approval("POST", virtual_path, b"", "")
+                                # 签发指纹必须与 token 重试验证（L115 _approval_body(arguments)）同源：
+                                # 此前签发用 b"" 而验证用全参数 JSON，指纹必然不匹配 → 用户第一次
+                                # 批准签发的 token 永远无效，需批准第二次（2026-09-13 code review 2-1）
+                                approval_id = check_approval("POST", virtual_path, _approval_body(arguments), "")
                                 _log_detailed({
                                     "event": "mcp_gateway_return_approval_required",
                                     "operation_id": effective_op, "path": virtual_path,

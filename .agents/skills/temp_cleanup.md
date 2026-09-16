@@ -4,6 +4,7 @@ description: >
   temp 文件夹定期清理工作流。当用户提到整理 temp、清理 temp、清理临时文件、temp 太乱、
   临时文件整理时触发。触发词：整理temp、清理temp、temp清理、临时文件整理、temp太乱、
   清理临时文件、temp cleanup。
+task_type: system.temp_cleanup
 ---
 
 # temp 文件夹清理 (temp_cleanup)
