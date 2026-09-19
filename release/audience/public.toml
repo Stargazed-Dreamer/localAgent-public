@@ -9,15 +9,14 @@ schema_version = 1
 #   - components 从 3 个扩展到 10 个（追加 7 个新组件：accounting/dev_toolkit/life_design + 4 个 gacha）
 #   - 新增 core_files 段：核心代码（server/client/lib/tools/docs/tests/.agents 等）与 components 并列
 #   - 新增 core_files_exclude 段：排除个人规划/IDE 配置/release profiles/产物目录等
-#   - friend.toml 同步加 core_files（G8 决策：朋友包也要核心代码，但 components 不变）
+#   - core_files 段：核心代码（server/client/lib/tools/docs/tests/.agents 等）与 components 并列
 #
-# 与 friend.toml 的差异：
-#   - components 不同（public 10 个含 7 新组件；friend 5 个不含 7 新组件）
-#   - allow_exemptions = false（public 不留任何 exemption，个人路径必须由 path_mapping 完全清除）
-#   - require_license_clearance = true（public 需要许可证清关）
-#   - static gates 多 2 个（license-clearance + no-agpl-import）
-#   - build_time gates 多 1 个（sbom-generated）
-#   - core_files / core_files_exclude 范围一致（G5 决策）
+# 2026-09-19：friend 受众线已移除，public 是唯一受众。本 audience 关键约束：
+#   - components = 10 个（3 个 v3 工具组件 + 7 个 phase 4 新组件）
+#   - allow_exemptions = false（不留任何 exemption，个人路径必须由 path_mapping 完全清除）
+#   - require_license_clearance = true（需要许可证清关）
+#   - static gates 比基础 4 项多 license-clearance + no-agpl-import
+#   - build_time gates 比基础 4 项多 sbom-generated
 #
 # 详见 temp/sdd/release-engine/spec-v4-public-full.md
 
@@ -49,7 +48,7 @@ require_license_clearance = true
 
 # spec-v4 决策 G1/G14：core_files 是核心代码 glob 清单，与 components 的 manifest.exports glob 并列，
 # 共同展开为 file_entries。core_files_exclude 是排除 glob 清单，与 .gitignore 语义类似。
-# friend.toml 和 public.toml 的 core_files / core_files_exclude 范围一致（G5 决策）。
+# core_files / core_files_exclude 的划分原则见 spec-v4 G5 决策。
 core_files = [
   # 核心代码目录
   "server/**",
@@ -62,11 +61,11 @@ core_files = [
   ".agents/rules/**",
   ".github/workflows/**",
 
-  # release 配置（audience/ 保留；profiles/ 排除——含 friend-full/public-full 配置）
+  # release 配置（audience/ 保留；profiles/ 排除）
   "release/audience/**",
   "release/templates/**",
-  "release/dependency_audit.json",
-  "release/dependency_map.toml",
+  # 依赖映射表/审计报告（dependency_map.toml / dependency_audit.json）不进包：发布引擎无任何消费方，
+  # 且产物逐条列出未进包的私有 workspace 模块路径。2026-09-17 起生成到 temp/release_deps/
 
   # 根目录配置文件（start*.bat 不含个人路径，已确认）
   "AGENTS.md",
@@ -97,10 +96,15 @@ core_files_exclude = [
   # 源仓库 README（公开版用 README_public.md → README.md，build 期 path_renames 处理）
   "README.md",
 
+  # 内部发布策略管控件（2026-09-19 补）：描述私有模块排除清单、私有功能决策与个人路径，
+  # 按该文件自身声明"不应分发"。M0 阶段曾排除，v4 改用 core_files 结构时规则丢失，
+  # 而 core_files 含 docs/** 会导致它被打进 public 包 —— 此处补回。
+  "docs/release-policy.md",
+
   # 个人待办（含个人开发笔记：股票面板、卡池可视化等）
   "todo.txt",
 
-  # 个人规划（git ls-files 确认被跟踪：github-app-bot/public-release/v6 设计文档等）
+  # 个人规划（git ls-files 确认被跟踪：github-app-bot/internal-workflow/v6 设计文档等）
   "planning_notes/**",
 
   # IDE 配置（.trae/rules/project_rules.md 与 .agents/rules/project_rules.md 重复）
@@ -114,7 +118,7 @@ core_files_exclude = [
   # release v1 遗留（G18 调整：保留作为不变量声明，但公开版不含）
   "release/policy.toml",
 
-  # release profiles（含 friend-full/public-full 配置，"别人拿去还是坏处多"）
+  # release profiles（"别人拿去还是坏处多"）
   "release/profiles/**",
 
   # release 产物目录（空目录/构建产物，不应进入公开版）
@@ -122,17 +126,24 @@ core_files_exclude = [
   "release/plans/**",
   "release/staging/**",
 
+  # 发布 CI workflow（2026-09-19 补）：该 workflow 在 public 仓必然失败——它需要
+  #   (a) release/profiles/public-full.toml（被 release/profiles/** 排除，且文件内含个人路径映射）
+  #   (b) pyproject.toml 的 optional-dependencies（项目当前不存在该段）
+  #   (c) 在 ubuntu-latest 上 uv sync（pywin32/uiautomation/paddlepaddle-gpu 无平台标记，Linux 装不上）
+  # 一旦进包，public 仓每次 push 都会显示红色 ✗，对 clone 用户是劝退信号。
+  ".github/workflows/release-public.yml",
+
   # .agents WIP（工作进行中笔记，个人维护用）
   ".agents/wip/**",
 
-  # 个人系统重建内容（个人路径密集，friend 决策 2026-07-18 起即排除；2026-09-12
-  # triage 核对确认仍有 100+ 行本机路径残留，public/friend 同步排除）
+  # 个人系统重建内容（个人路径密集，2026-07-18 决策起即排除；2026-09-12
+  # triage 核对确认仍有 100+ 行本机路径残留）
   "workspace/disk_manager/system_rebuild/**",
 ]
 
 [audience.gates]
 # 静态 gates（prepare_release 跑，失败不产 plan）
-# friend 的 4 个 + public 专属 2 个 = 6 个
+# 基础 4 个 + public 专属 2 个 = 6 个
 static = [
   "policy-schema",
   "tracked-file-inventory",
@@ -142,7 +153,7 @@ static = [
   "no-agpl-import",          # public 专属
 ]
 # 构建期 gates（build_release 跑，失败 .failed.zip 留 staging）
-# friend 的 4 个 + public 专属 1 个 = 5 个
+# 基础 4 个 + public 专属 1 个 = 5 个
 build_time = [
   "no-key-startup",
   "activity-task-safe-stop",

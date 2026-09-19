@@ -1,9 +1,9 @@
 # Release Notes — public-full
 
 **Audience**: public
-**Source commit**: `29b3adc7dfc6a50db982b47324fe23155f6b3cac`
-**Plan digest**: `09a4f385534aff5295c0c3fcd32bd8a4df03d34aa1c85bc1d5d542046ec7ff4b`
-**Built at**: 2026-09-16T16:11:47.364595+00:00
+**Source commit**: `3cd02a10556d79ef591ee001e1f8cf55ec72fa90`
+**Plan digest**: `888793f6d1886f7ed08d7f5558bcb7f42c2b7447f48e6dc4c6f55b42952a15bd`
+**Built at**: 2026-09-19T18:29:58.409116+00:00
 
 ## 组件清单
 
@@ -40,8 +40,8 @@
 
 ## 文件统计
 
-- 文件总数：1578
-- 总大小：23778035 字节
+- 文件总数：1589
+- 总大小：24067237 字节
 
 ## ZIP 校验
 
@@ -62,6 +62,8 @@ certutil -hashfile localagent-public-full.zip SHA256
 - `.agents/skills/bat_writing/references/guide.md` — sensitive_line_skips
 - `.agents/skills/deep_research/references/pdf_report_style.md` — sensitive_line_skips
 - `.agents/skills/office_docs/references/pdf_basic.md` — sensitive_line_skips
+- `CHANGELOG.md` — sensitive_line_skips
+- `README_public.md` — sensitive_line_skips
 - `client/core/agent/builtin_tools/base.py` — sensitive_line_skips
 - `docs/adr/0007-omniparser-removal.md` — sensitive_line_skips
 - `docs/changelog-archive.md` — post_process_remove_lines
@@ -75,6 +77,7 @@ certutil -hashfile localagent-public-full.zip SHA256
 - `server/approval_review.py` — sensitive_line_skips
 - `server/browser/wait_endpoints.py` — sensitive_line_skips
 - `tests/approval_screen/test_approval_low_risk.py` — sensitive_line_skips
+- `tests/files_tools/test_spacesniffer.py` — sensitive_line_skips
 - `tests/guide_loops/test_inbox.py` — sensitive_line_skips
 - `tests/llm_vision/test_model_manager_mindforge.py` — sensitive_line_skips
 - `tests/release_ci/test_release_orchestrator.py` — sensitive_line_skips
@@ -86,6 +89,7 @@ certutil -hashfile localagent-public-full.zip SHA256
 - `tools/llm/mimo_batch_comment.py` — sensitive_line_skips
 - `tools/media_classifier/mimo_lrc_analyze.py` — sensitive_line_skips
 - `tools/release/engine/prepare.py` — sensitive_line_skips
+- `tools/spacesniffer/README.md` — sensitive_line_skips
 - `workspace/disk_manager/SKILL.md` — sensitive_line_skips
 - `workspace/disk_manager/references/sns_format.md` — sensitive_line_skips
 - `workspace/disk_manager/scripts/backup_env.py` — sensitive_line_skips
@@ -97,11 +101,11 @@ certutil -hashfile localagent-public-full.zip SHA256
 
 本构建计划由 `prepare_release()` 产出不可变 `PreparedRelease`，经用户审批后由 `build_release()` 构建产物。plan_digest 绑定所有输入字段，任何输入变化都会让 plan_digest 变化，使旧审批失效。
 
-- **plan_digest**: `09a4f385534aff5295c0c3fcd32bd8a4df03d34aa1c85bc1d5d542046ec7ff4b`
+- **plan_digest**: `888793f6d1886f7ed08d7f5558bcb7f42c2b7447f48e6dc4c6f55b42952a15bd`
 - **profile_id**: `public-full`
 - **audience**: `public`
-- **source_commit**: `29b3adc7dfc6a50db982b47324fe23155f6b3cac`
-- **built_at**: 2026-09-16T16:11:47.364595+00:00
+- **source_commit**: `3cd02a10556d79ef591ee001e1f8cf55ec72fa90`
+- **built_at**: 2026-09-19T18:29:58.409116+00:00
 
 ## 许可证
 

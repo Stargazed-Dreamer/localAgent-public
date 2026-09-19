@@ -28,6 +28,9 @@
 {"query": "消费录制包，回放操作", "expected_top1": "recording.consume", "source": "manual", "known_gap": true, "note": "串台：discover 30分 strong 压过 consume 24分。待修：consume keywords 加'消费录制包/回放'，discover 去'录制'泛词"}
 {"query": "我现在有什么该做的事", "expected_top1": "system.task_reminder", "source": "manual", "note": "该做什么 keyword"}
 {"query": "提醒我今天的任务清单", "expected_top1": "system.task_reminder", "source": "manual", "note": "提醒我 keyword"}
+{"query": "我现在额度很多，想跑一下长期自动化", "expected_top1": "system.task_reminder", "source": "manual", "note": "机会型跑批：额度很多+长期自动化 kw_exact 命中（2026-09-20 加词）"}
+{"query": "有什么可以顺便跑的吗", "expected_top1": "system.task_reminder", "source": "manual", "note": "机会型跑批：顺便跑 keyword"}
+{"query": "起个后端自主会话", "expected_top1": "adhoc.headless_session", "source": "manual", "note": "防回归：加空闲额度词后不得抢走 headless_session（kw_exact:后端自主会话）"}
 {"query": "这个任务今天做不完了，留档一下", "expected_top1": "system.wip_tracking", "source": "manual", "note": "留档 keyword"}
 {"query": "继续之前没做完的工作", "expected_top1": "system.wip_tracking", "source": "manual", "note": "继续之前的工作 keyword"}
 {"query": "同步一下文档", "expected_top1": "system.doc_sync", "source": "manual", "note": "keyword 命中"}
@@ -124,8 +127,8 @@
 {"query": "做一次记忆维护", "expected_top1": "recurring.memory_generation", "source": "manual", "note": "记忆维护 keyword"}
 {"query": "wip 太多了，把完成的归档成记忆", "expected_top1": "system.wip_archive", "source": "manual", "note": "wip 太多+转记忆"}
 {"query": "归档 wip", "expected_top1": "system.wip_archive", "source": "manual", "note": "keyword 命中"}
-{"query": "打包给朋友", "expected_top1": "system.public_distribution", "source": "manual", "note": "keyword 命中；与发版严格区分"}
-{"query": "做一个脱敏的公开发布 ZIP", "expected_top1": "system.public_distribution", "source": "manual", "note": "公开发布 keyword"}
+{"query": "打包给朋友", "expected_top1": "system.internal_workflow", "source": "manual", "note": "keyword 命中；与发版严格区分"}
+{"query": "做一个脱敏的公开发布 ZIP", "expected_top1": "system.internal_workflow", "source": "manual", "note": "公开发布 keyword"}
 {"query": "发版", "expected_top1": "system.release", "source": "manual", "note": "keyword 命中"}
 {"query": "出版本号，归档 CHANGELOG", "expected_top1": "system.release", "source": "manual", "note": "出版本号 keyword"}
 {"query": "给项目做一次全面复审", "expected_top1": "system.project_audit", "source": "manual", "note": "全面复审 keyword"}

@@ -1,13 +1,13 @@
 """Public audience 专属测试套件（spec-v3-public.md Proof 节）。
 
 覆盖：
-- public.toml 加载（audience=public 不 raise / 含 4 组件 / 含 3 专属 gate）
+- public.toml 加载（audience=public 不 raise / 含 10 组件 / 含 3 专属 gate）
 - _gate_license_clearance（pass / fail）
 - _gate_no_agpl_import（pass / fail-pyproject / fail-file）
 - _gate_sbom_generated（missing / invalid / valid）
 - generate_spdx_sbom（基本验证 / 反向解析）
-- build_release public/friend 对比
-- publish subcommand（plan_not_found / friend_rejected / dry_run_success）
+- build_release audience 分支（public 生成 SBOM / 非 public 不生成）
+- publish subcommand（plan_not_found / 非 public 拒绝 / dry_run_success）
 
 总计 17 个测试（≥12 要求）。
 """
@@ -241,7 +241,7 @@ def test_generate_spdx_sbom_reverse_parse(tmp_path):
     assert len(parsed.relationships) == 3  # 1 DESCRIBES + 2 CONTAINS
 
 
-# ========== 6. build_release public/friend 对比测试 ==========
+# ========== 6. build_release audience 分支测试 ==========
 
 def test_build_release_public_generates_sbom(monkeypatch, tmp_path):
     """build_release(audience=public) 生成 sbom.spdx.json 并通过 sbom-generated gate。"""
@@ -278,8 +278,8 @@ def test_build_release_public_generates_sbom(monkeypatch, tmp_path):
         assert len(sbom_entries) == 1
 
 
-def test_build_release_friend_no_sbom(monkeypatch, tmp_path):
-    """build_release(audience=friend) 不生成 SBOM。"""
+def test_build_release_non_public_audience_no_sbom(monkeypatch, tmp_path):
+    """build_release(audience != public) 不生成 SBOM（SBOM 是 public 专属 gate）。"""
     monkeypatch.setattr("tools.release.engine.build._STAGING_DIR", tmp_path / "staging")
     monkeypatch.setattr("tools.release.engine.build._DIST_DIR", tmp_path / "dist")
 
@@ -294,15 +294,15 @@ def test_build_release_friend_no_sbom(monkeypatch, tmp_path):
     monkeypatch.setattr("tools.release.engine.build._load_path_mapping", lambda pid: {})
     monkeypatch.setattr("tools.release.engine.build._apply_path_mapping", lambda sd, pm: None)
 
-    plan = make_public_plan(audience="friend", profile_id="friend-full")
+    plan = make_public_plan(audience="internal", profile_id="internal-full")
     plan = PreparedRelease(
         plan_digest="1" * 64,
-        profile_id="friend-full",
+        profile_id="internal-full",
         profile_digest=plan.profile_digest,
         source_commit=plan.source_commit,
         components=plan.components,
         components_digest=plan.components_digest,
-        audience="friend",
+        audience="internal",
         file_entries=plan.file_entries,
         exemptions=plan.exemptions,
         scan_digest=plan.scan_digest,
@@ -331,20 +331,20 @@ def test_publish_plan_not_found(monkeypatch, tmp_path):
     assert cmd_publish(args) == EXIT_CONFIG_ERROR
 
 
-def test_publish_friend_audience_rejected(monkeypatch, tmp_path):
-    """publish friend plan → EXIT_GATE_FAILURE（audience != public）。"""
+def test_publish_non_public_audience_rejected(monkeypatch, tmp_path):
+    """publish 非 public audience 的 plan → EXIT_GATE_FAILURE（audience != public）。"""
     from tools.release.cli import EXIT_GATE_FAILURE, cmd_publish
 
     plans_dir = tmp_path / "plans"
     plans_dir.mkdir()
-    friend_plan = {
+    non_public_plan = {
         "plan_digest": "1" * 64,
-        "profile_id": "friend-full",
+        "profile_id": "internal-full",
         "profile_digest": "b" * 64,
         "source_commit": "c" * 40,
         "components": ["disk_manager"],
         "components_digest": "d" * 64,
-        "audience": "friend",
+        "audience": "internal",
         "file_entries": [{"rel_path": "server/main.py", "sha256": "e" * 64, "size": 100, "source": "tracked"}],
         "exemptions": [],
         "scan_digest": "f" * 64,
@@ -352,11 +352,11 @@ def test_publish_friend_audience_rejected(monkeypatch, tmp_path):
         "gates_results": [{"name": "policy-schema", "passed": True, "details": "ok"}],
         "created_at": datetime.now(UTC).isoformat(),
     }
-    (plans_dir / f"{friend_plan['plan_digest']}.json").write_text(
-        json.dumps(friend_plan), encoding="utf-8"
+    (plans_dir / f"{non_public_plan['plan_digest']}.json").write_text(
+        json.dumps(non_public_plan), encoding="utf-8"
     )
     monkeypatch.setattr("tools.release.cli._PLANS_DIR", plans_dir)
-    args = SimpleNamespace(plan=friend_plan["plan_digest"], dry_run=False)
+    args = SimpleNamespace(plan=non_public_plan["plan_digest"], dry_run=False)
     assert cmd_publish(args) == EXIT_GATE_FAILURE
 
 

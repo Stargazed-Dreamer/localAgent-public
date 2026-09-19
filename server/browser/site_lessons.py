@@ -342,20 +342,24 @@ class WriteLessonResponse(BaseSchema):
     error: str | None = None
 
 
+def _extract_domain_host(domain: str) -> str:
+    """提取 hostname（去协议、路径、端口），返回小写；空串表示无法解析。"""
+    if "://" in domain:
+        try:
+            host = urlparse(domain).hostname or ""
+        except Exception:
+            return ""
+        domain = host
+    # 去端口
+    return domain.split(":")[0].strip().lower()
+
+
 def _normalize_domain_to_filename(domain: str) -> str | None:
     """规范化域名为文件名 stem。点改横线，仅允许字母数字横线。
 
     返回 None 表示域名非法（含路径穿越字符等）。
     """
-    # 提取 hostname（去掉协议、路径、端口）
-    if "://" in domain:
-        try:
-            host = urlparse(domain).hostname or ""
-        except Exception:
-            return None
-        domain = host
-    # 去端口
-    domain = domain.split(":")[0].strip().lower()
+    domain = _extract_domain_host(domain)
     if not domain:
         return None
     # 点改横线
@@ -364,6 +368,44 @@ def _normalize_domain_to_filename(domain: str) -> str | None:
     if not re.fullmatch(r"[a-z0-9-]+", name):
         return None
     return name
+
+
+def _find_existing_lesson_file(sites_dir: Path, host: str, name: str) -> Path | None:
+    """查找已存在的同一站点档案，避免同一站点被写成两份。
+
+    背景：write_lesson 的默认命名是「点改横线」（scnu.edu.cn → scnu-edu-cn.md），
+    但站点档案也可能由人工按主域命名（scnu.edu.cn.md，如 scnu.edu.cn / js.design /
+    bilibili.com 等）。若写入前只按规范名查文件是否存在，人工维护的那份会被无视，
+    同一站点被写成第二份；match_site_for_domain 随后对同一域名返回两份，
+    agent 可能读到内容较少的那一份。
+
+    匹配顺序（均为精确匹配，不做子串，避免误并相邻域名）：
+    ① 规范名 `<name>.md`（scnu-edu-cn.md）
+    ② 点式主域 `<host>.md`（scnu.edu.cn.md）
+    ③ 某档案的 frontmatter aliases 精确含该 host
+
+    返回 None 表示无既有档案，调用方按 `<name>.md` 新建。
+    """
+    exact = sites_dir / f"{name}.md"
+    if exact.exists():
+        return exact
+
+    dotted = sites_dir / f"{host}.md"
+    if dotted.exists():
+        return dotted
+
+    for entry in sorted(sites_dir.glob("*.md")):
+        if entry.name.startswith("_"):
+            continue
+        try:
+            raw = entry.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        aliases = [a.strip().lower() for a in _parse_frontmatter(raw)[0].get("aliases", [])]
+        if host in aliases:
+            return entry
+
+    return None
 
 
 def _parse_frontmatter(raw: str) -> tuple[dict, str, str]:
@@ -547,6 +589,9 @@ async def browser_write_lesson(req: WriteLessonRequest):
 
     - domain: site main domain (e.g. "xiaoheihe.cn", "mp.weixin.qq.com"). Dots
       become hyphens in filename (xiaoheihe-cn.md). Only [a-z0-9-] allowed.
+      If a file for the same site already exists under the dotted main-domain name
+      (e.g. scnu.edu.cn.md) or declares it in frontmatter aliases, the lesson is
+      appended there instead of creating a duplicate file.
     - content: markdown to append. Can be a table row (auto-appended to section's
       table), paragraph, or code block. Max 50KB.
     - section: target section name (default "已知坑"). Must be one of the standard
@@ -600,7 +645,9 @@ async def browser_write_lesson(req: WriteLessonRequest):
 
     sites_dir = Path(__file__).parent.parent.parent / ".agents" / "skills" / "browser_lessons" / "sites"
     sites_dir.mkdir(parents=True, exist_ok=True)
-    file_path = sites_dir / f"{name}.md"
+    host = _extract_domain_host(req.domain)
+    # 先查既有档案（含人工按主域命名的点式文件），避免同一站点写成两份
+    file_path = _find_existing_lesson_file(sites_dir, host, name) or (sites_dir / f"{name}.md")
 
     today = _time.strftime("%Y-%m-%d")
     req_domain_safe = req.domain or name
@@ -646,7 +693,7 @@ async def browser_write_lesson(req: WriteLessonRequest):
         return WriteLessonResponse(
             success=False, action="error", file_path="", domain=req.domain,
             section=req.section, char_count=0, aliases_merged=0,
-            error=f"section {req.section!r} not found in existing file {name}.md. "
+            error=f"section {req.section!r} not found in existing file {file_path.name}. "
                   f"Section must exist before appending. Use one of: {list(_ALLOWED_SECTIONS)}",
         )
 

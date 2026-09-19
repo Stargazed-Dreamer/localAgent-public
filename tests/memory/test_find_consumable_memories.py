@@ -9,6 +9,8 @@
 - find_consumable_memories 不增加 access_count
 - _build_task_guide 在 memory_index 非空时注入"【必读记忆】"
 - _build_task_guide 在 memory_index 为空时不注入
+- 必读块排序：越新越前、关键词命中优先于仅通配 context 命中
+- _build_task_guide 的 task_query 透传给 trigger_keywords 匹配（不传时退回显示名）
 - memory_set + merge 保留 consumption_contexts 字段
 """
 
@@ -345,6 +347,94 @@ class TestFirstActionInjection:
             result = _build_task_guide("recurring.accounting")
         keys = [m["key"] for m in result["memory_index"]]
         assert "project.tip" in keys
+
+
+# ==================== 必读块排序 + task_query 透传（2026-09-20） ====================
+
+def _set_fact_full(store, key, value_dict, contexts, keywords, updated_at):
+    """辅助：写入带独立列与指定 updated_at 的 fact（排序测试需要不同时间戳）"""
+    store.conn.execute(
+        "INSERT OR REPLACE INTO facts (key, value, source, updated_at, access_count, "
+        "consumption_contexts, trigger_keywords) VALUES (?, ?, ?, ?, 0, ?, ?)",
+        (
+            key,
+            json.dumps(value_dict, ensure_ascii=False),
+            "test",
+            updated_at,
+            json.dumps(contexts, ensure_ascii=False) if contexts is not None else None,
+            json.dumps(keywords, ensure_ascii=False) if keywords is not None else None,
+        ),
+    )
+    store._commit()
+
+
+def _must_read_keys(first_action: str) -> list[str]:
+    """从 first_action 的【必读记忆】块按出现顺序取 key 列表"""
+    keys = []
+    in_block = False
+    for line in first_action.split("\n"):
+        if line.startswith("【必读记忆】"):
+            in_block = True
+            continue
+        if in_block:
+            if not line.startswith("- "):
+                break
+            keys.append(line[2:].split(":", 1)[0])
+    return keys
+
+
+class TestMustReadOrdering:
+    """必读块不再恒取最旧 5 条（find_consumable_memories 无 ORDER BY 的回归）。"""
+
+    def test_recent_memories_win_over_oldest(self, manager, store):
+        for i in range(7):
+            _set_fact_full(
+                store, f"project.tip_{i}", {"name": f"提示{i}"},
+                ["recurring.accounting"], [], f"2026-0{i + 1}-01 10:00:00",
+            )
+        from server.agent_guide import _build_task_guide, _MUST_READ_MAX
+        with patch("server.memory.manager.get_memory_manager", return_value=manager):
+            result = _build_task_guide("recurring.accounting")
+        keys = _must_read_keys(result["first_action"])
+        assert len(keys) == _MUST_READ_MAX
+        # tip_6 最新、tip_0 最旧：取新不取旧
+        assert keys[0] == "project.tip_6"
+        assert "project.tip_0" not in keys
+
+    def test_keyword_hit_outranks_broad_context(self, manager, store):
+        # 通配 + 最新，但只有 context 命中
+        _set_fact_full(store, "preferences.broad", {"name": "泛偏好"},
+                       ["*"], [], "2026-09-20 10:00:00")
+        # 较旧，但 context + 用户原话关键词双命中
+        _set_fact_full(store, "project.specific", {"name": "专项经验"},
+                       ["recurring.accounting"], ["账单"], "2026-01-01 10:00:00")
+        from server.agent_guide import _build_task_guide
+        with patch("server.memory.manager.get_memory_manager", return_value=manager):
+            result = _build_task_guide(
+                "recurring.accounting", task_query="帮我核对账单"
+            )
+        keys = _must_read_keys(result["first_action"])
+        assert keys[0] == "project.specific"
+
+
+class TestTaskQueryPassedToMemoryMatch:
+    """trigger_keywords 要拿用户原话匹配，不是 skill 显示名。"""
+
+    def test_keyword_only_memory_recalled_when_task_text_given(self, manager, store):
+        _set_fact_full(store, "reference.quota_catalog", {"name": "空闲额度台账"},
+                       [], ["额度很多"], "2026-09-20 10:00:00")
+        from server.agent_guide import _build_task_guide
+        with patch("server.memory.manager.get_memory_manager", return_value=manager):
+            hit = _build_task_guide(
+                "system.task_reminder", task_query="我现在额度很多，想跑长期自动化"
+            )
+            miss = _build_task_guide("system.task_reminder")
+        hit_keys = {m["key"] for m in hit["memory_index"]}
+        miss_keys = {m["key"] for m in miss["memory_index"]}
+        assert "reference.quota_catalog" in hit_keys
+        assert "reference.quota_catalog" not in miss_keys
+        item = next(m for m in hit["memory_index"] if m["key"] == "reference.quota_catalog")
+        assert item["matched_by"] == "keyword"
 
 
 # ==================== memory_set + merge 保留新字段测试 ====================

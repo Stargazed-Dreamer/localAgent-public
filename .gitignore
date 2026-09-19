@@ -114,6 +114,8 @@ workspace/web_archive/*/images/
 workspace/yihuan_gacha/test_samples/
 workspace/wechat_collection/
 workspace/exam_prep/
+# 本机取证归档（含本机路径/防火墙规则清单/健康快照，只留本地）
+workspace/windows_forensics/
 # workspace/dev_toolkit/ 自 2026-07-21 起纳入 git 追踪（用户决策：朋友包分发需要）
 # 仅排除历史打包产物 zip
 workspace/dev_toolkit/dev_toolkit_v2.zip
@@ -143,9 +145,16 @@ workspace/web_archive/xiaoheihe/
 workspace/web_archive/weixin/
 workspace/web_archive/feishu/
 workspace/web_archive/tencent/
+# doc.weflow.top 全站归档（第三方笔记全文 + WARC + 离线镜像，与上面各站点同类不入库）
+workspace/web_archive/weflow/
 # 个人文档链接收藏（与已移出仓库的 urls*.json 同类）
-workspace/web_archive/urls_feishu.json
-workspace/web_archive/urls_tencent.json
+workspace/web_archive/inputs/urls_feishu.json
+workspace/web_archive/inputs/urls_tencent.json
+# 微信会话链接清单（含群号/个人链接，2026-09-17 退出版本跟踪，仍由 [backup].paths 覆盖）
+workspace/web_archive/inputs/urls_wechat_source.json
+# 飞书索引/报告含个人文档标题与分享链接，可见性跟随 feishu/ 内容（2026-09-17 迁入 reports/ 后必须显式忽略）
+workspace/web_archive/reports/index_feishu.json
+workspace/web_archive/reports/report_feishu.md
 # 回收暂存区（删除前中转，运行时数据）
 workspace/web_archive/_recycle_staging/
 
@@ -204,7 +213,7 @@ logs/
 workspace/chat_digest/digests/
 
 # web_archive 小林coding 归档正文（第三方版权文章全文，与 xiaoheihe/weixin 等其他爬取站点一致不入库
-# 2026-09-16；index_xiaolin.json / report_xiaolin.md 元数据清单保留入库）
+# 2026-09-16；reports/index_xiaolin.json / reports/report_xiaolin.md 元数据清单保留入库）
 workspace/web_archive/xiaolin/*.md
 
 # task_room 导出数据（群消息行级导出 json/md，与 backup/ 同隐私级别，不入库 2026-09-16；
@@ -218,3 +227,27 @@ workspace/web_archive/skland/
 # SKILL.md/manifest.toml/plan/ 教学规划入库）
 workspace/yefeng_group4/exports/
 workspace/yefeng_group4/roster/
+
+# homework 的 profile 覆盖层：profile.toml 入库（跨机共享的"逻辑清单"），
+# profile.local.toml 只写**本机**差异（盘符/安装位置各机不同），不入库；模板见 profile.example.toml。
+workspace/homework/config/profile.local.toml
+
+# jsd_research 逆向工作缓存（2026-09-19 多机交接前定策）：
+# cache/ 九成体积是从 js.design 前端抓下的 bundle 源码（75MB，哈希命名可重下，见 cache/bundle_urls.txt），
+# 解码 JSON / HTML 快照都是派生物 —— 全部不入库；**但三个 .jsd 验收件必须入库**，
+# 它们是 T02/T03 导入验收的输入，换机器没有就得重新人工导出一次。
+workspace/homework/tools/jsd_research/cache/*
+!workspace/homework/tools/jsd_research/cache/*.jsd
+# samples/ = 客户端渲染证据截图（含即时设计账户名等个人信息），证据链已写进 NOTES.md 正文，图不入库
+workspace/homework/tools/jsd_research/samples/
+# video_mcp/frames = 抽帧缓存（jpg，可由 server.py 重新生成），不入库
+workspace/homework/tools/video_mcp/frames/
+
+# ai_club_recruit/out = render_check.py 连调试浏览器渲染的版面截图（可由 poster/tech_recruit_poster.html 重新生成），不入库
+workspace/ai_club_recruit/out/
+# ai_club_recruit/poster/*.png = tools/export_png.py 从 tech_recruit_poster.html 渲染的两档交付图
+# （1x 1080x1720 发通知 / 2x 2160x3440 打印），属可重生成的产物，不入库；
+# 例外 sketch_20260919.png 是用户手绘草图（设计意图真源），必须保留跟踪，故用 ! 开例外。
+# 若以后要把某张成品图纳入版本跟踪，在下面加对应的 ! 规则即可。
+workspace/ai_club_recruit/poster/*.png
+!workspace/ai_club_recruit/poster/sketch_20260919.png

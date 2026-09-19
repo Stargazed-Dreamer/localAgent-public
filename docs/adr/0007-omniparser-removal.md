@@ -14,7 +14,7 @@ OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8�
 - `data/mcp_stats.json` 显示 `parse_screen`（OmniParser 唯一入口）MCP 调用次数为 **0**——功能存在但无人用。
 - PaddleOCR bbox 已修复：`server/ocr.py` 显式关闭 `use_doc_unwarping`（UVDoc 去畸变会改变几何且不逆映射 bbox），三档分辨率（800x600 / 1920x1080 / 2560x1440）网格回归误差 1-3px，可承担 Computer Use 文字定位主路径。
 - 远程 VL（ModelScope Qwen3-VL-235B-A22B-Instruct）已上线，覆盖文档解析和图像描述，定位优先级表更新为"DOM > UIA > OCR bbox > `vision_locate`"。
-- `ultralytics` 是 AGPL-3.0 许可证，存在传染风险（public-release roadmap H1）。
+- `ultralytics` 是 AGPL-3.0 许可证，存在传染风险（internal-workflow roadmap H1）。
 
 ## Decision
 
@@ -22,7 +22,7 @@ OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8�
 2. **Computer Use 文字定位主路径改为 PaddleOCR bbox**：截图管线关闭 UVDoc 去畸变（`use_doc_unwarping=False`），bbox 三档回归误差 1-3px。坐标转换：`screen_ocr(mode="window")` 返回窗口截图内 bbox，中心点加 `list_windows` 返回的窗口 `left/top` 后再传 `execute_action`。
 3. **远程 VL 只做文档解析和图像描述**，不承担普通文字坐标定位（避免消耗昂贵且慢的 VL 配额）。纯图标/无文字元素场景由远程 VL 兜底：`understand_image` 描述 + `vision_locate` 坐标定位。
 4. **移除 5 个 OmniParser 专用依赖**（`ultralytics`/`supervision`/`torchvision`/`timm`/`accelerate`），保留 `transformers` 和 `torch`（embeddings + STT 仍用）。`<models_root>\omniparser` 2.06 GB 模型目录物理删除。
-5. **消除 ultralytics AGPL 传染风险**：public-release roadmap H1 标记为 ✅ 已解决，H7（OmniParser 模型权重不分发）状态更新为"模块整体移除，权重已物理删除"。
+5. **消除 ultralytics AGPL 传染风险**：internal-workflow roadmap H1 标记为 ✅ 已解决，H7（OmniParser 模型权重不分发）状态更新为"模块整体移除，权重已物理删除"。
 
 ## Considered Options
 
@@ -34,7 +34,7 @@ OmniParser 是项目初期 Computer Use 模块的视觉 AI 组件，由 YOLOv8�
 
 **正面**：
 - 2.06 GB 模型物理删除 + 5 个专用依赖移除，启动更快、磁盘释放、依赖树精简。
-- 消除 ultralytics AGPL-3.0 传染风险，项目许可证（现 Apache-2.0）不再受 AGPL 争议影响（public-release H1 关闭）。
+- 消除 ultralytics AGPL-3.0 传染风险，项目许可证（现 Apache-2.0）不再受 AGPL 争议影响（internal-workflow H1 关闭）。
 - 定位链路简化为"DOM > UIA > OCR bbox > vision_locate"，单一职责清晰。
 
 **负面**：

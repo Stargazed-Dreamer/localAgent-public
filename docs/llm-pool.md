@@ -248,10 +248,10 @@ uv run python tools/llm/llm_token_stats.py --import
 
 #### VL 模型说明
 
-`Qwen/Qwen3-VL-*` 系列是图像理解模型。LLM 池（`/llm/pool/*`）仅支持文本对话（`/chat/completions`），不处理图像输入。**图像理解已通过独立的远程 VL 模块接入**：
+`vl` scope 的模型（历史上为 `Qwen/Qwen3-VL-*` 系列）是图像理解模型。LLM 池（`/llm/pool/*`）仅支持文本对话（`/chat/completions`），不处理图像输入。**图像理解已通过独立的远程 VL 模块接入**：
 - 模块：`server/vl/remote_vl.py`（`RemoteVLClient` 单例）
 - 配置：v9 起，VL provider 配置（`base_url`/`api_key`/`model`/`max_concurrency`/`timeout`/`rate_limit_cooldown`）统一存放在 `data/llm/keys.json` 中含 `vl` scope model 的 key 记录的 `vision` 段；`config.toml [vision]` 段只保留全局开关和编码参数
-- 默认模型：`Qwen/Qwen3-VL-235B-A22B-Instruct`（235B MoE，22B 激活，质量最佳）
+- 默认模型：由 `_pick_model_for_tier` 决定 —— 取 key 内 `vl` scope 中 **tier 最低**的启用模型（省 cost 优先，同 tier 按数组顺序），**不是**"质量最佳"那个。当前值查 `GET /vision/status` 的 `vl_model`；想换默认模型就调 tier/enabled，别改代码。注意魔搭会下架模型 ID（下架后 400 `has no provider supported`），详见 `docs/environment-constraints.md`「远程 VL」章节
 - 接口：`/ocr/vl/*`（文档解析）+ `/vision/understand`（图像问答）
 - Computer Use 使用策略：远程 VL 默认只做布局/状态描述；网页文字用 DOM、桌面文字用本地 OCR bbox，`vision_locate` 仅作无文字元素兜底，避免延迟和配额消耗
 - 多 provider 自动 failover，429/5xx 触发 60s cooldown + 退避重试 (2, 4, 8, 16, 32, 60) 秒

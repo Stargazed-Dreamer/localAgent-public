@@ -136,11 +136,9 @@ def main(argv):
             print('%s: %s  %s%s' % (f, verdict, detail, extra))
         return 0 if all_ok else 1
 
-    args = [a for a in argv[1:] if not a.startswith('--')]
-    if '--enc' in argv:
-        enc = argv[argv.index('--enc') + 1]
-    else:
-        enc = 'gbk'
+    enc = argv[argv.index('--enc') + 1] if '--enc' in argv else 'gbk'
+    # --enc 的值不是位置参数，否则 `--inplace --enc utf8` 会把 utf8 当成输出文件名
+    args = [a for a in argv[1:] if not a.startswith('--') and a != enc]
     if not args:
         print(__doc__)
         return 1

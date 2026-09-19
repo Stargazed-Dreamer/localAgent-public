@@ -60,7 +60,7 @@ GUIDE_REGISTRY.update(_load_optional_guide_entries())  # L262
 |-------|------|------------------|------|
 | `recurring` | 周期循环任务 | `recurring.daily_summary`、`recurring.life_design`、`recurring.memory_generation` | 静态 |
 | `adhoc` | 一次性任务 | `adhoc.deep_research`、`adhoc.office_xlsx`、`adhoc.browser_automation`、`adhoc.headless_session` | 静态 |
-| `system` | 系统元任务 | `system.task_closure`、`system.task_reminder`、`system.project_audit`、`system.release`、`system.public_distribution` | 静态 |
+| `system` | 系统元任务 | `system.task_closure`、`system.task_reminder`、`system.project_audit`、`system.release`、`system.internal_workflow` | 静态 |
 | `dev` | 开发任务 | `dev.goal_engineering`、`dev.implement`、`dev.anti_hallucination`、`dev.to_spec`、`dev.grill_me` | 静态 |
 | `daily` | 日常事务 | `daily.teach`、`daily.cangjie_extraction` | 静态 |
 | `recording` | 录制包消费（动态加载） | `recording.discover`、`recording.consume` | 动态（[workspace/recorder/loop_actions.py](file:///<project_root>/workspace/recorder/loop_actions.py)） |

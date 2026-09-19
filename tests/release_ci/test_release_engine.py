@@ -77,7 +77,7 @@ def _make_file_entry(rel_path: str = "server/main.py", content: bytes = b"test\n
 
 def _make_plan(
     plan_digest: str = "a" * 64,
-    profile_id: str = "friend-full",
+    profile_id: str = "public-full",
     profile_digest: str = "b" * 64,
     source_commit: str = "0" * 40,
     file_entries: tuple[FileEntry, ...] | None = None,
@@ -90,9 +90,9 @@ def _make_plan(
         profile_id=profile_id,
         profile_digest=profile_digest,
         source_commit=source_commit,
-        components=("web_archive",),
+        components=("disk_manager",),
         components_digest="c" * 64,
-        audience="friend",
+        audience="public",
         file_entries=file_entries,
         exemptions=(),
         scan_digest="d" * 64,

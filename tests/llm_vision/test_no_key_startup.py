@@ -10,7 +10,7 @@ Loop 调度系统（活动追踪）能干净启停而不刷错误日志或抛未
 3. FastAPI 应用启动序列（lifecycle startup）能完成，/health 返回 200
 4. /agent/status 报告 configured=false（无 key 降级行为）
 
-这对应 friend-full.toml 的 [behavior] 配置：
+这对应 public-full.toml 的 [behavior] 配置：
     provide_api_keys = false
     missing_key_expectation = "backend-starts-and-dependent-tasks-stop-safely"
 """

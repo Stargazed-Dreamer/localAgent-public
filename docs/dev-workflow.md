@@ -22,7 +22,7 @@
 
 - 早期 v6-*.md 系列文件裸放在 `planning_notes/` 根目录，导致文件混杂、管理困难、难以定位
 - SDD 流程产物长期堆积在 `planning_notes/` 下（30+ 子目录），反复清理反复出现，污染根目录
-- 自 2026-07-30 起：所有 SDD 产物统一迁到 `temp/sdd/`（默认路径）；`planning_notes/` 允许用户手动存放规划/路线图文档（如 public-release、github-app-bot、v6 等），SDD 流程不默认写入
+- 自 2026-07-30 起：所有 SDD 产物统一迁到 `temp/sdd/`（默认路径）；`planning_notes/` 允许用户手动存放规划/路线图文档（如 internal-workflow、github-app-bot、v6 等），SDD 流程不默认写入
 
 ### 路径规范
 
@@ -56,7 +56,7 @@
 
 - 该目录原有 6 个历史中文参考文章文件夹（公众号 .txt 文章归档）
 - SDD 流程产物不默认写入此目录（走 `temp/sdd/`）
-- 用户手动存放的规划/路线图文档（如 public-release、github-app-bot、v6 等）允许保留在此目录，不视为违规
+- 用户手动存放的规划/路线图文档（如 internal-workflow、github-app-bot、v6 等）允许保留在此目录，不视为违规
 - task_closure / structure_diff 检测到 `planning_notes/` 下有新内容时不警告（用户手动管理的区域）
 - 该目录的 `.gitignore` 规则保留（PDF/ZIP 仍排除）
 
@@ -71,7 +71,7 @@
 
 ## CHANGELOG 维护
 
-每次功能变更、Bug 修复、安全修复后，**必须**在 `CHANGELOG.md` 的 `[Unreleased]` 段对应分类下添加条目。不更新 CHANGELOG 的变更等同于未记录。`[Unreleased]` 段是发版（system.release）的输入：发版流程把它改为版本号归档；打包流程（system.public_distribution）读取它确认有变更内容。
+每次功能变更、Bug 修复、安全修复后，**必须**在 `CHANGELOG.md` 的 `[Unreleased]` 段对应分类下添加条目。不更新 CHANGELOG 的变更等同于未记录。`[Unreleased]` 段是发版（system.release）的输入：发版流程把它改为版本号归档；打包流程（system.internal_workflow）读取它确认有变更内容。
 
 - **分类**：Added（新增功能）/ Changed（行为变更）/ Fixed（Bug 修复）/ Deprecated（即将移除）/ Removed（已移除）/ Security（安全相关）
 - **格式**：`- 简述变更（涉及文件路径，为什么改）`
@@ -702,21 +702,21 @@ pytest tests/  # 又 3 分钟
 
 项目把"版本发布"和"源码打包"拆成两个独立的 task_type，**严格区分，不可混用**。用户说"发版"指前者，说"打包"指后者。
 
-| 维度 | 发版（system.release） | 打包（system.public_distribution） |
+| 维度 | 发版（system.release） | 打包（system.internal_workflow） |
 |------|------------------------|-------------------------------------|
 | **触发词** | "发版"/"发个版本"/"出版本号"/"改版本号"/"归档版本"/"release" | "打包"/"打包给朋友"/"脱敏打包"/"公开发布"/"源码分发"/"朋友版"/"public release" |
-| **task_type** | `system.release` | `system.public_distribution` |
+| **task_type** | `system.release` | `system.internal_workflow` |
 | **产出** | CHANGELOG 版本号归档 + git commit | 隐私安全的源码 ZIP（含 SHA-256 校验和、MANIFEST、DEPLOYMENT.md） |
 | **是否动源码树** | 否（只改 CHANGELOG + commit） | 否（导出到 `temp/release_export_<timestamp>/`，原树保持不动） |
 | **是否含 .git 历史** | 是（commit 进入 .git） | 否（扁平文件拷贝，天然剥离 .git） |
 | **是否 push remote / 发 tag** | 否（项目纯本地，不发 git tag / GitHub release / push remote） | 否（只产出本地 ZIP） |
 | **依赖** | 无（独立流程） | 推荐先发版再打包（让 ZIP 内的 CHANGELOG 反映最新版本号） |
 | **核心文件** | `CHANGELOG.md` + `docs/changelog-archive.md` | `release/policy.toml` + `release/profiles/*.toml` + `release/audience/*.toml` + `tools/release/cli.py` + `tools/release/engine/`（spec-v2-compiler.md） |
-| **Skill** | 无（system.release 无 skill_file，first_action 内联 5 步流程） | `.agents/skills/public-release/SKILL.md` |
+| **Skill** | 无（system.release 无 skill_file，first_action 内联 5 步流程） | `.agents/skills/internal-workflow/SKILL.md` |
 
-**典型时序**：用户变更代码 → CHANGELOG 加 [Unreleased] 条目 → 用户说"发版" → system.release 流程把 [Unreleased] 归档为版本号 + git commit → 用户说"打包" → system.public_distribution 流程做审计 + 扫描 + 导出 ZIP（此时 ZIP 内的 CHANGELOG 已是最新版本号）。
+**典型时序**：用户变更代码 → CHANGELOG 加 [Unreleased] 条目 → 用户说"发版" → system.release 流程把 [Unreleased] 归档为版本号 + git commit → 用户说"打包" → system.internal_workflow 流程做审计 + 扫描 + 导出 ZIP（此时 ZIP 内的 CHANGELOG 已是最新版本号）。
 
-> 源码分发的策略、profile 配置、隐私审计详见 `docs/release-policy.md`（friend-full / public 等 profile 与 Apache-2.0 协议说明）。
+> 源码分发的策略、profile 配置与隐私审计属**内部维护件**（`release/policy.toml` + `release/profiles/` + `release/audience/`），**不随发布包分发**。
 
 ### 发版 8 步流程（system.release，agent 必须按此顺序执行）
 

@@ -5,7 +5,7 @@ Tests for the phase 2 release compiler per temp/sdd/release-engine/spec-v2-compi
 - prepare_release() interface (static gates, plan file write)
 - build_release() interface (digest verification, build-time gates, archive verification)
 - Manifest new shape parsing (fail closed on old shape, 20 manifests load)
-- Audience policy loading (friend loads, public reserved)
+- Audience policy loading (public loads; reserved placeholder rejects)
 - Jinja2 template rendering (no zip_size placeholder)
 - path_mapping reorganization (replaces personal paths, covers all 74 literals)
 
@@ -51,7 +51,7 @@ def _make_file_entry(rel_path: str = "server/main.py", content: bytes = b"test\n
 
 def _make_plan(
     plan_digest: str = "a" * 64,
-    profile_id: str = "friend-full",
+    profile_id: str = "public-full",
     profile_digest: str = "b" * 64,
     source_commit: str = "0" * 40,
     file_entries: tuple[FileEntry, ...] | None = None,
@@ -64,9 +64,9 @@ def _make_plan(
         profile_id=profile_id,
         profile_digest=profile_digest,
         source_commit=source_commit,
-        components=("web_archive",),
+        components=("disk_manager",),
         components_digest="c" * 64,
-        audience="friend",
+        audience="public",
         file_entries=file_entries,
         exemptions=(),
         scan_digest="d" * 64,
@@ -155,21 +155,21 @@ def test_prepare_release_produces_plan() -> None:
 
     try:
         plan = prepare_release(
-            profile="friend-full",
+            profile="public-full",
             source="HEAD",
-            audience="friend",
+            audience="public",
         )
     except (FileNotFoundError, ValueError) as e:
         pytest.skip(f"prepare_release requires real repo state: {e}")
 
     # 13 字段全非空
     assert plan.plan_digest and len(plan.plan_digest) == 64
-    assert plan.profile_id == "friend-full"
+    assert plan.profile_id == "public-full"
     assert plan.profile_digest and len(plan.profile_digest) == 64
     assert plan.source_commit and len(plan.source_commit) == 40
     assert plan.components  # non-empty tuple
     assert plan.components_digest and len(plan.components_digest) == 64
-    assert plan.audience == "friend"
+    assert plan.audience == "public"
     assert plan.file_entries  # non-empty
     assert isinstance(plan.exemptions, tuple)
     assert plan.scan_digest and len(plan.scan_digest) == 64
@@ -184,9 +184,9 @@ def test_prepare_release_runs_static_gates() -> None:
 
     try:
         plan = prepare_release(
-            profile="friend-full",
+            profile="public-full",
             source="HEAD",
-            audience="friend",
+            audience="public",
         )
     except (FileNotFoundError, ValueError) as e:
         pytest.skip(f"prepare_release requires real repo state: {e}")
@@ -212,9 +212,9 @@ def test_prepare_release_writes_plan_file() -> None:
 
     try:
         plan = prepare_release(
-            profile="friend-full",
+            profile="public-full",
             source="HEAD",
-            audience="friend",
+            audience="public",
         )
     except (FileNotFoundError, ValueError) as e:
         pytest.skip(f"prepare_release requires real repo state: {e}")
@@ -492,15 +492,15 @@ def test_all_workspace_manifests_load() -> None:
 
 # ========== 5. audience policy 测试 (2 个) ==========
 
-def test_friend_audience_policy_loads() -> None:
-    """friend audience policy 加载并校验字段。"""
+def test_public_audience_policy_loads() -> None:
+    """public audience policy 加载并校验字段。"""
     from tools.release.engine.audience import load_audience_policy
 
-    policy = load_audience_policy("friend")
+    policy = load_audience_policy("public")
 
     assert policy["schema_version"] == 1
-    assert policy["audience"]["name"] == "friend"
-    assert policy["audience"]["profile"] == "friend-full"
+    assert policy["audience"]["name"] == "public"
+    assert policy["audience"]["profile"] == "public-full"
     assert isinstance(policy["audience"]["components"], list)
     assert len(policy["audience"]["components"]) > 0
     assert policy["audience"]["export_set"] in ("source", "runtime")
@@ -573,10 +573,10 @@ def test_template_has_no_zip_size() -> None:
 
 # ========== 7. path_mapping 测试 (2 个，调用真实 _apply_path_mapping) ==========
 
-def _load_friend_path_mapping() -> dict[str, str]:
+def _load_public_path_mapping() -> dict[str, str]:
     import toml
 
-    profile_path = PROJECT_ROOT / "release" / "profiles" / "friend-full.toml"
+    profile_path = PROJECT_ROOT / "release" / "profiles" / "public-full.toml"
     profile_data = toml.load(profile_path)
     path_mapping = profile_data.get("content_replacements", {}).get("path_mapping", {})
     assert path_mapping, "path_mapping section empty or missing"
@@ -591,7 +591,7 @@ def test_path_mapping_replaces_personal_paths(tmp_path: Path) -> None:
     """
     from tools.release.engine.build import _apply_path_mapping
 
-    path_mapping = _load_friend_path_mapping()
+    path_mapping = _load_public_path_mapping()
     assert "users\\admin" in path_mapping, "users\\admin rule missing"
 
     target = tmp_path / "config" / "mcps.txt"
@@ -629,7 +629,7 @@ def test_path_mapping_covers_personal_path_patterns(tmp_path: Path) -> None:
     """
     from tools.release.engine.build import _apply_path_mapping
 
-    path_mapping = _load_friend_path_mapping()
+    path_mapping = _load_public_path_mapping()
 
     test_cases = [
         # (input, expected_substring_after_mapping)

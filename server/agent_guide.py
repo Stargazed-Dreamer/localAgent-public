@@ -741,8 +741,23 @@ def _resolve_skill_file(skill_file: str) -> str:
     return skill_file
 
 
-def _build_task_guide(task_type: str, candidates: list[dict] | None = None, include_workflow: bool = False) -> dict:
+_MUST_READ_MAX = 5
+# 必读块排序档位（数字越小越靠前）。无 matched_by = 该 skill 静态声明的 memory_key/
+# related_memory_keys，是作者显式指定的关联，优先级最高；仅 consumption_contexts 命中
+# （含 "*" 全场景通配）最宽，排最后。
+_MUST_READ_RANK: dict[str | None, int] = {None: 0, "context+keyword": 1, "keyword": 2, "context": 3}
+
+
+def _build_task_guide(
+    task_type: str,
+    candidates: list[dict] | None = None,
+    include_workflow: bool = False,
+    task_query: str | None = None,
+) -> dict:
     """从 GUIDE_REGISTRY 构建 TaskGuide 响应
+
+    task_query: 用户的原始任务描述。传入时用于 trigger_keywords 匹配（记忆消费闭环的
+    关键词路）；不传时退回用候选 skill 的显示名匹配（旧行为，仅 task_type= 精确调用会走到）。
 
     include_workflow=False（默认）时只返核心决策字段，agent 确认 task_type 对了之后
     可传 include_workflow=true 调用一次获取 workflow_summary/mcp_tools_priority/key_pitfalls 详情。
@@ -785,8 +800,11 @@ def _build_task_guide(task_type: str, candidates: list[dict] | None = None, incl
     dynamic_memories = []
     if mgr:
         try:
-            task_query = candidates[0].get("name", "") if candidates else None
-            dynamic_memories = mgr.find_consumable_memories(task_type, task_query=task_query)
+            # trigger_keywords 要匹配用户的真实说法。旧实现固定传 candidates[0]["name"]，
+            # 关键词只能命中"任务提醒"这类显示名，整条关键词消费路实际失效
+            # （AGENTS.md 与 04_skill_routing.md 都写作"任务描述出现这些词时应读取"）。
+            keyword_query = task_query or (candidates[0].get("name", "") if candidates else None)
+            dynamic_memories = mgr.find_consumable_memories(task_type, task_query=keyword_query)
         except Exception as e:
             logger.debug(f"动态关联查询失败: {e}")
             dynamic_memories = []
@@ -812,8 +830,14 @@ def _build_task_guide(task_type: str, candidates: list[dict] | None = None, incl
     first_action = entry.get("first_action", "")
     existing_memories = [m for m in memory_index if m.get("updated_at") is not None]
     if existing_memories:
+        # 排序后再取前 N 条。find_consumable_memories 没有 ORDER BY，返回≈写入序（旧在前），
+        # 直接切片会让最旧的通配记忆长期霸占必读块、新写的记忆永远排不进去。
+        # 主序=相关性（关键词命中优先于仅消费场景命中），次序=越新越前。
+        # updated_at 是定长 "%Y-%m-%d %H:%M:%S"，字典序即时序，故用两次稳定排序。
+        ordered = sorted(existing_memories, key=lambda m: str(m.get("updated_at") or ""), reverse=True)
+        ordered = sorted(ordered, key=lambda m: _MUST_READ_RANK.get(m.get("matched_by"), 3))
         must_read_lines = ["【必读记忆】以下记忆与当前任务相关，执行前先 memory_get 读取："]
-        for m in existing_memories[:5]:
+        for m in ordered[:_MUST_READ_MAX]:
             summary = m.get("summary") or "(无摘要)"
             must_read_lines.append(f"- {m['key']}: {summary}")
         must_read_block = "\n".join(must_read_lines)
@@ -950,7 +974,9 @@ def get_agent_guide(
     if task_type:
         if task_type in GUIDE_REGISTRY:
             _record_usage("task", task_type, task, context=context, strong_match=True)
-            result = _build_task_guide(task_type, candidates=[], include_workflow=include_workflow)
+            result = _build_task_guide(
+                task_type, candidates=[], include_workflow=include_workflow, task_query=task
+            )
             # task_closure 自动注入结构漂移检查
             if task_type == "system.task_closure":
                 result["structure_diff"] = _compute_structure_diff()
@@ -1019,7 +1045,12 @@ def get_agent_guide(
                 context=context,
                 strong_match=True,
             )
-            result = _build_task_guide(top_task_type, candidates=candidates, include_workflow=include_workflow)
+            result = _build_task_guide(
+                top_task_type,
+                candidates=candidates,
+                include_workflow=include_workflow,
+                task_query=task,
+            )
             if top_task_type == "system.task_closure":
                 result["structure_diff"] = _compute_structure_diff()
             if structure_payload:

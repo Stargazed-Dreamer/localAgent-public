@@ -4,6 +4,8 @@ description: >
   周期性任务提醒与待办汇总。触发词：有什么任务、该做什么、提醒我、任务清单、
   待办清单、check tasks、what to do、今天做啥、这周做啥、有什么没做、任务提醒。
   当用户询问有哪些任务、需要提醒、查询待办、或会话开始想了解当前该做什么时触发。
+  另覆盖机会型跑批：用户说"额度很多/额度有余/额外额度/长期自动化/顺便跑/能跑什么"
+  等表示空闲额度时，按 docs/periodic-task-inventory.md 台账逐项核对上次活动时间后提议。
   通过 /todos/due 检查周期性任务是否到期，通过 /wip 汇总未完成待办。
 task_type: system.task_reminder
 ---
@@ -12,6 +14,7 @@ task_type: system.task_reminder
 
 ## 触发词
 有什么任务、该做什么、提醒我、任务清单、待办清单、check tasks、what to do、今天做啥、这周做啥、有什么没做、任务提醒、提醒
+空闲额度类（走第 4 节自查）：额度很多、额度有余、额度多余、额外额度、空闲额度、长期自动化、顺便跑、能跑什么
 
 ## 概述
 通过待办模块（`/todos` API）管理周期性任务。当用户询问"有什么任务"时，检查哪些任务到期，同时汇总 WIP 待办，给出一份"当前该做的事"的综合报告。
@@ -102,6 +105,18 @@ task_type: system.task_reminder
 ```
 
 **删除**：`DELETE /todos/{todo_id}`（MCP 网关: `localagent_advanced_tool(todos_delete)`）
+
+### 4. 空闲额度自查（机会型跑批）
+
+用户说"我现在额度很多 / 想跑一下长期自动化 / 有什么可以顺便跑的"时，**不要凭印象回答，也不要现扫 manifest**：
+
+1. 读 `docs/periodic-task-inventory.md` 的「空闲额度自查流程」台账（真源），取每项的阈值与"上次活动"核对信号
+2. 逐项实测比较：文件 mtime / `GET /loop/tasks` 的 `last_run_at` / `GET /inbox?status=new` / 报告文件名日期
+3. 一次性报告**超期项**，每项附一句"跑它要什么、大概多久、有什么风险"，**等用户点单才执行**
+4. 有意不注册提醒的项（如 `official_gacha` 因风控）只作为"有空可跑"候选提出，不得自动跑
+5. 跑完按第 2 节 `todos_mark_done` 回写对应 todo（有 todo 的那些）
+
+> 判据说明：这类任务没有系统级到期机制——`frequency` 只有 `daily/weekly/monthly/quarterly`，`condition` 的自动判定依赖 `todos_trigger_check`（已注册但无实例），所以"额度有余才提"只能由 agent 在被问时现场核对。
 
 ## 当前周期任务清单
 

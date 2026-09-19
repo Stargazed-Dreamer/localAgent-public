@@ -1,6 +1,6 @@
 [project]
 name = "localagent"
-version = "0.48.0"
+version = "0.49.0"
 description = "LocalAgent API backend with PaddleOCR-VL"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,66 +10,98 @@ dependencies = [
     # 原 dev 依赖（httpx>=0.28.1），现提为主依赖（server/llm_pool/ + apikey + browser 等运行时用）
     "httpx>=0.28.1",
     "mss>=10.2.0",
-    "onnxruntime-gpu>=1.26.0",
     "openai>=2.41.0",
     "openpyxl>=3.1.5",
-    "pymupdf>=1.25.0",
-    "python-docx>=1.1.0",
-    "python-pptx>=1.0.0",
-    "paddleocr[doc-parser]>=3.7.0",
-    "paddlepaddle-gpu==3.2.2",
     "pillow>=12.2.0",
     "pyautogui>=0.9.54",
     "pynput>=1.8.2",
     "pyperclip>=1.11.0",
     "pyside6>=6.11.1",
-    # stock_advisor 面板 K 线图绘制依赖（FigureCanvasQTAgg 嵌入 PySide6）
-    # 修复教训（2026-08-03）：原 pyproject.toml 漏声明，导致干净环境 PanelRegistry.discover() 加载失败
-    "matplotlib>=3.9.0",
     "python-multipart>=0.0.32",
     "pywin32>=312",
     "setuptools>=82.0.1",
     "toml>=0.10.2",
-    # torch 必须列为直接依赖，否则 [tool.uv.sources] 对传递依赖不强制生效，
-    # uv 会从 PyPI 装 CPU 版 torch（曾导致朋友包 torch==2.10.0+cpu，CUDA 不可用）。
-    # 保留：embeddings (server/memory/embeddings.py) + STT (lib/recorder/processor/stt_engine.py) 使用
-    # （2026-07-31 OmniParser 移除，torchvision/supervision/timm/accelerate/ultralytics 已删）
-    "torch>=2.13.0",
-    "transformers>=4.45,<4.47",
     "uvicorn>=0.49.0",
-    # 三层记忆系统 v2 依赖
-    "tokenizers>=0.20.0,<0.21",
+    # 三层记忆系统 v2 依赖（jieba=BM25 分词；huggingface-hub=模型元数据客户端，均为轻量纯 Python）
     "huggingface-hub>=0.32.0",
     "jieba>=0.42.1",
     "numpy>=1.26.0",
     "orjson>=3.10.0",
     "playwright>=1.60.0",
     # phase 3 public audience: SPDX 2.3 SBOM 生成 + schema 校验（2026-07-31 用户批准）
+    # ⚠ tools/release/engine/sbom.py 是模块级 import，必须留在主依赖
     "spdx-tools>=0.8.0",
     # playwright-stealth 已于 2026-09-03 移除：本项目的浏览器接入方式是
     # connect_over_cdp 连接用户自启的真实 Chrome，指纹天然合规；stealth 的
     # 「加法型」补丁会在真实浏览器上制造自相矛盾的假指纹并污染用户 tab。
     # 详见 docs/browser-anti-detection.md。
     "uiautomation>=2.0.29",
-    "pandas>=3.0.3",
-    "baostock>=0.9.3",
-    "tushare>=1.4.15",
-    "duckdb>=1.5.4",
-    "akquant>=0.3.15",
-    "onnx>=1.22.0",
-    # 录制功能依赖（planning_notes/recording-feature/）
-    # faster-whisper 官方依赖 onnxruntime(CPU 版)，但项目用 onnxruntime-gpu（API 兼容，提供相同 import onnxruntime）
-    # 安装方式：`uv pip install faster-whisper --no-deps`，避免 CPU 版 onnxruntime 覆盖 GPU 版
-    "faster-whisper>=1.0.0",
-    "ctranslate2>=4.0.0",
+    # 录制功能音频层（lib/recorder/ 顶层 import，启动硬依赖）
     "sounddevice>=0.5.0",
     "pyloudnorm>=0.2.0",
-    "scipy>=1.17.1",
     # release engine v2 (phase 2): Jinja2 模板渲染（DEPLOYMENT.md / RELEASE_NOTES.md）
     # user 在 grill-me Q6 明确批准加此依赖
     "jinja2>=3.1.0",
     "truststore>=0.10.4",
     "imbox>=0.10.1",
+]
+
+# ============================
+# 可选增强（D2 路径 B，2026-09-19）：本地推理 / 行情 / 文档解析等重型依赖按能力分组
+# ============================
+# 设计依据（dry-run + AST 可达性实测，见 docs/deployment.md 阶段 1/3）：
+#   - 四个启动入口（server.main / client.main / approval_panel / recorder）的
+#     启动期硬依赖只有 pyside6（留在主依赖）；下列重包全部是函数内惰性加载，
+#     排除后启动不受影响，对应能力静默降级（嵌入→BM25-only、OCR→不可用等）。
+#   - 分组与 docs/deployment.md 阶段 3「可选增强对照表」一一对应。
+# 安装：
+#   轻量（推荐起步）      uv sync                     ← 只装主依赖，约 1.4 GB
+#   全量（作者机/完整版）  uv sync --all-extras        ← 含全部 GPU 推理，约 7.5 GB
+#   单项增强              uv sync --inexact --extras ocr
+# ⚠️ 作者机注意：裸 `uv sync`（不带 --all-extras / --inexact）会卸载已装的重型包！
+#    日常 `uv run` 不受影响（默认非 exact 同步，只增不删）。
+[project.optional-dependencies]
+# 截图文字定位（Computer Use 主路径）。paddlex 由 paddleocr 传递引入。
+# paddlepaddle-gpu 走 paddle-cu126 索引（[tool.uv.sources]，PyPI 仅 CPU 版）
+ocr = [
+    "paddleocr[doc-parser]>=3.7.0",
+    "paddlepaddle-gpu==3.2.2",
+]
+# 本地推理栈：嵌入模型（三层记忆语义检索）+ transformers 推理
+# torch 必须列为直接依赖（extras 亦算直接依赖），否则 [tool.uv.sources] 对传递依赖不强制生效，
+# uv 会从 PyPI 装 CPU 版 torch（曾导致朋友包 torch==2.10.0+cpu，CUDA 不可用）。
+# （2026-07-31 OmniParser 移除，torchvision/supervision/timm/accelerate/ultralytics 已删）
+inference = [
+    "torch>=2.13.0",
+    "transformers>=4.45,<4.47",
+    "tokenizers>=0.20.0,<0.21",
+    "onnx>=1.22.0",
+    "onnxruntime-gpu>=1.26.0",
+    "ctranslate2>=4.0.0",
+]
+# 录制器语音转写（faster-whisper 官方依赖 ctranslate2/onnxruntime/av，会从 inference 组
+# 传递补齐 ctranslate2；onnxruntime 用 GPU 版（API 兼容），安装时注意不要让 CPU 版覆盖）
+stt = [
+    "faster-whisper>=1.0.0",
+]
+# 行情 / 数据模块（stock_advisor 面板、analysis/quant 等为模块级 import，不装=导入即失败）
+# matplotlib 注释：stock_advisor 面板 K 线图绘制（FigureCanvasQTAgg 嵌入 PySide6）
+# 修复教训（2026-08-03）：原 pyproject.toml 漏声明，导致干净环境 PanelRegistry.discover() 加载失败
+quant = [
+    "pandas>=3.0.3",
+    "pyarrow>=11.0.0",
+    "scipy>=1.17.1",
+    "matplotlib>=3.9.0",
+    "duckdb>=1.5.4",
+    "akquant>=0.3.15",
+    "baostock>=0.9.3",
+    "tushare>=1.4.15",
+]
+# 文档解析 / 媒体容器
+office = [
+    "pymupdf>=1.25.0",
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
 ]
 
 [dependency-groups]

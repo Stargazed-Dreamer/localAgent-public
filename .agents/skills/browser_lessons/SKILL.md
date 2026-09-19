@@ -147,8 +147,56 @@ page.mouse.move(x, y) + page.mouse.click(x, y)  （真实鼠标，需先获取�
 | 文件上传 | `page.set_input_files(selector, [paths])`，不要模拟点击触发文件选择器 |
 | Python 写 JS 的 `split('\n')` 转义层级易错 | `"split('\\n')"` → JS `split('\n')`；改 JS 后单样本必跑 |
 | `innerText` 跳过 `display:none`，`innerHTML` 含它们 | 不要 clone 容器再删元素，而是只拼接需要的元素 |
-| 动态页面 `networkidle` 前查 DOM 得到不完整结构 | 必须 `await page.wait_for_load_state('networkidle')` 后再 inspect |
+| 动态页面 `networkidle` 前查 DOM 得到不完整结构 | 用 `wait_for_load_state('networkidle')` **或** `domcontentloaded` + 固定等待；⚠ **有长连接/长轮询的站点（如 js.design）`networkidle` 永不触发**（实测 `goto(wait_until="networkidle")` 45s 超时）→ 这类站点一律用 `domcontentloaded` + `wait_for_timeout(3000~6000)` |
 | 跨子域同名组件 DOM 结构可能不同 | 永远加回退：`document.querySelector('.A') \|\| document.querySelector('.B')` |
+| **误判"CDP 浏览器还活着"** | 后端 `/browser/tabs` 秒回是**缓存列表，不算证据**。判活必须做**真实往返**（`/browser/evaluate` 或 playwright `evaluate`） |
+| 浏览器进程持端口但 `tasklist`/`wmic` 查不到、`taskkill` 报权限不足（rc=128） | 见下方「调试浏览器 CDP 假死：诊断与恢复」 |
+| 用 `file:///…svg` 直接开 SVG 时注入脚本报 `Cannot read properties of null (reading 'style')` | SVG 当文档打开时**根节点就是 `<svg>`，没有 `<body>`**。套一层 HTML，用 `<img src="file://…svg">` 承载再操作 |
+
+### 调试浏览器 CDP 假死：诊断与恢复（2026-09-19 实测）
+
+**症状**（三者同时出现即确诊"命令面假死"，不是压力问题也不是脚本问题）：
+
+| 探针 | 假死时的表现 |
+|---|---|
+| `curl http://127.0.0.1:9222/json/version` | ✅ **正常返回**（HTTP 层还活着，会误导人） |
+| playwright `connect_over_cdp(...)` | `ws connecting` → `ws connected` 之后 **180s 超时**（浏览器端不回 handshake） |
+| 后端 `POST /browser/evaluate` | `BROWSER_DISCONNECTED`（约 10 s 后失败） |
+| 后端 `GET /browser/tabs` | ⚠️ **秒回**——但那是后端缓存的标签列表，**不能当证据** |
+
+**恢复步骤（顺序不能错）**：
+
+1. **先精确定位根进程**：`netstat -ano | grep ":9222"` 拿 LISTENING 的 pid
+   （不要靠 `tasklist`/`wmic` 找 `chrome.exe`——实测进程名可能查不到，而端口确实被它占着）。
+   再用 `wmic process get Name,ProcessId,ParentProcessId,CommandLine /format:csv`
+   确认**只有这一个调试实例**（按 `--user-data-dir` 分组，避免误伤用户的日常浏览器）。
+   调试浏览器的父进程应当是后端 pid（被后端托管拉起）。
+2. **杀树要交给后端做**：Bash 工具通道的 `taskkill /T /F /PID <pid>` **权限不够**
+   （实测 rc=128，只杀掉子进程，根进程仍占着端口）。
+   必须走 `POST /terminals/spawn`，`cmd_list=["taskkill","/T","/F","/PID","<pid>"]` —— 后端有管理员权限。
+3. **确认端口已释放**再拉新实例：`netstat -ano | grep ":9222"` 应只剩 `TIME_WAIT` 或空。
+   ⚠ **端口没释放就拉 = 白拉**：Chrome 走**单实例交接**，新进程 0.18 s 就以 exit_code 0 退出，
+   你以为起了、其实还是那个假死的在顶。
+4. **重新托管拉起**：
+
+   ```
+   POST /terminals/spawn
+   {"cmd_list": ["<chrome.exe 绝对路径>",
+                 "--remote-debugging-port=9222",
+                 "--remote-allow-origins=*",
+                 "--user-data-dir=<chrome_debug 绝对路径>",
+                 "--no-first-run", "--no-default-browser-check",
+                 "<要开的 URL 1>", "<URL 2>"],
+    "label": "debug-browser-9222"}
+   ```
+
+   配方与 `tools/browser/start_debug_browser.py` 一致（后者用 `subprocess.Popen` 起，
+   在工具通道里会被回收——**托管必须走后端**）。
+5. **验收**：`/json/version` 就绪 ≠ 修好。必须做一次**真实往返**才算通过：
+   playwright `connect_over_cdp` 应 < 1 s，`evaluate("() => 2+2")` 应 < 0.1 s。实测修复后 connect 0.3 s、往返 0.03 s。
+
+**登录态不受影响**：cookie 存在 `chrome_debug` profile 里，同机同账户 DPAPI 可解 →
+重启后砺儒云等站点**仍是登录态**（2026-09-19 实测活过重启）。只有换机器/换用户才失效。
 
 ### 浏览器操作通用原则（像人一样思考）
 

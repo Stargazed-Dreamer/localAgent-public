@@ -54,7 +54,7 @@
 - [ ] **检查依赖列表**（`requirements.txt` / `pyproject.toml` / `package.json`）：是否引入可疑库（如 `subprocess`、`socket`、`requests` 配合可疑 base64 字符串、`eval`/`exec` 相关库、未知私有库）
 - [ ] **扫描入口脚本**（`*.py` / `*.js` / `*.sh`）：grep `subprocess`、`os.system`、`eval(`、`exec(`、`pickle.loads`、`urllib.request.urlopen` + 可疑 URL、`base64.b64decode` 后立即 `exec`、`yaml.load`（非 `safe_load`）等危险模式
 - [ ] **检查网络请求**：是否向非项目域名发送数据（可能窃取信息）
-- [ ] **检查文件系统操作**：是否读写项目外路径（`..`、`C:\Users`、`~/.ssh`、`%APPDATA%` 等）
+- [ ] **检查文件系统操作**：是否读写项目外路径（`..`、`~/.ssh`、`%APPDATA%` 等）
 - [ ] **不擅自安装额外库**：用户明确说过"不希望安装额外的库"。若项目必须装新库，必须先报告用户库清单 + 用途 + 大小，获得明确批准后才装
 - [ ] **检查 LICENSE**：保留原作者所有权（项目硬约束），Apache-2.0 / MIT / BSD 可用，GPL / AGPL 需用户确认
 

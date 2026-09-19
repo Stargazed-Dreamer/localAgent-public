@@ -22,7 +22,7 @@ trust: native
 - "公开前过一遍 README"
 
 **Agent 主动触发**：
-- 用户准备公开/分发项目（走 `public-release` skill 时联动）
+- 用户准备公开/分发项目（走 `internal-workflow` skill 时联动）
 - 用户做竞品调研后转变项目定位，README 还停留在旧的自我定位
 - README 与实际能力严重不符（过度承诺或过度自贬）
 
@@ -197,7 +197,7 @@ README 不是产品说明书，是**作者和读者的一次诚实对话**。读
 
 ## 与其他 skill 的关系
 
-- **`public-release`**：源码分发审计与打包；README 修订常作为公开前的最后一步，由 `public-release` 编排调用本 skill
+- **`internal-workflow`**：源码分发审计与打包；README 修订常作为公开前的最后一步，由 `internal-workflow` 编排调用本 skill
 - **`neat-freak`**：会话后文档同步；本 skill 聚焦 README 起草/修订，neat-freak 聚焦文档一致性
 - **`skill-creator`**：写 SKILL.md（skill 定义文件）；本 skill 写 README.md（项目门面文件）— 两者面向不同读者
 - **`deep_research`**：写 README 前如果对竞品不熟，先用 deep_research 做竞品调研，再回来按第 2 步规则写对比段

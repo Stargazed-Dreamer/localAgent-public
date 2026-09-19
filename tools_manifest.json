@@ -1,6 +1,6 @@
 {
   "version": "1.1",
-  "updated_at": "2026-07-12",
+  "updated_at": "2026-09-18",
   "description": "LocalAgent 项目工具清单 - GUI 桌面程序读取此文件展示可用工具",
   "categories": [
     {
@@ -472,6 +472,30 @@
         }
       ],
       "notes": "默认全量备份，生成一键恢复脚本",
+      "user_facing": true
+    },
+    {
+      "id": "spacesniffer",
+      "name": "SpaceSniffer 快照浏览器",
+      "category": "disk",
+      "description": "SpaceSniffer 复刻（PySide6）：读 .sns 快照做 squarified treemap 可视化，支持缩放/面包屑/过滤 DSL/四色标记/右键菜单/导出报告",
+      "script": "tools/spacesniffer/main.py",
+      "command": ".venv\\Scripts\\python.exe tools/spacesniffer/main.py \"<快照.sns>\"",
+      "usage": "user",
+      "requires_browser": false,
+      "requires_admin": false,
+      "options": [
+        {
+          "name": "<快照.sns>",
+          "description": "位置参数，要打开的 .sns 快照（省略则开空窗口，可从菜单/拖放打开）"
+        },
+        {
+          "name": "--info",
+          "default": false,
+          "description": "只在命令行打印快照摘要，不启动图形界面"
+        }
+      ],
+      "notes": "只读快照浏览器，不做扫描（原版的实时扫描/事件同步/ADS 扫描在离线快照上无意义）。解析器自包含，与 workspace/disk_manager/scripts/parse_sns.py 靠 tests/files_tools/test_spacesniffer.py::test_cross_check_with_disk_manager 交叉校验防漂移。删除走 tools/disk/recycle.py 回收站。双击启动用 tools/spacesniffer/start.bat（GBK+CRLF 编码）",
       "user_facing": true
     },
     {
@@ -1002,7 +1026,7 @@
       "id": "x_video_dl",
       "name": "X视频下载",
       "category": "media_dl",
-      "description": "x.com(Twitter) 视频批量下载——savetwitter.net 免梯子解析链路（解析API→签名直链→流式下载），顺序前台执行逐条输出，自动选最高分辨率并校验 MP4 文件头",
+      "description": "x.com(Twitter) 视频批量下载——savetwitter.net 免梯子解析链路（解析API→签名直链→流式下载），顺序前台执行逐条输出，自动选最高分辨率并校验 MP4 文件头；按 tweet_id 账本去重（输出目录 download_manifest.json），已下载/用户已删的一律跳过不重下",
       "script": "tools/x_video_dl.py",
       "command": ".venv\\Scripts\\python.exe tools/x_video_dl.py",
       "usage": "agent",
@@ -1013,9 +1037,10 @@
         {"name": "--max-res", "optional": true, "description": "分辨率上限如 720（默认取最高档）"},
         {"name": "--out", "optional": true, "description": "输出目录（默认 ~/<data_drive>:/Downloads/x_videos_<当天日期>）"},
         {"name": "--seq-start", "optional": true, "description": "文件名序号起始（默认 1）"},
-        {"name": "--prefix", "optional": true, "description": "文件名附加标记（如 追加/来源说明）"}
+        {"name": "--prefix", "optional": true, "description": "文件名附加标记（如 追加/来源说明）"},
+        {"name": "--force", "optional": true, "description": "无视账本去重，已下载过的也强制重下"}
       ],
-      "notes": "输出文件名严禁含冒号（Windows 静默写进 NTFS ADS：主文件 0 字节、播放器打不开；脚本已白名单清洗）。解析按钮 label 内嵌 <i> 标签的正则坑详见脚本 docstring。2026-09-16 由珥_eclipse聊天 x 视频下载任务转正。",
+      "notes": "输出文件名严禁含冒号（Windows 静默写进 NTFS ADS：主文件 0 字节、播放器打不开；脚本已白名单清洗）。解析按钮 label 内嵌 <i> 标签的正则坑详见脚本 docstring。账本 download_manifest.json 按 tweet_id 记账：文件还在=已下载，文件被删=用户筛掉不想留，均不重下；账本损坏时报错退出而非当空账本（防误重下）。2026-09-16 由珥_eclipse聊天 x 视频下载任务转正。",
       "user_facing": false
     }
   ]

@@ -3,7 +3,7 @@
 apply_placeholders.py - 占位符自动替换脚本
 
 用途：
-    将 friend-full profile 导出包中的占位符（<project_root>、<username>、<data_drive>
+    将发布包中的占位符（<project_root>、<username>、<data_drive>
     等）替换为接收方用户实际的路径与名称。用于导出包的部署阶段。
 
 用法：
@@ -26,8 +26,9 @@ apply_placeholders.py - 占位符自动替换脚本
     （如 <data_drive>:\\<data_drive>:\Documents），传 D 才能得到 D:\\<data_drive>:\Documents；若传 D: 会产生
     D::\\<data_drive>:\Documents 双冒号异常路径，脚本会检测并报错退出。
 
-    占位符清单需与 release/profiles/friend-full.toml 的
-    [deployment_mapping.required_mappings] 段保持同步。
+    占位符清单需与 release/profiles/public-full.toml 的
+    [content_replacements] 规则（path_mapping / literal）保持同步。
+    该同步由 tests/release_ci/test_apply_placeholders_sync.py 守护。
 
 约束：
     - 只用 Python 标准库
@@ -43,7 +44,7 @@ import os
 import sys
 
 # 占位符清单
-# 此清单需与 release/profiles/friend-full.toml 的 [deployment_mapping.required_mappings] 保持同步
+# 此清单需与 release/profiles/public-full.toml 的 [content_replacements] 保持同步
 PLACEHOLDERS = [
     # 必填占位符
     {"placeholder": "<username>", "required": True,
@@ -53,10 +54,20 @@ PLACEHOLDERS = [
     {"placeholder": "<data_drive>", "required": True,
      "prompt": "数据盘盘符字母 (例: D，不要带冒号)"},
     # 可选占位符
-    {"placeholder": "<project_root_parent>", "required": False,
-     "prompt": "项目根目录的父目录 (例: D:\\code)"},
     {"placeholder": "<external_project_root>", "required": False,
      "prompt": "外部项目存放目录 (例: D:\\external_projects)"},
+    {"placeholder": "<projects_parent>", "required": False,
+     "prompt": "项目根目录的父目录 (例: <projects_parent>)"},
+    {"placeholder": "<user_home>", "required": False,
+     "prompt": "用户主目录 (例: C:\\Users\\your_name)"},
+    {"placeholder": "<apps_root>", "required": False,
+     "prompt": "应用安装根目录 (例: System_Programes)"},
+    {"placeholder": "<backup_drive>", "required": False,
+     "prompt": "备份目录绝对路径 (例: <backup_drive>)"},
+    {"placeholder": "<media_root>", "required": False,
+     "prompt": "媒体/视频归档目录绝对路径 (例: <media_root>)"},
+    {"placeholder": "<models_root>", "required": False,
+     "prompt": "AI 模型存放目录 (例: <models_root>)"},
     {"placeholder": "<source_images_root>", "required": False,
      "prompt": "图片源根目录 (例: <data_drive>:\Pictures\\collection)"},
     {"placeholder": "<classified_root>", "required": False,

@@ -15,7 +15,9 @@ tools/
 ├── llm/                  # LLM 工具（API 测试、批量注释、Token 统计、帖子总结）
 ├── media_classifier/     # 媒体分类（<data_drive>:\<bilibili_videos>视频、文字篇章、歌词分析）
 ├── mindforge/            # MindForge 文档转换守护进程
+├── network/              # 本机网络/网卡工具（WiFi 掉线一键修复 bat）
 ├── release/              # 源码分发 profile 只读审计
+├── spacesniffer/         # SpaceSniffer 复刻（.sns 快照 treemap 浏览器，带 GUI）
 ├── wechat_export_organize.py  # 微信收藏导出整理
 ├── user_message_gui.py   # 用户消息输入 GUI
 ├── fake_llm_proxy.py     # Fake LLM Proxy（学习/调试用虚拟 API）
@@ -116,6 +118,15 @@ tools/
 ### `mindforge/` — MindForge 文档转换
 - `converter_daemon.py` — 文档转换守护进程（MineRU + PaddleOCR），通过 stdin/stdout JSON 协议通信
 
+### `network/` — 本机网络/网卡工具
+
+- `wifi_adapter_repair.bat` — **无线网卡掉线一键修复**（双击运行，自动 UAC 提权；桌面 `WiFi网卡修复.bat` 是同一份字节的副本）
+  - 症状签名（2026-09-18 实测）：托盘 WiFi 图标消失、`netsh wlan show interfaces` 报"There is no wireless interface on the system."、`Get-NetAdapter` 里 WLAN 的 `Status` 为空白、`Get-PnpDevice` 显示设备 `Error` + `CM_PROB_FAILED_POST_START`，而 `WlanSvc` 服务仍是 `Running`。**关键结论：这种掉线是驱动 miniport 崩了（System 日志里 NDIS `Fatal error: The miniport has detected an internal error` + `Netwtw10` 事件 5002），重启服务/flushdns/重置 TCP 栈都没用，必须重启"设备"**
+  - 分级流程：`pnputil /restart-device` → 禁用+启用+`/scan-devices` → `net stop/start WlanSvc` → 提示重启电脑；每级之后每 5 秒轮询体检（网卡 `Status` 非空 **且** PnP 设备 `OK`/`CM_PROB_NONE`）才判定恢复。实测第 1 级命令本身返回成功但驱动没起来，第 2 级才救回——所以必须轮询而不能固定 sleep
+  - 设备实例 ID 运行时按 `FriendlyName -like 'Intel*Wi-Fi*'` 解析，不写死（脚本里保留了 AX200 的 fallback 常量）；`[2]` 查看状态是纯只读；`[3]` 一次性加固写 `PnPCapabilities=24`（屏蔽"允许计算机关闭此设备以节约电源"）+ `HiberbootEnabled=0`（关快速启动），先打印当前值再确认，还原命令写在脚本头注释
+  - 有意**不做**自动重连：机器上存了一堆 WiFi 配置（含手机热点），脚本只负责让网卡复活，连哪个由人在托盘决定
+  - ⚠️ 这是 `.bat`，编码必须是 GBK+CRLF+无 BOM；改它必须走 `.agents/skills/bat_writing/SKILL.md` 的 2b 编辑回路（直接 Edit 会把中文冲坏），改完 `--check` 全绿再同步桌面副本
+
 ### 录制器（已迁至 `workspace/recorder/`）
 操作录制器（键鼠 + 屏幕截图 + 音频 + 窗口焦点 → 可回放录制包）**不在 `tools/` 下**：
 - 启动入口：`python -m workspace.recorder.tools.main`（配置对话框/悬浮条/监控窗口/编辑器等都在 `workspace/recorder/tools/`）
@@ -126,6 +137,14 @@ tools/
 - `cli.py` — 单入口多 subcommand CLI（`prepare` / `compute-digest` / `build` / `list-components` / `scan`）。所有发布工作流经此入口；旧的 `audit_profile.py` + `export_release.py` 已删除（2026-07-31，T18）
 - `engine/` — 不可变 PreparedRelease 计划模型 + `prepare_release()` + `build_release()` 接口实现（spec-v2-compiler.md）
 - `templates/` — Jinja2 模板（`DEPLOYMENT.md.j2` / `RELEASE_NOTES.md.j2`），不含 `zip_size` 字段
+
+### `spacesniffer/` — SpaceSniffer 快照浏览器（带 GUI）
+- `main.py` — CLI 入口：`main.py "<快照.sns>"` 直接加载，`--info` 只打印摘要不开窗；`start.bat` 双击启动（GBK+CRLF 编码，勿存成 UTF-8）
+- `sns_model.py` / `treemap.py` / `filtering.py` / `filetypes.py` / `tagging.py` / `report.py` / `viewer.py` — 解析 / squarified 布局 / 过滤 DSL / 类型配色 / 四色标记 / 导出 / 主窗口
+- **只读快照浏览器，不做扫描**：原版的实时扫描、文件系统事件同步、NTFS ADS 扫描在离线快照上没有意义，刻意不复刻；全部「分析类」操作齐备
+- 解析器自包含（不复用 `workspace/disk_manager/scripts/parse_sns.py`，后者属发布产物），两份实现的一致性由 `tests/files_tools/test_spacesniffer.py::test_cross_check_with_disk_manager` 交叉校验守护
+- 实测 67.7 MB 全盘快照：解析 ~5.8s、布局 ~100ms、命中测试 ~7.5µs；解析与布局均在后台线程
+- 详见 `spacesniffer/README.md`
 
 ### `wechat_export_organize.py` — 微信收藏导出整理
 将 `temp/微信收藏导出/` 下的内容整理为可读的 Markdown 格式。

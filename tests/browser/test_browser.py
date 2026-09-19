@@ -744,6 +744,84 @@ class TestSiteLessonsMatching:
         assert "100" in hint
 
 
+class TestSiteLessonWriteDedupe:
+    """write_lesson 写前查重：同一站点只应有一份档案。
+
+    回归背景（2026-09-19）：sites/scnu.edu.cn.md（人工按主域命名）与
+    sites/scnu-edu-cn.md（write_lesson 按「点改横线」自动生成）并存，同一域名
+    match_site_for_domain 返回两份，agent 可能读到内容较少的那份。
+    """
+
+    def test_find_existing_prefers_canonical_name(self, tmp_path):
+        """① 规范名（点改横线）精确命中最优先"""
+        from server.browser.site_lessons import _find_existing_lesson_file
+        (tmp_path / "scnu-edu-cn.md").write_text(
+            "---\naliases: ['scnu.edu.cn']\n---\n\n# x\n", encoding="utf-8")
+        got = _find_existing_lesson_file(tmp_path, "scnu.edu.cn", "scnu-edu-cn")
+        assert got is not None
+        assert got.name == "scnu-edu-cn.md"
+
+    def test_find_existing_falls_back_to_dotted_main_domain(self, tmp_path):
+        """② 人工按主域命名的点式文件（无 frontmatter）应被命中，不新建第二份"""
+        from server.browser.site_lessons import _find_existing_lesson_file
+        (tmp_path / "scnu.edu.cn.md").write_text("# 砺儒云课堂\n", encoding="utf-8")
+        got = _find_existing_lesson_file(tmp_path, "scnu.edu.cn", "scnu-edu-cn")
+        assert got is not None
+        assert got.name == "scnu.edu.cn.md"
+
+    def test_find_existing_matches_frontmatter_aliases(self, tmp_path):
+        """③ 文件名完全不同时，靠 frontmatter aliases 精确命中"""
+        from server.browser.site_lessons import _find_existing_lesson_file
+        (tmp_path / "skland.md").write_text(
+            "---\naliases: ['森空岛', 'skland.com']\n---\n\n# x\n", encoding="utf-8")
+        got = _find_existing_lesson_file(tmp_path, "skland.com", "skland-com")
+        assert got is not None
+        assert got.name == "skland.md"
+
+    def test_find_existing_does_not_over_merge_neighbour_domain(self, tmp_path):
+        """精确匹配：qq.com 不得命中 docs.qq.com 的档案（子串匹配会误并）"""
+        from server.browser.site_lessons import _find_existing_lesson_file
+        (tmp_path / "docs.qq.com.md").write_text("# 腾讯文档\n", encoding="utf-8")
+        assert _find_existing_lesson_file(tmp_path, "qq.com", "qq-com") is None
+
+    def test_find_existing_does_not_over_merge_shared_suffix(self, tmp_path):
+        """精确匹配：a.edu.cn 不得命中 b.edu.cn 的档案"""
+        from server.browser.site_lessons import _find_existing_lesson_file
+        (tmp_path / "b.edu.cn.md").write_text("# b\n", encoding="utf-8")
+        assert _find_existing_lesson_file(tmp_path, "a.edu.cn", "a-edu-cn") is None
+
+    def test_find_existing_ignores_underscore_prefixed(self, tmp_path):
+        """_template.md 不参与查重"""
+        from server.browser.site_lessons import _find_existing_lesson_file
+        (tmp_path / "_template.md").write_text("# t\n", encoding="utf-8")
+        assert _find_existing_lesson_file(tmp_path, "example.com", "example-com") is None
+
+    def test_find_existing_absent_returns_none(self, tmp_path):
+        from server.browser.site_lessons import _find_existing_lesson_file
+        assert _find_existing_lesson_file(tmp_path, "new.example", "new-example") is None
+
+    def test_normalize_domain_to_filename_unchanged(self):
+        """重构 _normalize_domain_to_filename（抽出 _extract_domain_host）后行为不变"""
+        from server.browser.site_lessons import (
+            _extract_domain_host,
+            _normalize_domain_to_filename,
+        )
+        assert _normalize_domain_to_filename("scnu.edu.cn") == "scnu-edu-cn"
+        assert _normalize_domain_to_filename("https://moodle.scnu.edu.cn:443/my/") == "moodle-scnu-edu-cn"
+        assert _normalize_domain_to_filename("124.222.53.1") == "124-222-53-1"
+        assert _normalize_domain_to_filename("") is None
+        assert _normalize_domain_to_filename("a/b") is None
+        assert _extract_domain_host("https://moodle.scnu.edu.cn:443/my/") == "moodle.scnu.edu.cn"
+        assert _extract_domain_host("") == ""
+
+    def test_repo_has_single_archive_per_domain(self):
+        """仓库现状：scnu.edu.cn 只能匹配到一份档案（防重复文件复发）"""
+        from server.browser.site_lessons import match_site_for_domain
+        for host in ("scnu.edu.cn", "moodle.scnu.edu.cn"):
+            results = match_site_for_domain(host)
+            assert len(results) == 1, f"{host} 命中 {len(results)} 份档案: {[r['domain'] for r in results]}"
+
+
 class TestBrowserSessionSiteLessonsFields:
     """P2-1: TabSession.site_lessons 字段 + CreateResponse 模型"""
 

@@ -60,36 +60,71 @@ LocalAgent 是一个跑在 Windows 上的本地 Agent 系统，由 FastAPI 后�
 
 ## 快速开始
 
-详细部署步骤见 [docs/deployment.md](docs/deployment.md)。这里只给最简流程。
+详细部署步骤见 [docs/deployment.md](docs/deployment.md)。这里只给最短路径。
 
-> **诚实提示**：部署不算简单——需要 Python 3.12+、PaddleOCR（GPU 推荐，CPU 也能跑但慢）、Windows 管理员权限、若干 LLM API Key。愿意折腾的话半小时到一小时能跑起核心后端，完整跑通所有 Skill 还需要配 ModelScope / tushare / GitHub 等密钥。本项目主要为自己使用设计，部署文档可能不全。完整门槛清单见[局限性](#局限性)段。
+**核心原则：先让后端跑起来，再按需增强。** 下面的流程**不下载任何本地推理模型**（OCR / torch / GUI 等全部留到可选增强阶段），几分钟即可看到后端活着。
 
-```bash
-# 1. 安装依赖
+```bat
+REM 1. clone（任意目录；路径别带中文和空格）
+git clone https://github.com/Stargazed-Dreamer/localagent-public.git localAgent
+cd localAgent
+
+REM 2. 把发布包里的路径占位符换成你本机的（--data-drive 传盘符字母，不要带冒号）
+python tools\deploy\apply_placeholders.py . --project-root D:\code\localAgent --username your_name --data-drive D
+
+REM 3. 前置自检（7 项，不装依赖；用系统 python，别用 uv run）
+python tools\deploy\preflight_check.py
+```
+
+```bat
+REM 4. 安装依赖：主依赖只含启动必需的轻量包；本地推理 / 行情 / 文档等重型栈
+REM    放在 extras（ocr/inference/stt/quant/office），可选增强阶段再装（约 6.06 GB）
 uv sync
 
-# 2. 复制配置模板，填写 LLM API Key
-cp config.example.toml config.toml
-# 编辑 config.toml；按 docs/deployment.md 创建 data/llm/keys.json 和 data/secret/secrets.toml
+REM 5. 创建配置，填 LLM API Key
+copy config.example.toml config.toml
+REM 按 docs/deployment.md 创建 data\llm\keys.json（至少 1 个 tier 3 的 key）
 
-# 3. 启动后端（管理员权限，键鼠操控需要）
+REM 6. 启动后端（管理员权限——键鼠操控需要；start.bat 会自动 UAC 提权）
 start.bat
-# 或：uv run python -m server.main
+```
+
+```bat
+REM 7. 验收（用 REST 端点，不需要先配 IDE）
+curl.exe -s http://127.0.0.1:8766/health                  REM → "status": "ok"
+curl.exe -s "http://127.0.0.1:8766/guide?task=hello"      REM → 任务路由返回 JSON
+python tools\deploy\diagnose.py                           REM → 逐项解读后端状态
 ```
 
 后端运行在 http://127.0.0.1:8766，MCP 端点 http://127.0.0.1:8766/mcp。
 
+> **不要改 `start*.bat`**。它们内部用 `%~dp0` + 相对 `.venv` 路径，clone 到任何目录都开箱可用；bat 对编码（GBK + CRLF + 无 BOM）和行尾极其敏感，顺手改很容易改坏。
+
+**可选增强**（不装不影响核心功能，安装方式见 [docs/deployment.md](docs/deployment.md) 阶段 3）：
+
+| 增强项 | 装了得到什么 | 不装会怎样 |
+|--------|--------------|------------|
+| PaddleOCR + CUDA 12.6 | 截图文字定位（Computer Use 主路径） | 截图类文字定位不可用 |
+| 本地嵌入模型 | 三层记忆的语义检索 | 静默退化为 BM25-only（不报错） |
+| 远程 VL key（ModelScope） | 文档解析 / 图像描述 | 相关工具不可用 |
+| STT（faster-whisper） | 录制器语音转写 | 录制器音频层不可用 |
+| PySide6 GUI | 图形面板（对话 / 监控 / 设置） | 纯 MCP + HTTP 也够用 |
+| 调试浏览器（CDP 9222） | 浏览器自动化 | 浏览器类任务不可用 |
+
 启动调试浏览器（涉及浏览器操作时）：
 
-```bash
-uv run python tools/browser/start_debug_browser.py
+```bat
+uv run python tools\browser\start_debug_browser.py
 ```
 
-启动 GUI 客户端：
+启动 GUI 客户端（`pyside6` 已在第 4 步的默认清单里装好）：
 
-```bash
+```bat
 start_client.bat
 ```
+
+> **诚实提示**：跑通**核心后端**不算难（上面 7 步，10–30 分钟）；难的是**完整跑通所有 Skill**——那还需要配 ModelScope / tushare / GitHub 等密钥并按需装本地推理组件。
+> 本项目主要为自己使用设计，建议按上面顺序**先跑通核心、再按需增强**，不要一上来就 `uv sync` 装齐全部（那是数 GB 下载）。完整门槛清单见[局限性](#局限性)段。
 
 ## 接入 IDE
 
@@ -281,9 +316,9 @@ release/               # 源码分发引擎（profile 驱动 + 4 静态 gate + 4
 - **Windows-only**。键鼠操控走 Win32 API + UIA，OCR 走 PaddlePaddle-GPU CUDA 12.6，浏览器调试实例路径假设 Windows 文件系统。换平台不是改几行 path 能解决的，需要重写一整层。
 - **浏览器是独立的调试浏览器，不是你正在用的实际浏览器**。Chromium 调试实例配独立用户数据目录，登录态、扩展、书签都和你的工作浏览器完全隔离——这是为了不污染你日常用的浏览器。如果你期待 agent 直接操作你正在用的浏览器（带你的登录态和扩展），本项目会让你失望。这个取舍是有意的：稳定可控 > 贴近真实用户环境。
 - **非生产级**。按"一个人用、跑在自己机器上"的尺度设计：没有多租户、没有鉴权、没有水平扩展、没有 SLA、没有可观测性栈。`/health` 端点主要是给 Agent 自己看的，不是给 Prometheus 抓的。
-- **部署门槛不低**。需要 Python 3.12+、PaddleOCR（GPU 推荐）、Windows 管理员权限、若干 LLM API Key，完整跑通所有 Skill 还要配 ModelScope / tushare / GitHub 等密钥。本项目主要为自己使用设计，部署文档可能不全——愿意折腾能跑起来，不愿意的话也许暂时不适合你。
+- **部署门槛中等**。跑通**核心后端**只需要 Python 3.12+、uv、Windows 管理员权限和一个 LLM API Key（见[快速开始](#快速开始)，10–30 分钟）；但**完整跑通所有 Skill** 还要配 ModelScope / tushare / GitHub 等密钥，并按需装本地推理组件（OCR / 嵌入 / STT / GUI）。本项目主要为自己使用设计，建议先跑通核心再按需增强。
 - **代码风格个人化**。没有刻意遵循社区规范，文档密度远高于一般项目（因为大部分代码是和 AI 一起写的，需要给 AI 留够上下文）。请把它当作一份带详细批注的个人作品而不是参考实现。
-- **自迭代中**。当前很多功能在建，部署指导因此暂缓。如果你看到某处明显没写完，那大概率是真的没写完。
+- **自迭代中**。很多功能仍在建，API 与 Skill 形态会变；文档随代码同步更新，若看到某处明显没写完，那大概率是真的没写完。
 
 ## 安全风险登记
 
@@ -327,7 +362,7 @@ release/               # 源码分发引擎（profile 驱动 + 4 静态 gate + 4
 
 允许商用、修改和再分发；需保留版权声明与许可证文本。第三方组件和依赖仍遵循各自许可证（MIT / Apache-2.0 等）。
 
-源码分发通过 release engine 生成（profile 驱动 + 4 静态 gate + 4 构建期 gate），不直接发 ZIP。详见 [docs/release-policy.md](docs/release-policy.md)。
+源码通过仓库内的 release engine 按 profile 逐文件审计后生成（静态 gate + 构建期 gate，含敏感内容扫描与许可证清关），**不直接发 ZIP**——你 clone 到的这棵树就是它的产物。发布策略配置属于内部维护件，不在本包内。
 
 ## 致谢
 

@@ -20,7 +20,7 @@ logger = logging.getLogger("localagent.health")
 
 # 回退默认值：唯一权威来源是 server/main.py 的 VERSION（main 显式传参覆盖此默认，
 # 且 health→main 导入会循环依赖，故此处仅保持同步 + 注明来源）
-VERSION = "0.48.0"
+VERSION = "0.49.0"
 
 
 # ========== 模块错误注册表（last_error 追踪）==========

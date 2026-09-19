@@ -167,6 +167,19 @@ screen_analyze(params={"mode":"window","window_title":"异环","grid_size":4})
 
 识别已有图片路径；实时屏幕定位用 `screen_ocr`。`screen_snapshot(with_ocr=true)` 只返回文字摘要，不返回 bbox。
 
+### 远程 VL 状态有三个出口，字段不会自动同步（改 VL 可观测性前必读）
+
+同一份远程 VL 状态从三个口出来，行为各不相同（2026-09-19 排查 400 事故时实测确认）：
+
+- `GET /health` 的 `vision` 段与 `GET /vision/providers` —— 原样透传 dict，加字段立即生效
+- `GET /vision/status` —— 走 `VisionStatusResponse`（`lib/schema.py` 的 `extra='forbid'`），且端点**按 schema 字段名白名单过滤**响应：只在 `remote_vl.vl_status_fields()` 里新增 key 会被**静默丢弃**，必须同时给响应模型声明字段
+- **客户端面板不请求 `/vision/status`**：模型池面板读 `/health.vision` + `/vision/providers`，监控面板只渲染 `/health` 里的几个 key 级字段。所以"给 `/vision/status` 加字段"对 GUI 毫无效果
+
+**连带判卷**：`tests/llm_vision/test_vision.py` 断言 `/vision/status` 字段集合；
+`tests/approval_screen/test_monitoring_health_contract.py` 规定状态卡任何字段显示 `—` 即失败——
+**给状态卡加新字段必须同步它的 fixture**，否则要么红要么静默显示占位符。
+`tests/client_ui/` 目前对 VL 渲染零覆盖，改面板不会有任何测试拦你，需要自己补冒烟。
+
 ### 坐标参数必须为整数
 
 `/screen/action` 的 `x`/`y` 类型为 `int`，传浮点数会返回 422 验证错误。脚本中应使用 `int(x)` 转换。
@@ -509,7 +522,7 @@ enabled = false
 
 ### 任务收尾时（强制规则，已并入 task_closure step 5）
 
-收尾 6 步流程的 step 5（文档自查）必须额外检查：本次浏览器操作是否遇到非显然行为？若是，写入对应 `sites/<domain>.md`，并同步更新 `references/site_index.md`。
+收尾 6 步流程的 step 5（文档自查）必须额外检查：本次浏览器操作是否遇到非显然行为？若是，写入对应 `sites/<domain>.md`，并同步更新 `.agents/skills/browser_lessons/references/site_index.md`。
 
 **"非显然行为"判定标准**（满足任一即记录）：
 - DOM 选择器与"看起来对"的不一致（如小黑盒作者应该是 `.info-box__username` 但实际取到评论者，正确是 `.link-user__username`）

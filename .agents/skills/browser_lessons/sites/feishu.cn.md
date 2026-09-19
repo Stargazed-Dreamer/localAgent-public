@@ -72,6 +72,25 @@ const t = document.querySelector('.note-title__input-text')?.innerText.trim()
 - **wiki token ≠ obj_token**：URL 里的 wiki token 不是文档 token，但无需换——根块 `data-record-id` 已经是 obj_token
 - **正文接口全部不可用**：`/space/api/.../blocks`、`raw_content` 在游客态 fetch 直接 `Failed to fetch`；正文由协同 OT websocket（`engine_channel` / `/space/api/rce/heartbeat`）增量下发，**不可重放**，别找 API 捷径
 
+## 知识库目录接口（2026-09-19 实测，游客态）
+
+接口本身**可用**（与上面"正文接口不可用"不冲突——树信息不走 OT socket），在页面里 `fetch(url, {credentials:'include'})` 即返回 JSON：
+
+| 接口 | 结果 | 拿得到什么 |
+|------|------|-----------|
+| `GET /space/api/wiki/v2/tree/get_node/?wiki_token=<本页>&expand_shortcut=true&with_deleted=true` | `code:0` | 本页 `obj_token`/`title`/`space_id`/**`parent_wiki_token`**/`has_child` |
+| `GET /space/api/wiki/v2/tree/get_info/?space_id=..&wiki_token=<本页>&with_space=true&with_perm=true&expand_shortcut=true&need_shared=true&exclude_fields=5&with_deleted=true` | `code:0` | `data.tree.nodes{token→节点}`、`data.space`（空间名/owner/权限设置）、`data.shared`、`data.root_token` |
+| 同上但 `wiki_token` 换成父节点 token | `920004012 NodePermFail` | —— 父节点不在分享范围内 |
+| 同上但加 `parent_wiki_token=`，或去掉 `with_space`/`with_perm` | `920004004 PermFail` | —— 参数少一个就整份拒（该接口对参数组合敏感，照抄上表那串） |
+| `wiki/v2/tree/children/`、`wiki/v2/tree/get_child/` | `TypeError: Failed to fetch` | 端点不存在或被 CORS 拒，别再试 |
+| `wiki/v2/space/get_info/`、`wiki/v2/tree/star/get_favorite_info/` | `920004004 PermFail` | —— |
+
+**结论：单页分享 ⇒ 列不出知识库目录。** 分享只授予该节点，`tree/get_info` 里 `root_list: []`、`child_map: {}`、`shared` 仅含本页，父链虽可见（`parent_wiki_token`）但子级枚举被 `NodePermFail` 挡住。要整库归档必须让 owner 把**空间整体**开分享（`space_perm_setting.can_external_access` 为 false 时游客侧无解）或给多个链接。
+
+## 侧边栏不是目录
+
+游客态左侧知识库侧栏**只渲染骨架占位**（`wiki-ssr-sidebar__*` 带 `__placeholder`，实测 5 个空槽），真实树根本不进 DOM。右侧 `.catalogue__list-item`（`indent-level-N heading-N`）是**本文档的标题大纲**，条目数等于本文档标题数——别把它当子页面清单数。要列子页面走上表接口，别在 DOM 里找。
+
 ## 图片/资源加载
 
 | 项 | 选择器/规则 | 备注 |
@@ -106,11 +125,13 @@ const t = document.querySelector('.note-title__input-text')?.innerText.trim()
 | print 崩 `'gbk' codec can't encode '\u200b'` | 直接 print 标题 | `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` | 2026-08-29 |
 | 图片永远走截图兜底、无报错 | `resp.headers().get(...)` | Playwright 的 `APIResponse.headers` 是 **dict 属性**；`TypeError` 被 `except` 吞掉 | 2026-08-29 |
 | 子集重跑覆盖他篇图片 | 图片名用文档序号 | 前缀用 `doc_token`，序号在 `--url`/`--limit` 下会重排 | 2026-08-29 |
+| 引用块整段丢样式 | 只认 `quote` | 新版文档的引用是 **`quote_container` 容器**（`.quote-container-block-children` 里挂 `text` 子块，容器自身只有零宽占位）。渲染须走 `render_children` 再逐行加 `> `；用 `lines_of`/`with_children` 会把子块文字**重复一遍** | 2026-09-19 |
 
 ## 遗留问题
 
-- **wiki 子页面不展开**：只抓给定的那一个 wiki 节点，侧边栏子文档需要另找 `wiki/v2/tree/children` 接口，未验证游客态可用性
+- **wiki 子页面不展开**（2026-09-19 已定性，非脚本缺口）：单页分享下游客**拿不到**子页面清单——接口路线与三种失败码见上方「知识库目录接口」，DOM 侧栏只有骨架占位。要整库归档需 owner 开空间级分享或多给几个链接
 - **未覆盖块类型**：`bitable`（多维表格）、`sheet`（电子表格内嵌）、`view`（嵌入视图）、`synced_block`（同步块）、`add_ons` 未在样本中出现，落到"未识别块→降级正文 + warning"分支，实际效果待验证
+- **`quote_container` 已支持**（2026-09-19 起，`extract_feishu.py` 有独立分支）：此前落到降级分支（文字不丢、丢 `> ` 前缀），现已按引用块渲染，坑与验证见上方「已知坑」最后一行
 - **附件/音频/视频块**：仅输出 `📎 名称`，未下载文件本体
 
 ## 修改历史
@@ -118,3 +139,4 @@ const t = document.querySelector('.note-title__input-text')?.innerText.trim()
 | 日期 | 变更 |
 |------|------|
 | 2026-08-29 | 初始创建，汇总自 `workspace/web_archive/extract_feishu.py` 首次开发（4 篇文档存档实测） |
+| 2026-09-19 | 新增 `quote_container` 实测表现（降级不丢字→同轮补渲染分支）；新增「知识库目录接口」章节（游客态 tree API 可用但单页分享枚举不到子页）+「侧边栏不是目录」；`{tenant}.feishu.cn/wiki/` 游客态抓取验证通过（103 块 / 11 图 / 0 缺口） |

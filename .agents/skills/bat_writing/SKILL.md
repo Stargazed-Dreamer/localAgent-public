@@ -22,7 +22,7 @@ trust: native
 ## 何时必须遵循
 
 - **新建任何 .bat/.cmd**（含纯英文的也建议走自检，成本一行命令）
-- **修改现有 bat**（Edit 工具和编辑器不保证保住原文件的行尾/编码）
+- **修改现有 bat**（⚠️ 不是"可能丢行尾"那么轻：Edit/Write 按 UTF-8 读写，改一份 GBK bat 会把中文**永久冲成 U+FFFD**，必须走下面 2b 的回路）
 - **排查 bat 运行报错**（先跑自检排除编码/行尾问题，再查脚本逻辑——九成"乱码报错"是行尾问题）
 
 ## 工作流
@@ -38,6 +38,22 @@ trust: native
 - 脚本中途**绝不**切 `chcp`（含中文时切代码页会让 cmd 缓存的字节↔字符映射失效，同一行被误解析成命令）
 - 文件末尾留一个换行（最后一行无换行符会被吞）
 - 提权重启后工作目录变成 `C:\Windows\System32`，路径一律用 `%~dp0` 拼接
+
+### 2b. 改一份已转 GBK 的旧 bat：先解成 UTF-8 工作稿
+
+IDE 的 Edit/Write 工具按 UTF-8 读写文件，直接改 GBK bat 会把中文字节当成非法 UTF-8，替换成 U+FFFD 后写回——**中文不可逆丢失**（2026-09-18 实测踩过一次，`--check` 从 OK 变成 `GBK可解码=✗`，文件里出现 `EF BF BD`）。所以改旧 bat 必须走"解出 UTF-8 工作稿 → 改 → 正向转回 GBK"的回路：
+
+```bash
+# 1) GBK → UTF-8 工作稿（不要用 --enc utf8：那个模式会往文件里插 chcp 65001，是给 UTF-8 方案用的，不是转码工具）
+uv run python -c "src='<旧bat路径>'; open('temp/work.bat','wb').write(open(src,'rb').read().decode('gbk').encode('utf-8'))"
+# 2) 用 Edit 工具改 temp/work.bat（此刻是 UTF-8，安全）
+# 3) 正向转回 GBK + 自检，全绿再回写各副本
+uv run python .agents/skills/bat_writing/scripts/fix_bat_encoding.py temp/work.bat --inplace
+uv run python .agents/skills/bat_writing/scripts/fix_bat_encoding.py temp/work.bat --check
+cp temp/work.bat <旧bat路径>
+```
+
+已经在 UTF-8 主稿上写完的内容，也可以整份用 Write 重写（Write 是覆盖写，不解码旧内容），然后只跑一次正向转码——比逐行 Edit 更稳。
 
 ### 3. 写完必须自检（completion criterion）
 
@@ -69,6 +85,10 @@ uv run python .agents/skills/bat_writing/scripts/fix_bat_encoding.py <文件.bat
 - `chcp 65001` + UTF-8 看似现代方案，实测有隐蔽故障：回声未关时，`echo   0  退出` 会被误解析为执行 `0  退出`。含中文就别用 UTF-8 方案
 - GBK 与 UTF-8 大多数 ASCII 段完全相同，**编码错在运行前不可见**——这是"写完看一眼没问题，一跑就炸"的原因
 - 三项自检全过还报错 → 是脚本逻辑问题，不是编码问题（诊断分流见 references/guide.md 第四节）
+- **`%VAR%` 展开后 cmd 会再扫一遍特殊字符**：值里带 `&` 时（典型如 PnP 设备实例 ID `PCI\VEN_8086&DEV_2723&SUBSYS_...`），`echo 目标设备: %DEVID%` 会劈成 6 条命令，报一串 `'DEV_2723' 不是内部或外部命令` / `'REV_1A\4'` 变成"系统找不到指定的路径"，而功能却"看起来跑成了"。解法二选一：`setlocal EnableDelayedExpansion` + `!DEVID!`（延迟展开发生在解析之后，特殊字符安全），或把展开包进双引号（`pnputil /restart-device "%DEVID%"` 实测安全）。⚠️ 开了延迟展开就要注意值里不能出现裸 `!`
+- **`rem` 注释行不屏蔽重定向**：注释里写 `rem 第 1 步 -> 第 2 步` 会被 cmd 当成 `>` 重定向，在项目目录凭空拉出一个名为 `第` 的文件（`<`、`|` 同理）。注释里的箭头一律写 `=>` 或全角，或直接避免
+- **入库的 bat 存的是 LF**：blob 里永远是 LF（`git cat-file` 实测现有 bat blob `CRLF=0`）。2026-09-18 已在 `.gitattributes` 加 `*.bat text eol=crlf` / `*.cmd text eol=crlf`，所以 **clone 与 checkout 会还原成 CRLF**，不再依赖本机 `core.autocrlf=true`。但直接读 blob 的路径不受该规则保护：`git show HEAD:x.bat > x.bat`、`git cat-file`、任何绕过 checkout 的打包/复制链路拿到的仍是 LF-only 中文脚本——这类取出的 bat 一律先过一遍 `--inplace` 再交付（`--check` 会立刻报 `孤立LF≠0`）
+- **IDE 采集层会二次解码子进程输出**：agent 侧看到的中文乱码（`锟斤拷`）是 MCP/终端把 GBK 字节按 UTF-8 解码的产物，不代表双击时显示错。要判定真实渲染，让 Python 自己 `subprocess` 捕获后 `.decode('gbk', errors='strict')`——严格解码不抛错即证明输出字节合法（对照：直接把 bat 输出重定向到文件再读，会被采集层污染，不能当证据）
 
 ## 关键规则
 
@@ -76,6 +96,8 @@ uv run python .agents/skills/bat_writing/scripts/fix_bat_encoding.py <文件.bat
 - 含中文的 bat 禁止用 UTF-8（无论带不带 BOM）交付到 ACP=936 机器
 - 禁止在脚本中途 `chcp` 切换代码页
 - 修复必须用 `scripts/fix_bat_encoding.py`，不要手写 sed/PowerShell 重定向转码（PS 5.1 重定向有 BOM 累积前科）
+- **改已转 GBK 的旧 bat 禁止用 Edit 直接改**，必须走 2b 的"UTF-8 工作稿 → 改 → 正向转回 GBK"回路；整份重写用 Write 覆盖 + 一次转码
+- 注释和 `echo` 里**禁止裸放**可能含 `&`/`>`/`|` 的 `%VAR%` 展开——要么 `EnableDelayedExpansion` + `!VAR!`，要么包在双引号里
 
 ## 依赖
 

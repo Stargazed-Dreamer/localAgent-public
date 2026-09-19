@@ -254,7 +254,7 @@ localagent_advanced_tool(tool="models_pause", params={"resource": "gpu"})
 
 | 排除的 MCP 工具名 | 替代方案 | 说明 |
 |------------------|----------|------|
-| `vl_file` | `ocr_file` / `ocr_path` | 远程 VL 文档解析，走 ModelScope Qwen3-VL-235B |
+| `vl_file` | `ocr_file` / `ocr_path` | 远程 VL 文档解析，走 ModelScope API-Inference（默认模型见 `GET /vision/status`） |
 | `vl_path` | `ocr_file` / `ocr_path` | 同上 |
 
 > **历史**：`vl_base64`（base64 输入版）和 `ocr_base64`（JSON 版）已删除，零 MCP 调用。Form 版 `ocr_base64_form` 保留供脚本调用，但不在 MCP 直连白名单中。

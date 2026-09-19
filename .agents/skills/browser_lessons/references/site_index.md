@@ -17,6 +17,9 @@
 | `bilibili.com` | <data_drive>:\<bilibili_videos> | [sites/bilibili.com.md](../sites/bilibili.com.md) | bilibili_gacha、official_gacha | <data_drive>:\<bilibili_videos>、bilibili、互动抽奖、取关、删动态 | 需登录 |
 | `zhihu.com` | 知乎 | [sites/zhihu.md](../sites/zhihu.md) | web_archive（探索中） | 知乎、zhihu、zhuanlan、专栏文章、问题页 | **需登录**（IP 风控后匿名完全被拦，2026-09-12 实测） |
 | `scnu.edu.cn` | 砺儒云课堂（华师 Moodle） | [sites/scnu.edu.cn.md](../sites/scnu.edu.cn.md) | homework（作业流水线） | 砺儒云、moodle.scnu、作业要求、SSO 登录 | 需登录（统一身份认证 SSO） |
+| `js.design` | 即时设计 | [sites/js.design.md](../sites/js.design.md) | homework（hci 作业 / jsd_research） | 即时设计、jsd、原型、画布、导入文件 | 需登录（客户端 userData 可复用） |
+| `skland.com` | 森空岛 | [sites/skland-com.md](../sites/skland-com.md) | web_archive（skland_images.py） | 森空岛、skland、明日方舟社区 | 待验证（SPA + sign 接口不逆向，走 CDP 渲染取直链） |
+| `wjx.cn` | 问卷星 | [sites/wjx-cn.md](../sites/wjx-cn.md) | homework（问卷建题自动化） | 问卷星、wjx、wenjuanxing、问卷调查、文本导入 | 调试浏览器已带登录态（但首页导航仍按未登录渲染） |
 
 ## 待记录网站（已知但未汇总）
 
@@ -27,7 +30,6 @@
 | `mp.weixin.qq.com` | 微信公众号 | web_archive | DOM 坑已在 web_archive/SKILL.md 中，未汇总到独立 sites 文件 |
 | `*.xiaoe-tech.com` | 小鹅通鹅圈子 | community_review | 内容提取/滚动防跳帖/点赞标记坑已在 community_review.md 中 |
 | `bwiki.rs` | Bwiki | arknights_gacha | 卡池数据采集 |
-| `skland.com` | 森空岛 | web_archive | 文章图片下载（skland_images.py）；SPA+sign 接口不逆向，CDP 渲染取直链 |
 | `prts.wiki` | PRTS | arknights_gacha | 限定卡池数据 |
 | `nowcoder.com` | 牛客 | niuke_review | 面经抓取（实际用 WebSearch + WebFetch，未必走浏览器） |
 | `gryphline.com` | 鹰角国际服 | endfield_gacha | 国际服登录 |

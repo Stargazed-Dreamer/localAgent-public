@@ -11,7 +11,7 @@ LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工�
 
 - **后端**: FastAPI + Uvicorn，端口 8766
 - **OCR**: 经典 PaddleOCR 3.7（PP-OCRv6）+ PaddlePaddle-GPU 3.2.2（CUDA 12.6，PIR 懒加载禁用）；截图管线关闭 UVDoc 去畸变，bbox 三档分辨率回归误差 1-3px，可作为 Computer Use 文字定位主路径；远程 VL 主要提供文档解析和图像描述
-- **视觉AI**: 远程 VL（ModelScope Qwen3-VL-235B-A22B-Instruct），负责文档解析、图像描述与无文字元素定位兜底
+- **视觉AI**: 远程 VL（ModelScope API-Inference；默认模型 = `data/llm/keys.json` 中 `vl` scope 里 tier 最低的启用模型，运行时看 `GET /vision/status` 的 `vl_model`，魔搭会不定期下架模型 ID），负责文档解析、图像描述与无文字元素定位兜底
 - **LLM**: 多提供商配置（DeepSeek/OpenAI/智谱等），v8 tier 系统（model.tier 1-5 由 keys.json 定义，use_case.default_tier 决定调用层级，tier 硬匹配 + model 软偏好）
 - **记忆**: 三层记忆系统 v3（Recent 滑动窗口 + SQLite 时间索引 + 向量语义检索 + BM25 + HMS 风格三源召回/EvidenceLedger/SearchTracer）
 - **多进程**: 已移除（原 ZeroMQ Worker 系统在 2026-07-08 远程 VL 上线后未使用，已删除）
@@ -30,7 +30,7 @@ LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工�
 | `docs/operations-manual.md` | 后端重启、终端 API、日总结、挂机关机、浏览器经验、记忆系统、工具脚本、PySide6 性能 | 触发特定任务或运维时 |
 | `docs/dev-workflow.md` | 功能变更检查清单、CHANGELOG 维护、发版流程、MCP 工具原则、MCP 接入、用户补充指令 | 工程开发/发版/MCP 配置时 |
 | `docs/changelog-archive.md` | 历史 release 条目归档（按版本倒序，工具自动维护） | 查完整变更历史时 |
-| `docs/release-policy.md` | 源码分发策略（friend-full profile、Apache-2.0） | 打包/分发源码时 |
+| `docs/release-policy.md` | 源码分发策略（public-full profile、Apache-2.0） | 打包/分发源码时 |
 | `.agents/skills/_index.md` | Skill 索引 + API 快速参考 + 项目结构 | 需查看 skill 完整信息/API 接口表时（任务路由走 `agent_guide`） |
 | `docs/api-reference.md` | 后端 API 速查（按功能分桶、浏览器分三层、精简描述） | 查 REST 端点/MCP 工具名时 |
 | `docs/browser-anti-detection.md` | **浏览器反检测（伪装）规范**：为什么本项目不注入任何 JS 伪装补丁（实测证据）、禁止 playwright-stealth、指纹自检工具 | 改动浏览器链路前；想加"反爬/伪装"补丁时**必读** |
@@ -50,6 +50,7 @@ LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工�
 | `docs/chat-engine.md` | v6-lite 对话引擎架构（SessionRunner/EventStore/Compactor 等 8 组件 + EventStore schema v9 + chat-panel-v2 关键设计 + QThread 桥接） | 理解对话引擎工作原理时 |
 | `docs/agent-guide.md` | 任务路由系统（GUIDE_REGISTRY 结构/6 scope/consumption_contexts 消费闭环/first_action 注入/workspace 动态扩展） | 维护 skill 或理解任务路由时 |
 | `docs/todos-wip.md` | 待办与 WIP 系统（三类型 todo/WIP 生命周期/task_closure 整合/API 端点表） | 使用 todos 或 WIP 功能时 |
+| `docs/periodic-task-inventory.md` | **周期任务与空闲额度跑批台账**（哪些 workspace 本质上要周期性跑、分别由谁提醒、用户说"额度很多"时该核对哪些并提议跑什么、哪些有意不周期化） | 用户问周期任务/"额度多能跑啥"、新增 workspace 判断触发方式、改 todo 到期判据时 |
 | `.agents/rules/project_rules.md` | 功能变更检查清单 | 新增/修改功能后 |
 
 ## 知识沉淀位置
@@ -189,7 +190,7 @@ LocalAgent 是一个个人 AI Agent 项目，集合了电脑操控、Agent 工�
 2. **WIP 处理**：完成→`wip_update(status=completed)`；中断→`wip_create` 或 `wip_update` 留档（next_steps 必须可执行）
 3. **经验提炼 + 可消费性自检**：识别值得保留的经验（preference/project/reference），**必须填 `consumption_contexts`（哪些 task_type 应读取）+ `trigger_keywords`（任务描述出现什么词时读取）**，无法明确消费场景的候选跳过——避免"存了没人用"
 4. **查重 + 写入**：`memory_list` 查重 → `memory_set(key, {data, merge: true})` 写入结构化记忆
-5. **文档自查（不询问用户）**：agent 自行对照 `.agents/rules/project_rules.md` 检查清单，检查本轮变更是否需要文档同步（路由注册/Pydantic模型/`/health`/硬编码/`_index.md`/`AGENTS.md`/`CHANGELOG.md`/`config.example.toml`/`tools_manifest.json`）。**ADR 评估（强制）**：本轮若有架构层变更或 SDD 产出 design-decisions，按 `project_rules.md` "ADR 评估"段三项标准打分，3/3 通过则写 ADR 并更新 `docs/adr/README.md` 索引（详见"关键约束 → ADR 维护"段）。完整 neat-freak 审查由用户主动触发。**若是浏览器操作任务**，额外检查"浏览器经验记录"（见 `docs/operations-manual.md` "浏览器操作经验记录"章节）：本次是否遇到非显然行为？若是，写入 `.agents/skills/browser_lessons/sites/<domain>.md`，无对应文件时按 `sites/_template.md` 创建，并同步更新 `references/site_index.md`
+5. **文档自查（不询问用户）**：agent 自行对照 `.agents/rules/project_rules.md` 检查清单，检查本轮变更是否需要文档同步（路由注册/Pydantic模型/`/health`/硬编码/`_index.md`/`AGENTS.md`/`CHANGELOG.md`/`config.example.toml`/`tools_manifest.json`）。**ADR 评估（强制）**：本轮若有架构层变更或 SDD 产出 design-decisions，按 `project_rules.md` "ADR 评估"段三项标准打分，3/3 通过则写 ADR 并更新 `docs/adr/README.md` 索引（详见"关键约束 → ADR 维护"段）。完整 neat-freak 审查由用户主动触发。**若是浏览器操作任务**，额外检查"浏览器经验记录"（见 `docs/operations-manual.md` "浏览器操作经验记录"章节）：本次是否遇到非显然行为？若是，写入 `.agents/skills/browser_lessons/sites/<domain>.md`，无对应文件时按 `sites/_template.md` 创建，并同步更新 `.agents/skills/browser_lessons/references/site_index.md`
 6. **收尾报告**：向用户报告 WIP 处理 + 经验提炼（含消费场景）+ 文档自查结果（含浏览器经验记录变更）
 
 ### 记忆消费闭环（核心约束）
@@ -363,6 +364,13 @@ ADR 是项目架构决策的真源，位于 `docs/adr/`（索引见 `docs/adr/RE
 实现，是本机唯一可靠的回收站路线。**先翻 `tools/README.md` 找现成工具，不要自己 pip
 install 绕路**（2026-09-03 教训：为删测试垃圾先装 send2trash 被用户纠正）。
 
+**回收站删目录失败怎么定位**（2026-09-17 实测）：`SHFileOperationW` 删目录树时聚合错误码
+`124`（`ERROR_INVALID_LEVEL`）不含信息量，必须**对子项逐个 `send_to_recycle`** 才能拿到真实原因——
+`32`（`ERROR_SHARING_VIOLATION`）意味着有进程把该目录当 cwd 持有（此时子文件全部可写、单独删除都能成功，
+容易误判成"路径权限问题"）。找持有者：遍历 `psutil.process_iter()` 取 `cwd()`（本机约半数进程无权限读取，
+静默跳过即可），比对目标路径。**锁定属于其他产品会话进程时先报告给用户，不要擅自 kill**；
+也**绝不因为回收站这条路受阻就退回物理删除**。
+
 **违反此规则可能导致用户重要数据/模型被误删，是不可接受的错误。**
 
 ### 输出截断规则
@@ -404,7 +412,7 @@ install 绕路**（2026-09-03 教训：为删测试垃圾先装 send2trash 被�
 - `workspace/recorder/` — 录制器的入口/工具/录制包（入口 `python -m workspace.recorder.tools.main`；`consumer/` agent 公用库；`recordings/` 大体积本地数据 gitignore）。⚠️ 原 `tools/recorder/` 入口已删除，旧文档提到它的地方均已过时
 
 **发布 / 分发**：
-- `release/` — 源码分发。`profiles/`（发布配置 toml）、`audience/`（受众定义）、`plans/` `dist/` `staging/`（构建产物，gitignore 仅留 .gitkeep）+ `policy.toml` + `dependency_map.toml` + `dependency_audit.json`；通过 `tools/release/cli.py prepare/compute-digest/build` 操作，不手动改 `dist/` `staging/`
+- `release/` — 源码分发。`profiles/`（发布配置 toml）、`audience/`（受众定义）、`plans/` `dist/` `staging/`（构建产物，gitignore 仅留 .gitkeep）+ `policy.toml`；通过 `tools/release/cli.py prepare/compute-digest/build` 操作，不手动改 `dist/` `staging/`。依赖映射表/审计报告（`dependency_map.toml` / `dependency_audit.json`）由 `tools/release/generate_dependency_map.py` 生成到 `temp/release_deps/`，**不入库也不进发布包**（产物含未进包的私有模块路径，且引擎无消费方）
 
 **私有 / 运行时（gitignore，不进仓库不进 release）**：
 - `private_vault/` — 私有文档仓库（obsidian vault）。子目录：`life_design/`（人生设计对话存档+蓝图）、`accounting/`（账单核对产出）、`stock_advisor/`（持仓配置+收盘报告）、`disk_manager/`（磁盘清理评估）、`activity/daily/`（每日工作总结）。agent 运行时读写私有产出
@@ -414,13 +422,12 @@ install 绕路**（2026-09-03 教训：为删测试垃圾先装 send2trash 被�
 - `data/*` — 见上方（除 `project_structure.json`）
 
 **规划笔记**：
-- `planning_notes/` — 历史规划笔记 + 用户手动存放的规划/路线图文档。子目录：`v6/`（v6 设计文档系列 v6-00 ~ v6-12）、`github-app-bot/`、`public-release/`、`特定工作的提示词/` 等。**仅用户手动存放**；SDD 流程产物走 `temp/sdd/`，不写这里
+- `planning_notes/` — 历史规划笔记 + 用户手动存放的规划/路线图文档。子目录：`v6/`（v6 设计文档系列 v6-00 ~ v6-12）、`github-app-bot/`、`internal-workflow/`、`特定工作的提示词/` 等。**仅用户手动存放**；SDD 流程产物走 `temp/sdd/`，不写这里
 
 **用户专用文件**（agent 禁止读写）：
 - `USER_ONLY_PROJECT_OPERATIONS_AGENT_DO_NOT_READ_OR_EDIT.md` — 用户专用操作手册；agent 仅为完成任务时无需读取，禁止修改/删除/绕过其指明的 `.dcg.toml`、`.dcg/`、`config.toml`、`workspace/` 用户数据
 
 **根目录其他文件**：
-- `file_sample.json` — file_classifier 工具的个人样本配置（含本机路径，gitignore）；不进仓库
 - `todo.txt` — 旧待办笔记，遗留
 - `start.bat` / `start_client.bat` — 后端启动脚本（含 UAC 提权+杀端口）/ GUI 启动脚本
 - `tools_manifest.json` — 工具清单（GUI 自动读取）

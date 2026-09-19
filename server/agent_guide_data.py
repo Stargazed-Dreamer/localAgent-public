@@ -392,10 +392,12 @@ GUIDE_REGISTRY: dict[str, dict] = {
         "skill": "task_reminder",
         "name": "任务提醒",
         "skill_file": ".agents/skills/task_reminder.md",
-        "keywords": ["有什么任务", "该做什么", "提醒我", "任务清单", "待办清单", "今天做啥", "这周做啥", "有什么没做", "任务提醒"],
-        "description": "检查周期任务到期+WIP待办汇总",
+        "keywords": ["有什么任务", "该做什么", "提醒我", "任务清单", "待办清单", "今天做啥", "这周做啥", "有什么没做", "任务提醒",
+                     # 机会型跑批（用户 2026-09-20 明确的口径：没有推送，只能被问时现场核对）
+                     "额度很多", "额度有余", "额度多余", "额外额度", "空闲额度", "长期自动化", "顺便跑", "能跑什么"],
+        "description": "检查周期任务到期+WIP待办汇总；用户表示额度有余/想跑长期自动化时按周期台账自查可跑项",
         "memory_key": None,
-        "first_action": "调用 todos_due 获取到期任务；调用 wip_list(summary=true) 获取 WIP 摘要。需要单个 WIP 详情时用 wip_get(task_id='wip_xxx')（直连 MCP 工具，免审批），禁止用 exec_python 发 HTTP 调本地 API",
+        "first_action": "调用 todos_due 获取到期任务；调用 wip_list(summary=true) 获取 WIP 摘要。需要单个 WIP 详情时用 wip_get(task_id='wip_xxx')（直连 MCP 工具，免审批），禁止用 exec_python 发 HTTP 调本地 API\n\n用户说\"额度很多/想跑长期自动化/有什么可以顺便跑的\"时：读 docs/periodic-task-inventory.md 的「空闲额度自查流程」台账，逐项实测每项的上次活动信号（文件 mtime / GET /loop/tasks 的 last_run_at / GET /inbox）与阈值比较，一次性报告超期项并等用户点单，禁止不核对就断言都新鲜、禁止未点单就开跑",
         "workflow_summary": "1.todos_due 取到期任务 2.wip_list 取WIP 3.汇总报告 4.完成后 todos_mark_done",
         "mcp_tools_priority": [
             "todos_due",
@@ -1767,47 +1769,9 @@ GUIDE_REGISTRY: dict[str, dict] = {
             },
         },
     },
-    "system.public_distribution": {
-        "skill": "public-release",
-        "name": "公开源码分发",
-        "skill_file": ".agents/skills/public-release/SKILL.md",
-        "keywords": [
-            # 核心词
-            "打包", "打包给朋友",
-            # 衍生词：场景/动作
-            "脱敏打包", "公开发布", "源码分发", "朋友版",
-            # 英文/术语
-            "friend-full", "public release",
-        ],
-        "description": "按发布 profile 审计并生成不含个人数据和 Git 历史的源码分发包",
-        "memory_key": None,
-        "first_action": (
-            "先读 release/policy.toml、docs/release-policy.md 和目标 profile；"
-            "再用 git status + git ls-files 生成跟踪文件清单。"
-            "只输出候选/待审/排除清单和风险，不创建导出目录或压缩包；"
-            "用户明确批准后才进入构建。"
-        ),
-        "workflow_summary": "1.读策略/profile 2.清点跟踪文件 3.按允许清单分类 4.敏感扫描 5.用户审批 6.干净导出+验证 7.ZIP+校验和",
-        "mcp_tools_priority": [
-            "Read (release/policy.toml + release/profiles/*.toml + release/audience/*.toml + docs/release-policy.md)",
-            "RunCommand (git status / git ls-files，只读盘点)",
-            "RunCommand (uv run python -m tools.release.cli prepare --profile friend-full --audience friend)",
-            "RunCommand (uv run python -m tools.release.cli scan --profile friend-full)",
-            "Grep / Read (敏感内容扫描，不回显匹配值)",
-            "RunCommand (uv run python -m tools.release.cli compute-digest --profile friend-full → 填 [approval] → uv run python -m tools.release.cli build --plan <digest>)",
-        ],
-        "key_pitfalls": [
-            "system.release 只做 CHANGELOG 版本归档；system.public_distribution 才负责脱敏源码包，二者不可混用",
-            "当前个人仓库是私有真源，禁止在原树中删除文件或就地脱敏",
-            "friend-full 保留活动追踪/日报行为和全部依赖声明，但绝不提供 key 或运行时数据",
-            "workspace 私有备份组件、仓库名单、Skill 和配置引用均为 private-only",
-            "Apache License 2.0 允许商用、修改和再分发",
-            "draft/reserved profile 禁止构建；必须先完成精确文件清单和用户审批",
-            ".gitignore 不能证明已跟踪文件安全，盘点必须以 git ls-files 为准",
-        ],
-        "prerequisites": ["目标 profile 存在", "用户已确认授权和分发边界"],
-        "level": "full",
-    },
+    # "system.internal_workflow" entry removed from public package
+    # (internal release workflow; release engine / policy / profiles are not distributed).
+
     "system.release": {
         "skill": None,
         "name": "版本发布",

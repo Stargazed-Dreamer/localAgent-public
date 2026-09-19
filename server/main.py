@@ -204,7 +204,7 @@ def _setup_logging():
 
 _setup_logging()
 
-VERSION = "0.48.0"
+VERSION = "0.49.0"
 
 app = FastAPI(title="LocalAgent API", version=VERSION)
 

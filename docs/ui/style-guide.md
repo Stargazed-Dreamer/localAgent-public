@@ -95,6 +95,36 @@
 `BLOCK_AUTOMABLE #62D0B8`（可自动化/青）。
 用途仅限时间轴/事件流等"类型标签"场景，**不得**用作通用 UI 元素颜色。
 
+## 2.7 领域色（spacesniffer treemap 文件类型）
+
+`tokens.FILE_TYPE_COLORS`：12 种文件类型色 + `FILE_TYPE_OTHER` 兜底，全部为暗底调亮版。
+供 `tools/spacesniffer` 的磁盘占用方块图（treemap）与类型图例使用。
+
+| key | 值 | 对应类型 | 说明 |
+|-----|----|---------|------|
+| `video` | `#C97A5E` | 视频 | 陶土橙 |
+| `audio` | `#A98BE8` | 音频 | 同 `BLOCK_COLORS.focus` |
+| `image` | `#4FC3D9` | 图片 | 同 `BLOCK_COLORS.screenshot` |
+| `document` | `#62A0EA` | 文档 | 同 `INFO` |
+| `archive` | `#E0A84B` | 压缩包 | 同 `WARNING` |
+| `executable` | `#E06C75` | 可执行 | 同 `DANGER` |
+| `system` | `#64748F` | 系统文件 | 石板蓝灰 |
+| `code` | `#4CC38A` | 代码 | 同 `SUCCESS` |
+| `font` | `#C9B36A` | 字体 | 麦黄 |
+| `database` | `#8B7FC7` | 数据库 | 靛 |
+| `disk_image` | `#4E9AC9` | 磁盘镜像 | 钢蓝 |
+| `other` | `#7D8695` | 其他 | 同 `TEXT_TERTIARY` |
+
+多数取值直接复用语义色 / `BLOCK_COLORS`，**是有意为之**：整套色板已按暗底调校过一轮，
+复用比新造一批近似色更能保证全局一致。新增类型请在此登记后同步本表。
+
+配套的 treemap 结构色：`TREEMAP_DIR_FILL`（目录容器底）、`TREEMAP_DIR_HEADER_FILL`
+（目录标题条）、`TREEMAP_GAP_FILL`（未计入空间）、`TREEMAP_TILE_BORDER`（瓦片 1px 分隔线，
+比 `BG_OVERLAY` 更暗——方块图靠暗缝分块，不用亮线，否则整屏网格会抢戏）、
+`TREEMAP_LABEL` / `TREEMAP_LABEL_DIM`（瓦片内文字）。
+
+**用途仅限**磁盘占用方块图、类型图例、类型统计条，**不得**用作通用 UI 元素颜色。
+
 ## 三、字体
 
 | 项 | 值 | 说明 |

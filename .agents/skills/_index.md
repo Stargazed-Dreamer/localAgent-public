@@ -59,11 +59,7 @@
 - **task_type**：`adhoc.exam_prep`
 - **Skill 文件**：`workspace/exam_prep/SKILL.md`
 
-### gh_mirror (gh_mirror) [recurring]
-
-- **描述**：GitHub 私有镜像仓库监控 - 每 30 分钟调 GitHub API 检查 PAT/上游/同步/落后 4 类状态，告警推 inbox
-- **task_type**：`recurring.gh_mirror_monitor`
-- **Skill 文件**：`workspace/gh_mirror/SKILL.md`
+<!-- private component removed from public package -->
 
 ### mindforge (mindforge) [adhoc]
 
@@ -135,7 +131,7 @@
 - **`_index.md`（本文件）是索引入口**，列出所有 Skill 的触发词、文件路径、依赖、输出
 - **`skill-creator.md`** 包含完整的 Skill 编写规范、模板和反模式——创建或修改 Skill 时必读
 - **`neat-freak.md`** 包含文档审查与同步规范——会话结束或用户说"整理一下"时触发
-- 新 Skill 目录命名：英文小写+连字符，如 `public-release/SKILL.md`；历史扁平文件按原名维护
+- 新 Skill 目录命名：英文小写+连字符，如 `internal-workflow/SKILL.md`；历史扁平文件按原名维护
 - **提交前机械防线**：pre-commit hook 会跑 `tools/check_hard_rules.py`（BOM/硬编码密钥/文档路径越界/import 边界），违反即拦截 commit；GUI 面板结构参考 `data/feature_map.json`，guide 路由改动需回测 `tests/guide_eval/`（`run_eval.py`，基线 88.9%）
 
 ---
@@ -267,7 +263,7 @@
 
 | 属性 | 值 |
 |------|------|
-| **触发词** | 有什么任务、该做什么、提醒我、任务清单、待办清单、今天做啥、这周做啥、有什么没做、任务提醒 |
+| **触发词** | 有什么任务、该做什么、提醒我、任务清单、待办清单、今天做啥、这周做啥、有什么没做、任务提醒；空闲额度类：额度很多、额度有余、额度多余、额外额度、空闲额度、长期自动化、顺便跑、能跑什么 |
 | **Skill 文件** | `.agents/skills/task_reminder.md` |
 | **数据存储** | `todos` 表（SQLite，共享 memory.db） |
 | **MCP 工具** | `todos_due` / `todos_list` / `todos_create` / `todos_update` / `todos_mark_done` / `todos_delete` / `todos_check_trigger` |
@@ -286,20 +282,11 @@
 - `phased_recurring`：阶段性周期任务，在 `[start_date, end_date]` 区间内按 frequency 递推；超出 `end_date` 自动置 `archived`（不再到期）
 - `triggered`：触发式任务，不按周期到期；由 loop 轮询 `trigger_condition`（首版支持 `file_arrived` 事件）自动触发，触发后推送 `/user/message` 提醒；不进 `todos_due` 列表，处理后 `todos_mark_done` 重置
 
-**当前周期任务**（存储于 `todos` 表，下表为快照参考，实际以 `todos_list` 为准）：
+**当前周期任务**：**不在本文件维护快照**（此处曾驻留一份手工抄录的表，已出现"条目早不存在/新条目没同步"的漂移）。真源两处：
+- 运行时清单：`todos_list` / `GET /todos`（含频率、`last_done_at`、`condition`）
+- 语义与台账：`docs/periodic-task-inventory.md`（三类触发机制、已注册条目语义、机会型跑批清单、有意不周期化清单）
 
-| 任务 | Skill | 频率 | 条件 |
-|------|-------|------|------|
-| 记账 | accounting | weekly | - |
-| 小鹅通帖子 | community_review | weekly | - |
-| <data_drive>:\<bilibili_videos>抽奖整理 | bilibili_gacha | weekly | - |
-| 面经筛选 | niuke_review | weekly | 找工作期间 |
-| 文档同步 | neat-freak | weekly | - |
-| 异环抽卡 | yihuan_gacha | monthly | - |
-| 鸣潮抽卡 | wuwa_gacha | monthly | - |
-| 明日方舟寻访 | arknights_gacha | monthly | - |
-
-**到期判断**：weekly≥7天、monthly=自然月（下月同日，月末兜底）到期；`last_done_at` 为 null 视为到期。条件任务（如"找工作期间"）不确定时询问用户。
+**到期判断**：`server/todos/store.py` 的 `get_due_todos()`——`last_done_at` 为 null 视为到期；否则按 `next_due_at <= today`（`next_due_at` 仅由 `todos_mark_done` 写入）。条件任务（如"找工作期间"）不确定时询问用户。
 
 > 旧机制（`task_reminders` 记忆 key）已迁移到 `todos` 表（启动时幂等迁移，见 `server/todos/migration.py`）。
 
@@ -517,23 +504,9 @@
 
 ---
 
-### 17. 公开源码分发 (public-release)
+### 17. (内部维护入口，未包含在本包中)
 
-| 属性 | 值 |
-|------|------|
-| **触发词** | 打包给朋友、源码分发、公开发布、脱敏发布、发布包、friend-full、public release、public distribution |
-| **Skill 文件** | `.agents/skills/public-release/SKILL.md` |
-| **task_type** | `system.public_distribution` |
-| **策略文件** | `release/policy.toml` + `release/profiles/*.toml` |
-| **用途** | 按允许清单审计并生成不含个人数据、密钥和 Git 历史的源码分发包 |
-
-**当前决策**：Apache License 2.0；允许商用、修改和再分发。
-
-**首个 profile**：`friend-full`，保留现有活动追踪、日报行为和全部依赖声明，不提供 key。profile 仍为 `draft`，完成跟踪文件分类、敏感扫描、无 key 启动验证并经用户批准后才能构建。
-
-**硬边界**：个人仓库是私有真源，禁止就地删除/脱敏；workspace 私有备份组件、个人运行数据、浏览器登录态、WIP、Git 历史不得进入发布物。
-
-**与 `system.release` 的区别**：`system.release` 只做 CHANGELOG 版本归档和私有仓库 commit；`system.public_distribution` 才负责源码分发审计与打包。
+本节描述的源码分发工作流属于项目原作者的内部维护流程；相关 skill、策略文件与发布引擎均不在本包内。
 
 ---
 
@@ -1202,7 +1175,7 @@
 
 **6 步流程**：①读 CHANGELOG.md 确认 [Unreleased] 段有内容 → ②确定新版本号（patch/minor 递增）→ ③`uv run python tools/bump_version.py <版本号>` 同步 VERSION 常量 → ④Edit CHANGELOG.md 改段名 + 加空 [Unreleased] → ⑤`uv run python tools/migrate_changelog.py` 归档旧 release → ⑥git add 按目录 + git commit。
 
-**与 `system.public_distribution` 的区别**：`system.release` 只做 CHANGELOG 版本归档和私有仓库 commit；`system.public_distribution` 才负责源码分发审计与打包。
+**与 `system.internal_workflow` 的区别**：`system.release` 只做 CHANGELOG 版本归档和私有仓库 commit；`system.internal_workflow` 才负责源码分发审计与打包。
 
 **关键约束**：项目纯本地（不发 git tag / GitHub release / push remote）；PowerShell 不支持 bash HEREDOC（commit 信息用单个 -m 传单行标题）；git add 不要用 -A（按目录 add 避免误纳入敏感文件）；[Unreleased] 段空时不要 release。
 
@@ -1227,7 +1200,7 @@
 
 **6 步流程**：0.收集 5 项上下文（定位/态度/读者/部署/差异化）→ 1.tone 校准 → 2.竞品对比规则 → 3.快速开始诚实原则 → 4.增量修订 vs 从零起草 → 5.反模式清单 → 6.交付前 checklist。
 
-**与 `public-release` 的关系**：`public-release` 编排源码分发审计与打包；本 skill 是公开前 README 修订的执行层，常被 `public-release` 编排调用。
+**与 `internal-workflow` 的关系**：`internal-workflow` 编排源码分发审计与打包；本 skill 是公开前 README 修订的执行层，常被 `internal-workflow` 编排调用。
 
 **与 `neat-freak` 的边界**：`neat-freak` 做会话后文档一致性同步；本 skill 起草/修订 README 门面文件。
 

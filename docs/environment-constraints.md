@@ -56,6 +56,45 @@ ARMED → REFUSING   （再次飙高）
 - **电平式逐出**：`REFUSING` 期间每采样周期持续评估候选（已加载 + `evictable=True` + 过 `min_loaded_seconds` 保护 + 不在冷却期），按 `(priority, -footprint_mb, reload_cost_sec)` 排序选 victim 串行卸载。无候选 → 维持 `REFUSING` 仅拒绝。当前 GPU 逐出唯一实例就是 OCR。
 - **per-model 冷却隔离**：某模型加载失败冷却不牵连同资源其他模型的准入（设计 v2 修订，避免记忆嵌入失败连带拒绝 guide embedding 加载）。连续 ≥3 次失败 → `reload_degraded` 标记（提示重启后端）。
 
+### ⚠ 无 GPU 机器：OCR 准入被永远卡在 `awaiting_first_sample`（2026-09-19 实测）
+
+**症状**：虚拟机/无 NVIDIA 卡的机器上，`POST /ocr/path/json` 恒返回
+`503 {"error":"model_unavailable","model_id":"ocr","reason":"awaiting_first_sample"}`；
+`/ocr/status` 见 `ocr_loaded=false` / `model_ready=false` / `cold_start=true` /
+`mlm_state.gpu_state=probe_degraded`。**文件、密钥、依赖全都对，OCR 依然 100% 不可用。**
+
+**根因**：GPU 探针走 `nvidia-smi`，无卡机器上**永远采不到样本**；
+而 `check_admission()` 的判定顺序是 `has_first_sample` → `admission_allowed()`
+（`server/model_manager/manager.py:147`），零样本直接返回 `awaiting_first_sample`。
+**该判定在 `manual=True` 豁免之前**，所以两条直觉解法**都无效**：
+`POST /models/{id}/load` 手动端点无效；`POST /models/pause` 也无效（`PAUSED` 只影响
+`admission_allowed`，回不到 `has_first_sample` 那一步）。
+
+**解法**（`config.toml`，本机键，不入库）：
+
+```toml
+[models]
+paddle_device = "cpu"        # 主补丁：_active_device="cpu" → OcrDriver.resource="cpu"
+                             # → 走默认关闭的 cpu monitor → monitor_disabled → 放行
+[model_manager.gpu]
+enabled = false              # 副补丁/安全网
+```
+
+- 主补丁**热生效**（`get_models_config()` → `load_config()` 带 mtime 缓存，无需重启）；
+  副补丁要**重启后端**（`manager.py:51` 只在 `__init__` 读一次 config）
+- `paddle_device="cpu"` 不是将就：它**就是 `config.example.toml` 的模板默认值**
+  （模板注明"默认 cpu（稳妥）"），代码默认 `gpu` 与模板不一致；也是 §本文档"再出现挂死
+  就改回 cpu"的官方回退开关
+- 这不是 PaddlePaddle 的问题：`paddlepaddle-gpu` 在无 CUDA 机器上照常 import 并
+  自动回退 CPU（见本文档开头"无 GPU 环境"条），坏的是 **MLM 的 GPU 准入**这一层
+- 有 NVIDIA 卡的真机保持 `paddle_device="gpu"` + `[model_manager.gpu] enabled=true`，
+  不要照抄上面的补丁
+
+**排查顺序**（下次遇到 503 `model_unavailable`）：先读 `reason` 码——
+`awaiting_first_sample` → 查探针能否出样本（有无 `nvidia-smi`）；
+`probe_degraded` → 同上；`pressure_refusing` → 走本节的 GPU→CPU 条件降级；
+`cooldown` / `reload_degraded` → 模型自身状态，等冷却或重启后端。
+
 ### GPU→CPU 条件降级（2026-08-31 已实现）
 
 `OcrDriver` 的 `resource` 已从静态 `"gpu"` 改为**动态 property**，跟随 OCR 实际设备
@@ -197,12 +236,15 @@ CPU 模式的 OCR 加载会直接触发 swap 甚至 OOM，比"不可用"更糟�
 - 手动卸载（走审批门槛）后记忆语义检索**静默降级为 BM25-only**（无 503，消费者都先查 `ready`，不会写入零向量）
 - **恢复步骤**：`POST /models/memory_embedding/load` + `POST /memory/rebuild_vector_index`（补卸载窗口缺口）
 
-## 远程 VL（ModelScope Qwen3-VL-235B）
+## 远程 VL（ModelScope API-Inference）
 
 本地 VL（Qwen2.5-VL-3B + `envs/vl/`）已于 2026-07-07 下线，原因：8 GB VRAM 显存不足 + 3B 模型质量不达标（空表格/understand 503）+ 维护成本高。设计思路与删除环境清单见 `.agents/wip/local_vl_decommissioned.md`。
 
 当前 VL 能力由远程 API 提供：
-- **默认 provider**：魔搭社区 ModelScope（`https://api-inference.modelscope.cn/v1`），模型 `Qwen/Qwen3-VL-235B-A22B-Instruct`
+- **默认 provider**：魔搭社区 ModelScope（`https://api-inference.modelscope.cn/v1`）
+- **默认模型不是常量**：`_pick_model_for_tier`（`server/llm_pool/key_store.py`）取该 key 里 `vl` scope 中 **tier 最低**的启用模型，同 tier 则按 `models` 数组顺序取第一个。运行时以 `GET /vision/status` 的 `vl_model` 为准，别照抄文档里的模型名
+- **魔搭会下架模型 ID**：下架后调用返回 `400 {"error":{"message":"Model id : X , has no provider supported"}}`（官方文档明示"旧模型可能下线不再支持，请配置当前支持的模型 ID"）。2026-09-19 实测 `Qwen/Qwen3-VL-8B-Instruct` 与 `Qwen/Qwen3-VL-235B-A22B-Instruct` 均已失效。**换模型 = 改 keys.json 的 tier/enabled，不改代码**
+- **`has no provider supported` 与 `Invalid provider: X` 是两种错**：前者表示该模型在魔搭没有任何推理提供方绑定（下架，加后缀也救不回来）；后者表示 `<Model-Id>:<ProviderName>` 后缀里的提供方名非法（如 `:DashScope` 是合法名）。外部提供方路线见 `docs/model-service/API-Inference/api-provider`
 - **OpenAI 兼容 chat completions API**，图像以 JPEG base64 data URL 内嵌 messages content
 - **RPM ≈ 5**，`max_concurrency=1` 序列化调用避免触发限流；429/5xx 触发 cooldown（默认 60s，可通过 keys.json 中 VL key 的 `vision.rate_limit_cooldown` 配置）+ 退避重试 (2, 4, 8, 16, 32, 60) 秒（可通过 `[vision] vl_retry_backoffs` 配置）
 - **多 provider 自动 failover**：通过 `key_store.resolve_keys(use_case)` 路由（`vl_ocr`/`vl_vision`/`vl_activity_tracker`），按 tier 升序遍历候选 key，第一个不在冷却中且并发未满的胜出；全部冷却时返回下次可用时间
@@ -272,6 +314,15 @@ CPU 模式的 OCR 加载会直接触发 swap 甚至 OOM，比"不可用"更糟�
 
 **项目有专用的调试浏览器实例，agent 应自主启动和管理，不要问用户。** 支持任何 Chromium 内核浏览器（Chrome / Edge / Brave / Vivaldi 等），脚本会自动探测已安装的浏览器。
 
+> ⚠️ **修正（2026-09-19，VM 实测）：上面"agent 应自主启动、不要问用户"在本项目的 VM 上不成立。**
+> 经 agent 工具通道启动的 GUI 进程**活不过那条命令结束**——三种写法全被回收：
+> `Popen` 裸起、`creationflags=DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP`、
+> 再加 `CREATE_BREAKAWAY_FROM_JOB`；改用 `run_in_background` 长驻任务托管能撑住
+> （实测 CDP 连续存活 1140s），但**任务一结束照样被收**（保活循环跑满即 9222 消失）。
+> 结论：**VM 上调试浏览器必须由人工常驻**（用户终端 / 桌面快捷方式），agent 启动后顺手验一下
+> `GET http://127.0.0.1:9222/json/version` 就干活，**不要承诺"我起了它就在"**。
+> 宿主机是否同样受限**未实测**。判据提醒：`netstat` 看到 9222 有监听 ≠ 下一条命令里它还活着。
+
 - **启动脚本**：`tools/browser/start_debug_browser.py`（旧名 `start_debug_chrome.py` 作为薄包装保留）
 - **启动命令**：
   - 默认（非交互，空白配置）：`uv run python tools/browser/start_debug_browser.py`
@@ -290,7 +341,8 @@ CPU 模式的 OCR 加载会直接触发 swap 甚至 OOM，比"不可用"更糟�
   1. 用 `browser_status` 检查调试浏览器是否已运行
   2. 如果未运行：`exec_python` 执行 `tools/browser/start_debug_browser.py` 启动
   3. 如果启动失败：提醒用户检查 Chromium 内核浏览器是否安装，或用 `--browser-path` 显式指定
-  4. **不要问用户"要我来开还是你来开"**——直接开
+  4. **不要问用户"要我来开还是你来开"**——直接开（**VM 上例外**：agent 起的进程活不过命令
+     结束，见本节开头 2026-09-19 修正，那种情况要让用户人工常驻）
   5. **不要打开用户的工作浏览器**——只用调试实例
 
 ## 网络与环境查询技巧
@@ -360,3 +412,34 @@ nvidia-smi --query-compute-apps=pid --format=csv,noheader
 冲突导致 torch 加载失败（`WinError 127`）。
 注意 `import paddleocr` 会走 paddlex → modelscope → torch 链，
 所以实际约束是 **torch 先于 paddleocr**。
+
+### GitHub 仓库克隆被限速到 ~15 KiB/s（用 gh-proxy 前缀绕过）
+
+实测（2026-09-17）：本机 `github.com` 的 **git 协议 pack 传输**被限速到 **~15 KiB/s** ——
+171MB 的仓库 5 分钟只下到 4.3MB（7%），按此速率要 3 小时以上。
+
+**先排除误判**：同一时刻别的站点都正常（PyPI 4.0 MB/s、Cloudflare 615 KB/s），
+说明不是本地线路问题；`api.github.com` 的元数据请求也是瞬时返回
+（**限速只作用于大流量 pack 传输**，不影响 REST API）。所以"API 通、clone 慢"并不矛盾。
+
+**绕过**：给 URL 套 `https://gh-proxy.com/` 前缀，同一仓库实测 **~3.8 MB/s（46 秒克隆完）**：
+
+```bash
+git clone --bare --progress \
+  "https://gh-proxy.com/https://github.com/<owner>/<repo>" <dir>
+```
+
+- 镜像站可用性会变：本例 `gh-proxy.com` 可用，`ghfast.top` / `ghproxy.net` 均返回 403。
+- **只用于读（clone / fetch）**：push 必须直连 `github.com`（要带凭据，镜像站不代理私有仓写入）。
+- 测速时注意：本例中 `curl -o /dev/null` 的写入会被沙箱拒绝（表现为 `size=0` / `curl: (23)`），
+  **必须落盘到真实文件**才能拿到可信的 `speed_download` —— 否则会误判成"所有站点都 0 B/s"。
+
+### 超时杀不掉的 git 子进程
+
+`subprocess.run(["git", ...], timeout=N)` 在 Windows 上可能**杀不干净**：git 会派生
+`git-remote-https` / `git-index-pack` 等孙进程并继承 stdout/stderr 管道；父进程被 kill 后
+`communicate()` 仍阻塞在管道上等待最后一个持有者退出 ——
+症状是**脚本 CPU 近 0、超时时间早已过去但进程不退出、日志停在最后一行**。
+
+- 排查：`Get-Process git,python` 看有没有「启动时间 = 最后一条日志时间」、CPU 极低的残留进程。
+- 处理：按 PID 逐个 `Stop-Process -Force`（**别误杀后端 python 进程**，用启动时间区分），再清理工作目录。

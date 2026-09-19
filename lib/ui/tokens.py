@@ -92,6 +92,36 @@ BLOCK_ANOMALY = "#E5484D"  # 标异常标记色（= DANGER）
 BLOCK_AUTOMABLE = "#62D0B8"  # 标可自动化标记色
 
 # ---------------------------------------------------------------------------
+# 磁盘领域色：treemap 文件类型着色（tools/spacesniffer）
+# 用途仅限「磁盘占用方块图 / 类型图例」场景，不得用作通用 UI 元素颜色。
+# 多数取值与语义色或 BLOCK_COLORS 同值，是有意为之：整套色板已按暗底调校过一轮，
+# 复用比新造一批近似色更能保证全局一致。新增类型请在此登记并同步 style-guide.md。
+# ---------------------------------------------------------------------------
+FILE_TYPE_COLORS = {
+    "video": "#C97A5E",       # 视频 — 陶土橙
+    "audio": "#A98BE8",       # 音频 — 紫（= BLOCK_COLORS.focus）
+    "image": "#4FC3D9",       # 图片 — 青（= BLOCK_COLORS.screenshot）
+    "document": "#62A0EA",    # 文档 — 蓝（= INFO）
+    "archive": "#E0A84B",     # 压缩包 — 琥珀（= WARNING）
+    "executable": "#E06C75",  # 可执行 — 砖红（= DANGER）
+    "system": "#64748F",      # 系统文件 — 石板蓝灰
+    "code": "#4CC38A",        # 代码 — 绿（= SUCCESS）
+    "font": "#C9B36A",        # 字体 — 麦黄
+    "database": "#8B7FC7",    # 数据库 — 靛
+    "disk_image": "#4E9AC9",  # 磁盘镜像 — 钢蓝
+    "other": "#7D8695",       # 其他 — 灰（= TEXT_TERTIARY）
+}
+FILE_TYPE_OTHER = FILE_TYPE_COLORS["other"]
+
+# treemap 结构色（容器底 / 标题条 / 分隔线 / 未计入空间）
+TREEMAP_DIR_FILL = "#252B33"        # 目录容器底色（= BG_PANEL，比文件块暗一档）
+TREEMAP_DIR_HEADER_FILL = "#333B47"  # 目录标题条
+TREEMAP_GAP_FILL = "#333A45"        # 「未计入空间」填充（≈ BG_TOOLTIP）
+TREEMAP_TILE_BORDER = "#15181D"     # 瓦片分隔线（比 BG_OVERLAY 更暗，1px 缝合用）
+TREEMAP_LABEL = "#E9EDF2"           # 瓦片内文字（= TEXT_PRIMARY）
+TREEMAP_LABEL_DIM = "#B5BDC9"       # 瓦片内次级文字（= TEXT_SECONDARY）
+
+# ---------------------------------------------------------------------------
 # 字体
 # ---------------------------------------------------------------------------
 FONT_FAMILY = '"Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif'
